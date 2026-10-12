@@ -74,4 +74,5 @@ pytest
 
 ## Rules and Guidelines
 - See [`PROJECT_RULES.md`](PROJECT_RULES.md) for documentation protocol (`summary.md` append-only, `walkthrough.md` per session, antislop, and Karpathy guidelines).
+- Full system architecture plan is located in [`docs/03_plan_ai_stock_signal_BEI_daily.md`](docs/03_plan_ai_stock_signal_BEI_daily.md).
 - Full development guide is located in [`docs/04_ai_agent_coding_development_guide_BEI_stock_signal.md`](docs/04_ai_agent_coding_development_guide_BEI_stock_signal.md).

@@ -1,6 +1,7 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -50,7 +51,7 @@ class Prediction(BaseModel):
     model_version: str
     probability: float
     expected_return: Optional[float] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Outcome(BaseModel):
@@ -59,7 +60,7 @@ class Outcome(BaseModel):
     status: OutcomeStatus
     realized_return: Optional[float] = None
     holding_days: int
-    evaluated_at: datetime = Field(default_factory=datetime.utcnow)
+    evaluated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ModelVersion(BaseModel):

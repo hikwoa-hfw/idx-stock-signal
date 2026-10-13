@@ -2,7 +2,7 @@ import io
 import sqlite3
 import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from botocore.exceptions import ClientError
@@ -45,7 +45,10 @@ class FakeS3Client:
                 {"Error": {"Code": "404", "Message": "Not Found"}},
                 "HeadObject",
             )
-        return {"Metadata": self.metadata.get((Bucket, Key), {})}
+        return {
+            "Metadata": self.metadata.get((Bucket, Key), {}),
+            "ContentLength": len(self.storage[(Bucket, Key)]),
+        }
 
     def download_file(self, Bucket: str, Key: str, Filename: str):
         if (Bucket, Key) not in self.storage:
@@ -60,6 +63,11 @@ class FakeS3Client:
         self.storage[(Bucket, Key)] = content
         if ExtraArgs and "Metadata" in ExtraArgs:
             self.metadata[(Bucket, Key)] = ExtraArgs["Metadata"]
+
+    def put_object(self, Bucket: str, Key: str, Body: bytes = b"", ContentType: str = "", **kwargs):
+        if isinstance(Body, str):
+            Body = Body.encode("utf-8")
+        self.storage[(Bucket, Key)] = Body
 
     def copy_object(
         self,
@@ -181,6 +189,31 @@ def test_upload_database_nonexistent_file(tmp_path: Path):
         upload_database("bucket", tmp_path / "nonexistent.db", s3_client=s3)
 
 
+def test_upload_database_wal_checkpoint(tmp_path: Path):
+    s3 = FakeS3Client()
+    bucket = "idx-test-bucket"
+    key = "database/stock_signals.db"
+
+    local_db = tmp_path / "wal_test.db"
+    conn = sqlite3.connect(local_db)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE sample (id INT)")
+    conn.execute("INSERT INTO sample VALUES (123)")
+    conn.commit()
+
+    meta = upload_database(bucket, local_db, s3_key=key, create_backup=False, s3_client=s3)
+    conn.close()
+
+    assert meta["s3_bucket"] == bucket
+    assert (bucket, key) in s3.storage
+    dest_verify = tmp_path / "restored.db"
+    dest_verify.write_bytes(s3.storage[(bucket, key)])
+    c2 = sqlite3.connect(dest_verify)
+    row = c2.execute("SELECT id FROM sample").fetchone()
+    c2.close()
+    assert row[0] == 123
+
+
 def test_sync_models_from_and_to_s3(tmp_path: Path):
     s3 = FakeS3Client()
     bucket = "idx-test-bucket"
@@ -233,7 +266,16 @@ def test_lambda_daily_pipeline_handler_success(tmp_path: Path):
     assert body["status"] == "SUCCESS"
     assert body["bars_ingested"] > 0
     assert body["db_uploaded"] is True
+    assert body["log_uploaded"] is True
     assert (bucket, "database/stock_signals.db") in s3.storage
+    assert any(k.startswith("logs/daily_pipeline_") for (b, k) in s3.storage if b == bucket)
+
+    conn = sqlite3.connect(tmp_path / "daily_test.db")
+    cur = conn.cursor()
+    cur.execute("SELECT count(*) FROM features_daily")
+    feat_count = cur.fetchone()[0]
+    conn.close()
+    assert feat_count > 0
 
 
 def test_lambda_daily_pipeline_handler_error_handling():
@@ -267,6 +309,46 @@ def test_lambda_retraining_handler_skipped(tmp_path: Path):
     assert resp["statusCode"] == 200
     assert resp["body"]["status"] == "SKIPPED"
     assert resp["body"]["triggered"] is False
+
+
+def test_lambda_retraining_handler_promoted(tmp_path: Path):
+    from python.retraining.pipeline import RetrainingPipelineResult
+
+    s3 = FakeS3Client()
+    bucket = "idx-test-bucket"
+    models_dir = tmp_path / "models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    (models_dir / "challenger.joblib").write_bytes(b"dummy challenger model")
+
+    mock_result = RetrainingPipelineResult(
+        status="SUCCESS",
+        triggered=True,
+        promoted=True,
+        challenger_version="challenger_lgb_20261013",
+        champion_version="champion_lgb_20261001",
+        artifact_path=str(models_dir / "challenger.joblib"),
+    )
+
+    with patch("python.cloud.handlers.RetrainingPipeline.run", return_value=mock_result):
+        event = {
+            "s3_bucket": bucket,
+            "tmp_dir": str(tmp_path),
+            "local_db_path": str(tmp_path / "retrain_promoted.db"),
+            "local_models_dir": str(models_dir),
+            "force": True,
+            "auto_promote": True,
+            "_s3_client": s3,
+        }
+        resp = lambda_retraining_handler(event, None)
+
+    assert resp["statusCode"] == 200
+    body = resp["body"]
+    assert body["status"] == "SUCCESS"
+    assert body["promoted"] is True
+    assert body["challenger_version"] == "challenger_lgb_20261013"
+    assert body["models_synced_count"] > 0
+    assert (bucket, "database/stock_signals.db") in s3.storage
+    assert (bucket, "models/challenger.joblib") in s3.storage
 
 
 def test_build_lambda_zip():

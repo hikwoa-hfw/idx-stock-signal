@@ -1,10 +1,12 @@
+import json
 import logging
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from python.cloud.s3_sync import (
+    _get_s3_client,
     bootstrap_database,
     download_database,
     sync_models_from_s3,
@@ -15,6 +17,7 @@ from python.common.types import SignalConfig
 from python.config.settings import settings
 from python.data.provider import DEFAULT_UNIVERSE, load_universe
 from python.data.repository import DailyBarRepository
+from python.features.engine import FeatureEngine
 from python.features.repository import FeatureRepository
 from python.labels.repository import LabelRepository
 from python.models.registry import ModelRegistry
@@ -70,6 +73,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
         bar_repo = DailyBarRepository(database_url=db_url)
         sig_repo = SignalRepository(database_url=db_url)
         out_repo = OutcomeRepository(database_url=db_url)
+        feat_repo = FeatureRepository(database_url=db_url)
 
         # Step 2: Ingest market bars
         raw_tickers = event.get("tickers")
@@ -79,6 +83,10 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             else None
         )
 
+        start_date_val: Optional[date] = None
+        if event.get("start_date"):
+            start_date_val = datetime.strptime(str(event["start_date"]).strip(), "%Y-%m-%d").date()
+
         ingested_count = 0
         try:
             ingested_count = run_ingest(
@@ -86,6 +94,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                 tickers=tickers_list,
                 db_url=db_url,
                 mode=event.get("ingest_mode", "incremental"),
+                start_date=start_date_val,
                 end_date=target_date,
             )
         except Exception as ingest_err:
@@ -106,15 +115,25 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
         )
         outcomes_count = len(resolved_results)
 
-        # Step 4: Generate daily signals
+        # Step 4: Extract features and generate daily signals
         model_reg = ModelRegistry(registry_dir=local_models_dir)
         sig_cfg = SignalConfig(top_n=top_n)
         sig_engine = SignalEngine(config=sig_cfg, bar_repo=bar_repo, model_registry=model_reg)
 
-
         universe = tickers_list or bar_repo.get_universe() or load_universe() or DEFAULT_UNIVERSE
         bars_by_ticker = {t: bar_repo.get_daily_bars(t) for t in universe}
         bars_by_ticker = {k: v for k, v in bars_by_ticker.items() if v}
+
+        feature_engine = FeatureEngine()
+        computed_features = {}
+        if bars_by_ticker:
+            try:
+                computed_features = feature_engine.compute_universe_features(bars_by_ticker)
+                feat_records = [rec for f_list in computed_features.values() for rec in f_list]
+                if feat_records:
+                    feat_repo.save_features(feat_records)
+            except Exception as feat_err:
+                logger.warning("Feature extraction skipped or error: %s", feat_err)
 
         champ = model_reg.get_champion(task="classification")
         use_champ = champ is not None and not bool(event.get("no_champion", False))
@@ -127,6 +146,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                     universe=universe,
                     use_champion=use_champ,
                     bars_by_ticker=bars_by_ticker,
+                    features_by_ticker=computed_features or None,
                     config=sig_cfg,
                 )
                 if generated_signals:
@@ -168,9 +188,10 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             else:
                 telegram_status = "NO_TOKEN"
 
-        # Step 6: Upload updated SQLite DB to S3
+        # Step 6: Upload updated SQLite DB and execution log to S3
         db_uploaded = False
         upload_meta = {}
+        log_uploaded = False
         if not skip_s3_upload and s3_bucket:
             upload_meta = upload_database(
                 s3_bucket=s3_bucket,
@@ -180,6 +201,30 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             )
             db_uploaded = True
 
+            try:
+                log_client = _get_s3_client(s3_client)
+                ts_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                log_key = f"logs/daily_pipeline_{effective_date}_{ts_str}.json"
+                log_data = json.dumps(
+                    {
+                        "status": "SUCCESS",
+                        "date": str(effective_date),
+                        "bars_ingested": ingested_count,
+                        "outcomes_resolved": outcomes_count,
+                        "signals_generated": len(generated_signals),
+                        "telegram_status": telegram_status,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                    indent=2,
+                )
+                tmp_log_file = tmp_dir / f"daily_pipeline_{ts_str}.json"
+                tmp_log_file.parent.mkdir(parents=True, exist_ok=True)
+                tmp_log_file.write_text(log_data, encoding="utf-8")
+                log_client.upload_file(str(tmp_log_file), s3_bucket, log_key)
+                log_uploaded = True
+            except Exception as log_err:
+                logger.warning("Could not upload execution log to S3: %s", log_err)
+
         summary = {
             "status": "SUCCESS",
             "date": str(effective_date),
@@ -188,6 +233,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             "signals_generated": len(generated_signals),
             "telegram_status": telegram_status,
             "db_uploaded": db_uploaded,
+            "log_uploaded": log_uploaded,
             "s3_bucket": s3_bucket,
             "upload_meta": upload_meta,
         }
@@ -275,22 +321,29 @@ def lambda_retraining_handler(event: dict[str, Any], context: Any = None) -> dic
             dry_run=dry_run,
         )
 
-        # Step 4: If model promoted, sync back to S3
+        # Step 4: If model promoted or challenger trained, sync back to S3
         synced_models: list[str] = []
-        if res.status == "PROMOTED" and not dry_run and s3_bucket:
+        is_promoted = bool(getattr(res, "promoted", False))
+        if is_promoted and not dry_run and s3_bucket:
             synced_models = sync_models_to_s3(s3_bucket, local_models_dir, s3_client=s3_client)
             upload_database(s3_bucket, local_db_path, create_backup=True, s3_client=s3_client)
+        elif (
+            res.status == "SUCCESS"
+            and not dry_run
+            and s3_bucket
+            and getattr(res, "artifact_path", None)
+        ):
+            synced_models = sync_models_to_s3(s3_bucket, local_models_dir, s3_client=s3_client)
 
         summary = {
             "status": res.status,
             "triggered": getattr(res, "triggered", False),
-            "promoted": getattr(res, "promoted", False),
+            "promoted": is_promoted,
             "challenger_version": res.challenger_version,
             "champion_version": res.champion_version,
             "recommendation": res.gate_result.recommendation if res.gate_result else None,
             "models_synced_count": len(synced_models),
         }
-
 
         return {"statusCode": 200, "body": summary}
 

@@ -1,5 +1,6 @@
 import hashlib
 import os
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -66,11 +67,17 @@ def download_database(
     client = _get_s3_client(s3_client)
 
     try:
-        client.head_object(Bucket=s3_bucket, Key=s3_key)
+        head_resp = client.head_object(Bucket=s3_bucket, Key=s3_key)
         client.download_file(s3_bucket, s3_key, str(target_path))
         if not target_path.exists() or target_path.stat().st_size == 0:
             bootstrap_database(target_path)
             return False
+        remote_sha = head_resp.get("Metadata", {}).get("sha256")
+        if remote_sha:
+            local_sha = compute_file_sha256(target_path)
+            if local_sha != remote_sha:
+                bootstrap_database(target_path)
+                return False
         return True
     except ClientError as exc:
         code = str(exc.response.get("Error", {}).get("Code", ""))
@@ -92,6 +99,13 @@ def upload_database(
     if not source_path.is_file():
         raise FileNotFoundError(f"Local database file not found: {source_path}")
 
+    try:
+        conn = sqlite3.connect(str(source_path))
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        conn.close()
+    except Exception:
+        pass
+
     sha256_hash = compute_file_sha256(source_path)
     md5_hash = compute_file_md5(source_path)
     size_bytes = source_path.stat().st_size
@@ -110,6 +124,20 @@ def upload_database(
         s3_key,
         ExtraArgs={"Metadata": metadata},
     )
+
+    try:
+        head_resp = client.head_object(Bucket=s3_bucket, Key=s3_key)
+        remote_meta = head_resp.get("Metadata", {})
+        if remote_meta.get("sha256") and remote_meta.get("sha256") != sha256_hash:
+            raise ValueError(
+                f"S3 upload verification failed: SHA-256 mismatch for s3://{s3_bucket}/{s3_key}"
+            )
+        if "ContentLength" in head_resp and head_resp["ContentLength"] != size_bytes:
+            raise ValueError(
+                f"S3 upload verification failed: size mismatch for s3://{s3_bucket}/{s3_key}"
+            )
+    except ClientError:
+        pass
 
     backup_key = None
     if create_backup:

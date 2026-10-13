@@ -3,6 +3,7 @@ import io
 import json
 import os
 import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Optional
@@ -298,19 +299,36 @@ def deploy_lambda_function(
         func_arn = resp["FunctionArn"]
     else:
         sys.stdout.write(f"[deploy_aws] Creating new Lambda function: {function_name}...\n")
-        resp = lambda_client.create_function(
-            FunctionName=function_name,
-            Runtime="python3.12",
-            Role=role_arn,
-            Handler=handler,
-            Code={"ZipFile": zip_bytes},
-            Timeout=timeout,
-            MemorySize=memory_size,
-            Environment={"Variables": env_vars},
-            EphemeralStorage={"Size": 1024},
-            Description="Serverless pipeline function for BEI Stock Signal AI",
-        )
-        func_arn = resp["FunctionArn"]
+        func_arn = None
+        max_retries = 6
+        for attempt in range(max_retries):
+            try:
+                resp = lambda_client.create_function(
+                    FunctionName=function_name,
+                    Runtime="python3.12",
+                    Role=role_arn,
+                    Handler=handler,
+                    Code={"ZipFile": zip_bytes},
+                    Timeout=timeout,
+                    MemorySize=memory_size,
+                    Environment={"Variables": env_vars},
+                    EphemeralStorage={"Size": 1024},
+                    Description="Serverless pipeline function for BEI Stock Signal AI",
+                )
+                func_arn = resp["FunctionArn"]
+                break
+            except ClientError as exc:
+                err_code = str(exc.response.get("Error", {}).get("Code", ""))
+                err_msg = str(exc)
+                if (
+                    err_code == "InvalidParameterValueException" or "cannot be assumed" in err_msg
+                ) and attempt < max_retries - 1:
+                    sys.stdout.write(
+                        f"[deploy_aws] Waiting IAM role (retry {attempt + 1}/{max_retries})...\n"
+                    )
+                    time.sleep(3)
+                    continue
+                raise
 
     sys.stdout.write(f"[deploy_aws] Deployed Lambda {function_name}: {func_arn}\n")
     return func_arn

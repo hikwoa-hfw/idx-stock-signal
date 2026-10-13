@@ -53,7 +53,7 @@ retrain:
 	$(VENV_PYTHON) -m scripts.retrain_model --auto-promote
 
 deploy:
-	$(VENV_PYTHON) -m scripts.deploy_aws --deploy-lambda
+	$(VENV_PYTHON) -m scripts.deploy_aws
 
 clean:
 	$(VENV_PYTHON) -c "import shutil, pathlib; [shutil.rmtree(p, ignore_errors=True) for p in pathlib.Path('.').rglob('__pycache__')]; [shutil.rmtree(p, ignore_errors=True) for p in pathlib.Path('.').rglob('.pytest_cache')]"

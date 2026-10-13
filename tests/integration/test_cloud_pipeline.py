@@ -44,6 +44,7 @@ def test_end_to_end_cloud_pipeline_cycle(tmp_path: Path):
     assert body_1["status"] == "SUCCESS"
     assert body_1["bars_ingested"] > 0
     assert body_1["db_uploaded"] is True
+    assert body_1["log_uploaded"] is True
     assert body_1["telegram_status"] == "SENT_777"
     assert (bucket_name, s3_key) in s3_mock.storage
 
@@ -56,6 +57,10 @@ def test_end_to_end_cloud_pipeline_cycle(tmp_path: Path):
     cur.execute("SELECT count(*) FROM daily_bars")
     bars_count = cur.fetchone()[0]
     assert bars_count > 0
+
+    cur.execute("SELECT count(*) FROM features_daily")
+    feat_count = cur.fetchone()[0]
+    assert feat_count > 0
 
     cur.execute("SELECT count(*) FROM signals_daily")
     sig_count = cur.fetchone()[0]

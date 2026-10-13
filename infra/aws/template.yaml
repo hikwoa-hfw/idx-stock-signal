@@ -32,6 +32,7 @@ Parameters:
 
 Globals:
   Function:
+    CodeUri: ../..
     Runtime: python3.12
     Timeout: 300
     MemorySize: 1536

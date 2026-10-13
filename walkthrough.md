@@ -96,16 +96,18 @@ Sistem mengadopsi model **AWS Lambda + S3 Database Two-Way Sync + EventBridge Sc
   - Uji download DB saat ada di S3.
   - Uji download DB saat tidak ada di S3 (pemicu bootstrap).
   - Uji upload DB dan pembuatan backup bertanda waktu.
+  - Uji WAL checkpointing sebelum upload (`test_upload_database_wal_checkpoint`).
   - Uji error handling saat file lokal tidak ditemukan.
   - Uji dua arah `sync_models_from_s3` dan `sync_models_to_s3`.
-  - Uji keberhasilan `lambda_daily_pipeline_handler`.
+  - Uji keberhasilan `lambda_daily_pipeline_handler` (termasuk penyimpanan fitur ke `features_daily` dan upload log).
   - Uji penanganan error `lambda_daily_pipeline_handler` (respons status 500).
   - Uji `lambda_retraining_handler` dalam mode skipped.
+  - Uji `lambda_retraining_handler` saat model dipromosikan (`test_lambda_retraining_handler_promoted`).
   - Uji pembentukan zip packaging Lambda.
   - Uji CLI `deploy_aws.py --dry-run`.
   - Uji helper provisioning IAM, S3, Lambda, dan EventBridge.
 - `tests/integration/test_cloud_pipeline.py`:
-  - Siklus end-to-end simulasi eksekusi Lambda: download/bootstrap DB, ingest bar mock, resolve outcome, generate sinyal, siarkan Telegram mock, upload DB ke mock S3, dan verifikasi konsistensi DB pada invokasi berikutnya (warm start).
+  - Siklus end-to-end simulasi eksekusi Lambda: download/bootstrap DB, ingest bar mock, resolve outcome, ekstrak dan simpan fitur ke `features_daily`, generate sinyal, siarkan Telegram mock, upload DB dan log ke mock S3, dan verifikasi konsistensi DB pada invokasi berikutnya (warm start).
 - `tests/unit/test_smoke.py`:
   - Menambahkan verifikasi keberadaan file-file deliverables Phase 12.
 
@@ -124,7 +126,7 @@ Setelah melakukan deployment ke akun AWS target (`436095651956`), pengguna disar
   - Verifikasi di AWS Console / CLI bahwa bucket `idx-stock-signal-436095651956-data` telah terbuat dengan enkripsi AES256 dan versioning aktif.
   - Verifikasi file `configs/universe/seed_universe.csv` telah terunggah ke S3.
 - [ ] **4. Deployment Lambda Functions & EventBridge Schedule**:
-  - Jalankan `make deploy` atau `python -m scripts.deploy_aws --deploy-lambda`.
+  - Jalankan `make deploy` atau `python -m scripts.deploy_aws`.
   - Verifikasi fungsi `idx-daily-pipeline` dan `idx-retraining-pipeline` telah terdaftar di AWS Lambda Console.
   - Verifikasi role `idx-stock-signal-lambda-role` terpasang dengan kebijakan least-privilege ke bucket data.
   - Verifikasi aturan EventBridge `idx-daily-pipeline-schedule` aktif dengan jadwal `cron(30 9 ? * MON-FRI *)` (pukul 16:30 WIB).
@@ -136,5 +138,5 @@ Setelah melakukan deployment ke akun AWS target (`436095651956`), pengguna disar
 - [ ] **7. Verifikasi Backup S3**:
   - Periksa bucket S3 pada prefix `database/backups/` dan pastikan file backup SQLite bertanda waktu tersimpan setelah eksekusi pipeline harian.
 - [ ] **8. Verifikasi Keseluruhan Test Suite Lokal**:
-  - Jalankan `make test` dan pastikan 100% test lulus (318 passed).
+  - Jalankan `make test` dan pastikan 100% test lulus (320 passed).
   - Jalankan `make lint` dan pastikan linter bersih tanpa error (`All checks passed!`).

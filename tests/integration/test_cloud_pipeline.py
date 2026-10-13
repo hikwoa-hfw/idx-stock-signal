@@ -75,6 +75,7 @@ def test_end_to_end_cloud_pipeline_cycle(tmp_path: Path):
         "tmp_dir": str(tmp_path / "second_work"),
         "local_db_path": str(second_work_db),
         "local_models_dir": str(tmp_path / "second_work" / "models"),
+        "date": "2026-10-14",
         "market_provider": "mock",
         "dry_run": False,
         "skip_telegram": True,

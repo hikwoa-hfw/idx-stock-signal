@@ -44,6 +44,18 @@ def mask_sensitive_error(text: str) -> str:
     sanitized = re.sub(r"bot\d{5,}:[A-Za-z0-9_-]{10,}", "bot***:***", sanitized)
     sanitized = re.sub(r"\d{8,}:[A-Za-z0-9_-]{20,}", "***:***", sanitized)
     sanitized = re.sub(r"(AKIA|ASIA)[A-Z0-9]{16}", "AKIA***", sanitized)
+    sanitized = re.sub(
+        r"(aws_secret_access_key\s*[:=]\s*)[A-Za-z0-9/+=]{16,}",
+        r"\1***",
+        sanitized,
+        flags=re.IGNORECASE,
+    )
+    sanitized = re.sub(
+        r"(Bearer\s+)[A-Za-z0-9_\-\.]{10,}",
+        r"\1***",
+        sanitized,
+        flags=re.IGNORECASE,
+    )
     return sanitized
 
 
@@ -166,19 +178,57 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                         Prefix=f"logs/daily_pipeline_{check_date}_",
                     )
                     contents = list_resp.get("Contents", [])
-                    if contents and event.get("strict_duplicate_check", False):
-                        logger.info(
-                            "Pipeline run log exists in S3 for %s. Skipping (force_rerun=False).",
-                            check_date,
-                        )
-                        return {
-                            "statusCode": 200,
-                            "body": {
-                                "status": "SKIPPED_DUPLICATE",
-                                "message": f"Pipeline run log exists in S3 for {check_date}",
-                                "date": str(check_date),
-                            },
-                        }
+                    if contents:
+                        if event.get("strict_duplicate_check", False):
+                            logger.info(
+                                "Pipeline run log exists in S3 for %s (strict). Skipping.",
+                                check_date,
+                            )
+                            return {
+                                "statusCode": 200,
+                                "body": {
+                                    "status": "SKIPPED_DUPLICATE",
+                                    "message": f"Pipeline run log exists in S3 for {check_date}",
+                                    "date": str(check_date),
+                                },
+                            }
+
+                        for obj in contents:
+                            try:
+                                get_resp = s3_c.get_object(Bucket=s3_bucket, Key=obj["Key"])
+                                raw_b = get_resp.get("Body")
+                                if raw_b is not None:
+                                    raw_text = (
+                                        raw_b.read().decode("utf-8")
+                                        if hasattr(raw_b, "read")
+                                        else str(raw_b)
+                                    )
+                                    payload = json.loads(raw_text)
+                                    if payload.get("status") == "SUCCESS":
+                                        logger.info(
+                                            "Pipeline run log indicates prior SUCCESS in S3 "
+                                            "for %s (%s). Skipping.",
+                                            check_date,
+                                            obj["Key"],
+                                        )
+                                        return {
+                                            "statusCode": 200,
+                                            "body": {
+                                                "status": "SKIPPED_DUPLICATE",
+                                                "message": (
+                                                    "Pipeline run log exists in S3 for "
+                                                    f"{check_date}"
+                                                ),
+                                                "date": str(check_date),
+                                                "log_key": obj["Key"],
+                                            },
+                                        }
+                            except Exception as parse_err:
+                                logger.debug(
+                                    "Could not inspect S3 log %s: %s",
+                                    obj.get("Key"),
+                                    parse_err,
+                                )
                 except Exception as s3_err:
                     logger.warning("Could not check duplicate runs in S3: %s", s3_err)
 
@@ -500,6 +550,11 @@ def lambda_retraining_handler(event: dict[str, Any], context: Any = None) -> dic
 
     except Exception as exc:
         logger.exception("Retraining pipeline execution failed")
+        dispatch_failure_alert(
+            error_msg=str(exc),
+            stage="retraining_pipeline",
+            event=event,
+        )
         return {
             "statusCode": 500,
             "body": {

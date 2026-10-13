@@ -401,6 +401,50 @@ def setup_eventbridge_schedule(
             raise
 
 
+def ensure_billing_alarm(
+    cw_client: Any,
+    alarm_name: str,
+    threshold: float = 1.0,
+    dry_run: bool = False,
+) -> bool:
+    if dry_run:
+        sys.stdout.write(
+            f"[DRY-RUN] Ensure CloudWatch Billing Alarm: {alarm_name} "
+            f"(Threshold: ${threshold:.2f} USD)\n"
+        )
+        return True
+
+    sys.stdout.write(
+        f"[deploy_aws] Configuring CloudWatch Billing Alarm: {alarm_name} "
+        f"(Threshold: ${threshold:.2f} USD)...\n"
+    )
+    try:
+        desc = (
+            f"Alarm triggered when estimated AWS monthly charges exceed "
+            f"${threshold:.2f} USD (Free Tier Protection)"
+        )
+        cw_client.put_metric_alarm(
+            AlarmName=alarm_name,
+            AlarmDescription=desc,
+            ActionsEnabled=True,
+            MetricName="EstimatedCharges",
+            Namespace="AWS/Billing",
+            Statistic="Maximum",
+            Dimensions=[{"Name": "Currency", "Value": "USD"}],
+            Period=21600,
+            EvaluationPeriods=1,
+            Threshold=threshold,
+            ComparisonOperator="GreaterThanOrEqualToThreshold",
+        )
+        sys.stdout.write(f"[deploy_aws] Billing alarm configured: {alarm_name}\n")
+        return True
+    except Exception as exc:
+        sys.stderr.write(
+            f"[deploy_aws] Warning: could not configure billing alarm '{alarm_name}': {exc}\n"
+        )
+        return False
+
+
 def invoke_lambda_dry_run(
     lambda_client: Any,
     function_name: str,
@@ -415,6 +459,11 @@ def invoke_lambda_dry_run(
     raw_resp = resp["Payload"].read().decode("utf-8")
     parsed = json.loads(raw_resp)
     sys.stdout.write(f"[deploy_aws] Invocation response: {json.dumps(parsed, indent=2)}\n")
+    if "FunctionError" in resp:
+        sys.stderr.write(
+            f"[deploy_aws] Warning: Lambda invocation returned FunctionError: "
+            f"{resp.get('FunctionError')}\n"
+        )
     return parsed
 
 
@@ -442,6 +491,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--test-invoke",
         action="store_true",
         help="Test invoke daily pipeline Lambda in dry-run mode.",
+    )
+    parser.add_argument(
+        "--deploy-alarm",
+        action="store_true",
+        help="Deploy or update CloudWatch billing alert alarm.",
     )
     parser.add_argument(
         "--bucket",
@@ -490,10 +544,16 @@ def main(argv: Optional[list[str]] = None) -> int:
         else f"{DEFAULT_ROLE_NAME}{stage_suffix}"
     )
 
-    if not args.create_bucket and not args.deploy_lambda and not args.test_invoke:
+    if (
+        not args.create_bucket
+        and not args.deploy_lambda
+        and not args.test_invoke
+        and not args.deploy_alarm
+    ):
         # Default behavior: run full deploy sequence
         args.create_bucket = True
         args.deploy_lambda = True
+        args.deploy_alarm = True
 
     try:
         session = boto3.Session(region_name=region)
@@ -576,7 +636,32 @@ def main(argv: Optional[list[str]] = None) -> int:
                 dry_run=args.dry_run,
             )
 
-        # 3. Test invocation
+        # 3. CloudWatch Billing Metric Alarm
+        if args.deploy_alarm:
+            billing_alarm_name = f"idx-stock-signal-billing-alert-{stage_name}"
+            # AWS Billing metrics only live in us-east-1
+            try:
+                cw_us = session.client("cloudwatch", region_name="us-east-1")
+                ensure_billing_alarm(
+                    cw_us, billing_alarm_name, threshold=1.0, dry_run=args.dry_run
+                )
+            except Exception as cw_err:
+                sys.stderr.write(
+                    f"[deploy_aws] Note: CloudWatch us-east-1 unavailable: {cw_err}\n"
+                )
+
+            if region != "us-east-1":
+                try:
+                    cw_reg = session.client("cloudwatch", region_name=region)
+                    ensure_billing_alarm(
+                        cw_reg, billing_alarm_name, threshold=1.0, dry_run=args.dry_run
+                    )
+                except Exception as cw_err:
+                    sys.stderr.write(
+                        f"[deploy_aws] Note: CloudWatch {region} unavailable: {cw_err}\n"
+                    )
+
+        # 4. Test invocation
         if args.test_invoke:
             invoke_lambda_dry_run(lambda_client, daily_func)
 

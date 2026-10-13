@@ -23,6 +23,7 @@ from python.cloud.s3_sync import (
 from scripts.deploy_aws import (
     build_lambda_zip,
     deploy_lambda_function,
+    ensure_billing_alarm,
     ensure_iam_role,
     ensure_s3_bucket,
     invoke_lambda_dry_run,
@@ -57,6 +58,14 @@ class FakeS3Client:
                 "DownloadFile",
             )
         Path(Filename).write_bytes(self.storage[(Bucket, Key)])
+
+    def get_object(self, Bucket: str, Key: str):
+        if (Bucket, Key) not in self.storage:
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "Key not found"}},
+                "GetObject",
+            )
+        return {"Body": io.BytesIO(self.storage[(Bucket, Key)])}
 
     def upload_file(self, Filename: str, Bucket: str, Key: str, ExtraArgs: dict = None):
         content = Path(Filename).read_bytes()
@@ -588,13 +597,16 @@ def test_deploy_aws_stage_support():
     mock_iam.get_role.return_value = {"Role": {"Arn": "arn:role"}}
     mock_events.put_rule.return_value = {"RuleArn": "arn:rule"}
 
+    mock_cw = MagicMock()
+
     with patch("boto3.Session") as MockSession:
         mock_sess = MagicMock()
-        mock_sess.client.side_effect = lambda svc: {
+        mock_sess.client.side_effect = lambda svc, **kwargs: {
             "s3": mock_s3,
             "iam": mock_iam,
             "lambda": mock_lambda,
             "events": mock_events,
+            "cloudwatch": mock_cw,
         }[svc]
         MockSession.return_value = mock_sess
 
@@ -611,5 +623,87 @@ def test_deploy_aws_stage_support():
         ]
         assert "idx-daily-pipeline-staging" in call_names
         assert "idx-retraining-pipeline-staging" in call_names
+
+
+def test_ensure_billing_alarm():
+    mock_cw = MagicMock()
+    # Dry run
+    res_dry = ensure_billing_alarm(mock_cw, "alarm-dry", threshold=1.0, dry_run=True)
+    assert res_dry is True
+    mock_cw.put_metric_alarm.assert_not_called()
+
+    # Live call
+    res_live = ensure_billing_alarm(mock_cw, "alarm-staging", threshold=1.0, dry_run=False)
+    assert res_live is True
+    mock_cw.put_metric_alarm.assert_called_once()
+    _, kwargs = mock_cw.put_metric_alarm.call_args
+    assert kwargs["AlarmName"] == "alarm-staging"
+    assert kwargs["MetricName"] == "EstimatedCharges"
+    assert kwargs["Namespace"] == "AWS/Billing"
+    assert kwargs["Threshold"] == 1.0
+
+
+def test_duplicate_run_protection_job_recovery_vs_duplicate(tmp_path: Path):
+    s3 = FakeS3Client()
+    bucket = "idx-test-recovery"
+
+    # 1. Previous run was FAILED -> job recovery should proceed (NOT skipped)
+    s3.storage[(bucket, "logs/daily_pipeline_2026-10-13_110000.json")] = (
+        b'{"status": "FAILED", "error": "Timeout"}'
+    )
+    event = {
+        "s3_bucket": bucket,
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "recovery.db"),
+        "date": "2026-10-13",
+        "force_rerun": False,
+        "market_provider": "mock",
+        "dry_run": True,
+        "skip_telegram": True,
+        "skip_s3_upload": True,
+        "_s3_client": s3,
+    }
+    resp_recovery = lambda_daily_pipeline_handler(event, None)
+    assert resp_recovery["statusCode"] == 200
+    assert resp_recovery["body"]["status"] == "SUCCESS"
+
+    # 2. Previous run was SUCCESS -> must skip as duplicate
+    s3.storage[(bucket, "logs/daily_pipeline_2026-10-13_120000.json")] = (
+        b'{"status": "SUCCESS"}'
+    )
+    resp_dup = lambda_daily_pipeline_handler(event, None)
+    assert resp_dup["statusCode"] == 200
+    assert resp_dup["body"]["status"] == "SKIPPED_DUPLICATE"
+
+    # 3. With force_rerun=True -> must execute despite SUCCESS
+    event_force = dict(event)
+    event_force["force_rerun"] = True
+    resp_forced = lambda_daily_pipeline_handler(event_force, None)
+    assert resp_forced["statusCode"] == 200
+    assert resp_forced["body"]["status"] == "SUCCESS"
+
+
+def test_lambda_retraining_handler_failure_alert(tmp_path: Path):
+    with patch("python.cloud.handlers.RetrainingPipeline") as MockPipe, \
+         patch("python.cloud.handlers.dispatch_failure_alert") as mock_alert:
+        mock_instance = MagicMock()
+        mock_instance.run.side_effect = RuntimeError("GPU out of memory")
+        MockPipe.return_value = mock_instance
+
+        event = {
+            "s3_bucket": None,
+            "tmp_dir": str(tmp_path),
+            "local_db_path": str(tmp_path / "retrain_fail.db"),
+            "local_models_dir": str(tmp_path / "models"),
+            "dry_run": False,
+            "skip_telegram": False,
+        }
+        resp = lambda_retraining_handler(event, None)
+        assert resp["statusCode"] == 500
+        assert resp["body"]["status"] == "FAILED"
+        mock_alert.assert_called_once()
+        _, kwargs = mock_alert.call_args
+        assert kwargs["stage"] == "retraining_pipeline"
+        assert "GPU out of memory" in kwargs["error_msg"]
 
 

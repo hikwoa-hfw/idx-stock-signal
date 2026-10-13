@@ -28,6 +28,14 @@ def compute_calibration_bins(
     """Calculates ECE and returns uniform reliability bin details."""
     yt = np.asarray(y_true, dtype=np.float64)
     yp = np.clip(np.asarray(y_prob, dtype=np.float64), 0.0, 1.0)
+    if len(yt) != len(yp):
+        raise ValueError(f"y_true ({len(yt)}) and y_prob ({len(yp)}) must have identical lengths")
+    if len(yt) == 0:
+        return 0.0, []
+
+    valid = np.isfinite(yt) & np.isfinite(yp)
+    yt = yt[valid]
+    yp = yp[valid]
     if len(yt) == 0:
         return 0.0, []
 
@@ -74,7 +82,8 @@ def compute_trading_metrics(
     outcome_statuses: Optional[list[str]] = None,
 ) -> TradingMetrics:
     """Computes trading performance metrics from out-of-sample trade returns."""
-    r_arr = np.asarray(returns, dtype=np.float64)
+    raw_list = [r if r is not None and math.isfinite(r) else 0.0 for r in returns]
+    r_arr = np.asarray(raw_list, dtype=np.float64)
     n = len(r_arr)
     if n == 0:
         return TradingMetrics()
@@ -96,9 +105,9 @@ def compute_trading_metrics(
 
     expectancy = float(np.mean(r_arr))
 
-    # Compounded equity path for max drawdown calculation
+    # Compounded equity path starting at 1.0 capital for accurate max drawdown
     clipped_returns = np.maximum(r_arr, -0.9999)
-    equity_curve = np.cumprod(1.0 + clipped_returns)
+    equity_curve = np.insert(np.cumprod(1.0 + clipped_returns), 0, 1.0)
     peak = np.maximum.accumulate(equity_curve)
     drawdowns = (peak - equity_curve) / peak
     max_drawdown = float(np.max(drawdowns)) if len(drawdowns) > 0 else 0.0
@@ -154,6 +163,11 @@ class EvaluationEngine:
         yt = np.asarray(y_true, dtype=np.float64)
         yp = np.asarray(y_prob, dtype=np.float64)
 
+        if len(yt) != len(yp):
+            raise ValueError(
+                f"y_true ({len(yt)}) and y_prob ({len(yp)}) must have identical lengths"
+            )
+
         if len(yt) == 0:
             return PredictionMetrics(), []
 
@@ -182,6 +196,7 @@ class EvaluationEngine:
         target_col: str = "binary_target",
         status_col: str = "outcome_status",
         evaluation_date: Optional[date] = None,
+        filter_model_version: bool = True,
     ) -> EvaluationReport:
         """Evaluates an outcome or validation DataFrame."""
         if df.empty:
@@ -192,22 +207,28 @@ class EvaluationEngine:
                 sample_size=0,
             )
 
+        data = df
+        if filter_model_version and "model_version" in df.columns:
+            matched = df[df["model_version"] == model_version]
+            if not matched.empty:
+                data = matched
+
         y_true = (
-            df[target_col].to_numpy(dtype=np.float64)
-            if target_col in df.columns
+            data[target_col].to_numpy(dtype=np.float64)
+            if target_col in data.columns
             else np.array([])
         )
         y_prob = (
-            df[prob_col].to_numpy(dtype=np.float64)
-            if prob_col in df.columns
+            data[prob_col].to_numpy(dtype=np.float64)
+            if prob_col in data.columns
             else np.array([])
         )
         returns = (
-            df[return_col].to_numpy(dtype=np.float64)
-            if return_col in df.columns
+            data[return_col].to_numpy(dtype=np.float64)
+            if return_col in data.columns
             else np.array([])
         )
-        statuses = df[status_col].tolist() if status_col in df.columns else None
+        statuses = data[status_col].tolist() if status_col in data.columns else None
 
         pred_metrics, cal_bins = (
             self.evaluate_predictions(y_true, y_prob)
@@ -220,7 +241,7 @@ class EvaluationEngine:
             model_version=model_version,
             evaluation_date=evaluation_date or date.today(),
             dataset_version=dataset_version,
-            sample_size=len(df),
+            sample_size=len(data),
             trading_metrics=trade_metrics,
             prediction_metrics=pred_metrics,
             calibration_bins=cal_bins,
@@ -238,6 +259,8 @@ class EvaluationEngine:
         outcome_statuses: Optional[list[str]] = None,
         feature_names: Optional[list[str]] = None,
         evaluation_date: Optional[date] = None,
+        filter_by_prediction: bool = False,
+        decision_threshold: Optional[float] = None,
     ) -> EvaluationReport:
         """Runs model inference on feature matrix X and evaluates metrics."""
         if len(X) == 0:
@@ -261,7 +284,19 @@ class EvaluationEngine:
             )
 
         pred_metrics, cal_bins = self.evaluate_predictions(y_true, y_prob)
-        trade_metrics = compute_trading_metrics(returns, outcome_statuses=outcome_statuses)
+
+        if filter_by_prediction:
+            thresh = decision_threshold if decision_threshold is not None else self.threshold
+            mask = y_prob >= thresh
+            trade_returns = returns[mask] if len(returns) == len(mask) else returns
+            trade_statuses = (
+                [s for s, m in zip(outcome_statuses, mask, strict=False) if m]
+                if outcome_statuses is not None and len(outcome_statuses) == len(mask)
+                else outcome_statuses
+            )
+            trade_metrics = compute_trading_metrics(trade_returns, outcome_statuses=trade_statuses)
+        else:
+            trade_metrics = compute_trading_metrics(returns, outcome_statuses=outcome_statuses)
 
         return EvaluationReport(
             model_version=model_version,

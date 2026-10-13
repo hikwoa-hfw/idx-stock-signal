@@ -314,16 +314,146 @@ def test_format_comparison_outputs():
         prediction_metrics=PredictionMetrics(brier_score=0.17, roc_auc=0.68),
     )
     comparator = ModelComparator(config=PromotionGateConfig(min_sample_size=50))
-    report = comparator.compare_reports(champ, chall)
+    report = comparator.compare_reports(
+        champ,
+        chall,
+        test_window={"start": "2026-01-01", "end": "2026-06-30"},
+    )
 
     tbl = format_comparison_table(report)
     assert "MODEL COMPARISON" in tbl
     assert "Profit Factor" in tbl
     assert "RECOMMENDATION: PROMOTE" in tbl
+    assert "2026-01-01 to 2026-06-30" in tbl
 
     md = format_comparison_markdown(report)
     assert "## Model Evaluation Comparison" in md
     assert "| **Profit Factor** |" in md
+    assert "2026-01-01 to 2026-06-30" in md
 
     js = format_comparison_json(report)
     assert '"recommendation": "PROMOTE"' in js
+    assert "avg_win_delta" in report.delta_metrics
+    assert "avg_loss_delta" in report.delta_metrics
+
+
+def test_compute_trading_metrics_single_loss_drawdown():
+    # Single loss from initial capital 1.0 must register 5% drawdown
+    metrics = compute_trading_metrics([-0.05])
+    assert metrics.max_drawdown == pytest.approx(0.05, abs=1e-4)
+
+    # Two consecutive 5% losses: equity path 1.0 -> 0.95 -> 0.9025 => 9.75% drawdown
+    metrics_2 = compute_trading_metrics([-0.05, -0.05])
+    assert metrics_2.max_drawdown == pytest.approx(0.0975, abs=1e-4)
+
+
+def test_compute_trading_metrics_non_finite_inputs():
+    metrics = compute_trading_metrics([0.05, None, float("nan"), -0.02])
+    assert metrics.total_trades == 4
+    assert metrics.win_rate == 0.25
+    assert math.isfinite(metrics.expectancy)
+    assert math.isfinite(metrics.max_drawdown)
+
+
+def test_compute_calibration_bins_length_mismatch():
+    with pytest.raises(ValueError, match="identical lengths"):
+        compute_calibration_bins([1, 0, 1], [0.8, 0.2])
+
+
+def test_evaluation_engine_evaluate_predictions_length_mismatch():
+    engine = EvaluationEngine()
+    with pytest.raises(ValueError, match="identical lengths"):
+        engine.evaluate_predictions([1, 0], [0.5])
+
+
+def test_evaluation_engine_evaluate_dataset_model_version_filtering():
+    engine = EvaluationEngine()
+    df = pd.DataFrame(
+        {
+            "model_version": ["champ_v1", "champ_v1", "chall_v2", "chall_v2"],
+            "binary_target": [1, 0, 1, 1],
+            "predicted_probability": [0.8, 0.3, 0.9, 0.85],
+            "realized_return": [0.05, -0.02, 0.05, 0.04],
+            "outcome_status": ["TP", "SL", "TP", "TP"],
+        }
+    )
+
+    champ_rep = engine.evaluate_dataset(df, model_version="champ_v1")
+    assert champ_rep.sample_size == 2
+    assert champ_rep.trading_metrics.win_rate == 0.50
+
+    chall_rep = engine.evaluate_dataset(df, model_version="chall_v2")
+    assert chall_rep.sample_size == 2
+    assert chall_rep.trading_metrics.win_rate == 1.00
+
+
+def test_evaluation_engine_evaluate_model_prediction_filtering():
+    engine = EvaluationEngine(decision_threshold=0.6)
+
+    class StubModel:
+        def predict_proba(self, X):
+            # Row 0: prob 0.8 (takes trade)
+            # Row 1: prob 0.4 (skips trade)
+            return np.array([[0.2, 0.8], [0.6, 0.4]])
+
+    X = pd.DataFrame({"feat": [1.0, 2.0]})
+    y_true = np.array([1, 0])
+    returns = np.array([0.05, -0.03])
+    statuses = ["TP", "SL"]
+
+    # Without filter: both trades counted (win_rate 0.5)
+    rep_all = engine.evaluate_model(
+        model=StubModel(),
+        X=X,
+        y_true=y_true,
+        returns=returns,
+        model_version="stub_v1",
+        outcome_statuses=statuses,
+        filter_by_prediction=False,
+    )
+    assert rep_all.trading_metrics.total_trades == 2
+    assert rep_all.trading_metrics.win_rate == 0.50
+
+    # With filter: only signaled trade counted (win_rate 1.0)
+    rep_filtered = engine.evaluate_model(
+        model=StubModel(),
+        X=X,
+        y_true=y_true,
+        returns=returns,
+        model_version="stub_v1",
+        outcome_statuses=statuses,
+        filter_by_prediction=True,
+    )
+    assert rep_filtered.trading_metrics.total_trades == 1
+    assert rep_filtered.trading_metrics.win_rate == 1.00
+    assert rep_filtered.trading_metrics.max_drawdown == 0.0
+
+
+def test_model_comparator_floating_point_tolerance():
+    comparator = ModelComparator(
+        config=PromotionGateConfig(
+            min_sample_size=30,
+            min_profit_factor_improvement=0.05,
+            max_brier_worsening=0.0,
+            max_drawdown_increase=0.0,
+        )
+    )
+    champ = EvaluationReport(
+        model_version="c1",
+        sample_size=50,
+        trading_metrics=TradingMetrics(profit_factor=1.50, max_drawdown=0.08, expectancy=0.02),
+        prediction_metrics=PredictionMetrics(brier_score=0.18000000000000002),
+    )
+    # Challenger has identical brier score and drawdown subject to floating point representation
+    chall = EvaluationReport(
+        model_version="c2",
+        sample_size=50,
+        trading_metrics=TradingMetrics(
+            profit_factor=1.60,
+            max_drawdown=0.08000000000000002,
+            expectancy=0.02,
+        ),
+        prediction_metrics=PredictionMetrics(brier_score=0.18),
+    )
+    report = comparator.compare_reports(champ, chall)
+    assert report.recommendation == ComparisonRecommendation.PROMOTE.value

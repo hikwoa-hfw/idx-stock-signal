@@ -99,6 +99,17 @@ def main() -> None:
         help="Output presentation format.",
     )
     parser.add_argument(
+        "--filter-by-prediction",
+        action="store_true",
+        help="Only evaluate trades where predicted probability >= threshold.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="Probability decision threshold for trade filtering (default: 0.5).",
+    )
+    parser.add_argument(
         "--save-report",
         type=str,
         default=None,
@@ -198,6 +209,8 @@ def main() -> None:
                 y_test=y_test,
                 returns_test=ret_test,
                 outcome_statuses=statuses,
+                filter_by_prediction=args.filter_by_prediction,
+                decision_threshold=args.threshold,
             )
         else:
             # Evaluate using dataframe predictions if models are not registry artifacts
@@ -245,6 +258,29 @@ def main() -> None:
             import json
 
             out_str = json.dumps(rep.to_dict(), indent=2)
+        elif args.output_format == "markdown":
+            t = rep.trading_metrics
+            p = rep.prediction_metrics
+            md_lines = [
+                f"## Model Evaluation Report: `{rep.model_version}`",
+                "",
+                f"- **Sample Size**: {rep.sample_size}",
+                "",
+                "| Metric | Value |",
+                "|---|---|",
+                f"| **Win Rate** | {t.win_rate:.2%} |",
+                f"| **Profit Factor** | {t.profit_factor:.2f} |",
+                f"| **Expectancy** | {t.expectancy:.2%} |",
+                f"| **Max Drawdown** | {t.max_drawdown:.2%} |",
+                f"| **Sharpe Ratio** | {t.sharpe:.2f} |",
+                f"| **Avg Win** | {t.avg_win:.2%} |",
+                f"| **Avg Loss** | {t.avg_loss:.2%} |",
+                f"| **Brier Score** | {p.brier_score:.4f} |",
+                f"| **ROC-AUC** | {p.roc_auc:.4f} |",
+                f"| **Log Loss** | {p.log_loss:.4f} |",
+                f"| **ECE** | {p.ece:.4f} |",
+            ]
+            out_str = "\n".join(md_lines)
         else:
             t = rep.trading_metrics
             p = rep.prediction_metrics
@@ -252,12 +288,14 @@ def main() -> None:
                 "=" * 70,
                 f"MODEL EVALUATION REPORT: {rep.model_version}",
                 "=" * 70,
-                f"Sample Size: {rep.sample_size}",
+                f"Sample Size:  {rep.sample_size}",
                 f"Win Rate:     {t.win_rate:.2%}",
                 f"Profit Factor:{t.profit_factor:.2f}",
                 f"Expectancy:   {t.expectancy:.2%}",
                 f"Max Drawdown: {t.max_drawdown:.2%}",
                 f"Sharpe Ratio: {t.sharpe:.2f}",
+                f"Avg Win:      {t.avg_win:.2%}",
+                f"Avg Loss:     {t.avg_loss:.2%}",
                 f"Brier Score:  {p.brier_score:.4f}",
                 f"ROC-AUC:      {p.roc_auc:.4f}",
                 f"Log Loss:     {p.log_loss:.4f}",

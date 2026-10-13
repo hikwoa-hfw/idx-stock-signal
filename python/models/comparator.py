@@ -55,6 +55,8 @@ class ModelComparator:
             "expectancy_delta": round(chall_t.expectancy - champ_t.expectancy, 4),
             "max_drawdown_delta": round(chall_t.max_drawdown - champ_t.max_drawdown, 4),
             "sharpe_delta": round(chall_t.sharpe - champ_t.sharpe, 4),
+            "avg_win_delta": round(chall_t.avg_win - champ_t.avg_win, 4),
+            "avg_loss_delta": round(chall_t.avg_loss - champ_t.avg_loss, 4),
             "brier_score_delta": round(chall_p.brier_score - champ_p.brier_score, 4),
             "log_loss_delta": round(chall_p.log_loss - champ_p.log_loss, 4),
             "roc_auc_delta": round(chall_p.roc_auc - champ_p.roc_auc, 4),
@@ -80,8 +82,8 @@ class ModelComparator:
                 rationale=rationale,
             )
 
-        # Rule 1: Profit factor improvement
-        pf_pass = (pf_chall - pf_champ) >= self.config.min_profit_factor_improvement
+        # Rule 1: Profit factor improvement (with float epsilon protection)
+        pf_pass = (pf_chall - pf_champ) >= (self.config.min_profit_factor_improvement - 1e-9)
         if pf_pass:
             rationale.append(
                 f"Profit Factor improved: {pf_chall:.2f} vs {pf_champ:.2f} "
@@ -96,7 +98,9 @@ class ModelComparator:
             )
 
         # Rule 2: Brier score must not worsen (lower or equal is better)
-        brier_pass = (chall_p.brier_score - champ_p.brier_score) <= self.config.max_brier_worsening
+        brier_pass = (
+            chall_p.brier_score - champ_p.brier_score
+        ) <= (self.config.max_brier_worsening + 1e-9)
         if brier_pass:
             rationale.append(
                 f"Brier Score acceptable: {chall_p.brier_score:.4f} vs {champ_p.brier_score:.4f} "
@@ -113,7 +117,7 @@ class ModelComparator:
         # Rule 3: Max drawdown must not worsen beyond tolerance
         dd_pass = (
             chall_t.max_drawdown - champ_t.max_drawdown
-        ) <= self.config.max_drawdown_increase
+        ) <= (self.config.max_drawdown_increase + 1e-9)
         if dd_pass:
             rationale.append(
                 f"Drawdown within tolerance: {chall_t.max_drawdown:.2%} vs "
@@ -129,7 +133,7 @@ class ModelComparator:
         # Rule 4: Expectancy must not decrease
         exp_pass = (
             chall_t.expectancy - champ_t.expectancy
-        ) >= self.config.min_expectancy_improvement
+        ) >= (self.config.min_expectancy_improvement - 1e-9)
         if exp_pass:
             rationale.append(
                 f"Expectancy acceptable: {chall_t.expectancy:.2%} vs {champ_t.expectancy:.2%} "
@@ -186,6 +190,8 @@ class ModelComparator:
         outcome_statuses: Optional[list[str]] = None,
         feature_names: Optional[list[str]] = None,
         test_window: Union[str, dict[str, Optional[str]]] = "",
+        filter_by_prediction: bool = False,
+        decision_threshold: Optional[float] = None,
     ) -> ComparisonReport:
         """Evaluates two model objects synchronously on test data and compares outcomes."""
         champ_report = self.engine.evaluate_model(
@@ -197,6 +203,8 @@ class ModelComparator:
             dataset_version=dataset_version,
             outcome_statuses=outcome_statuses,
             feature_names=feature_names,
+            filter_by_prediction=filter_by_prediction,
+            decision_threshold=decision_threshold,
         )
         chall_report = self.engine.evaluate_model(
             model=challenger_model,
@@ -207,6 +215,8 @@ class ModelComparator:
             dataset_version=dataset_version,
             outcome_statuses=outcome_statuses,
             feature_names=feature_names,
+            filter_by_prediction=filter_by_prediction,
+            decision_threshold=decision_threshold,
         )
 
         return self.compare_reports(
@@ -226,6 +236,8 @@ class ModelComparator:
         outcome_statuses: Optional[list[str]] = None,
         dataset_version: str = "v1.0.0",
         test_window: Union[str, dict[str, Optional[str]]] = "",
+        filter_by_prediction: bool = False,
+        decision_threshold: Optional[float] = None,
     ) -> ComparisonReport:
         """Loads models from ModelRegistry and runs identical evaluation & comparison."""
         champ_obj, champ_meta = registry.load_model(champion_version)
@@ -243,6 +255,8 @@ class ModelComparator:
             dataset_version=dataset_version,
             outcome_statuses=outcome_statuses,
             feature_names=champ_features,
+            filter_by_prediction=filter_by_prediction,
+            decision_threshold=decision_threshold,
         )
         chall_report = self.engine.evaluate_model(
             model=chall_obj,
@@ -253,6 +267,8 @@ class ModelComparator:
             dataset_version=dataset_version,
             outcome_statuses=outcome_statuses,
             feature_names=chall_features,
+            filter_by_prediction=filter_by_prediction,
+            decision_threshold=decision_threshold,
         )
 
         return self.compare_reports(
@@ -260,6 +276,14 @@ class ModelComparator:
             challenger_report=chall_report,
             test_window=test_window,
         )
+
+
+def _format_window_str(test_window: Union[str, dict[str, Optional[str]]]) -> str:
+    if isinstance(test_window, dict):
+        start = test_window.get("start") or "start"
+        end = test_window.get("end") or "end"
+        return f"{start} to {end}"
+    return str(test_window) if test_window else "Full Test Dataset"
 
 
 def format_comparison_table(report: ComparisonReport) -> str:
@@ -272,13 +296,14 @@ def format_comparison_table(report: ComparisonReport) -> str:
 
     s_champ = report.champion_metrics.sample_size
     s_chall = report.challenger_metrics.sample_size
+    window_str = _format_window_str(report.test_window)
 
     lines = [
         "=" * 78,
         f"MODEL COMPARISON: {report.champion_version} (Champ) vs "
         f"{report.challenger_version} (Challenger)",
         "=" * 78,
-        f"Test Window: {report.test_window or 'Full Test Dataset'}",
+        f"Test Window: {window_str}",
         f"Sample Size: Champion={s_champ}, Challenger={s_chall}",
         "-" * 78,
         f"{'Metric':<26} | {'Champion':<14} | {'Challenger':<14} | {'Delta':<14}",
@@ -302,6 +327,14 @@ def format_comparison_table(report: ComparisonReport) -> str:
         (
             f"{'Sharpe Ratio':<26} | {c_t.sharpe:<14.2f} | "
             f"{ch_t.sharpe:<14.2f} | {d.get('sharpe_delta', 0.0):<+14.2f}"
+        ),
+        (
+            f"{'Avg Win':<26} | {c_t.avg_win:<14.2%} | "
+            f"{ch_t.avg_win:<14.2%} | {d.get('avg_win_delta', 0.0):<+14.2%}"
+        ),
+        (
+            f"{'Avg Loss':<26} | {c_t.avg_loss:<14.2%} | "
+            f"{ch_t.avg_loss:<14.2%} | {d.get('avg_loss_delta', 0.0):<+14.2%}"
         ),
         (
             f"{'Brier Score (lower)':<26} | {c_p.brier_score:<14.4f} | "
@@ -337,12 +370,13 @@ def format_comparison_markdown(report: ComparisonReport) -> str:
     ch_t = report.challenger_metrics.trading_metrics
     ch_p = report.challenger_metrics.prediction_metrics
     d = report.delta_metrics
+    window_str = _format_window_str(report.test_window)
 
     md = [
         f"## Model Evaluation Comparison: `{report.champion_version}` vs "
         f"`{report.challenger_version}`",
         "",
-        f"- **Test Window**: {report.test_window or 'Full Test Dataset'}",
+        f"- **Test Window**: {window_str}",
         (
             f"- **Sample Size**: Champion={report.champion_metrics.sample_size}, "
             f"Challenger={report.challenger_metrics.sample_size}"
@@ -361,6 +395,10 @@ def format_comparison_markdown(report: ComparisonReport) -> str:
         f"{d.get('max_drawdown_delta', 0.0):+.2%} |",
         f"| **Sharpe Ratio** | {c_t.sharpe:.2f} | {ch_t.sharpe:.2f} | "
         f"{d.get('sharpe_delta', 0.0):+.2f} |",
+        f"| **Avg Win** | {c_t.avg_win:.2%} | {ch_t.avg_win:.2%} | "
+        f"{d.get('avg_win_delta', 0.0):+.2%} |",
+        f"| **Avg Loss** | {c_t.avg_loss:.2%} | {ch_t.avg_loss:.2%} | "
+        f"{d.get('avg_loss_delta', 0.0):+.2%} |",
         f"| **Brier Score** | {c_p.brier_score:.4f} | {ch_p.brier_score:.4f} | "
         f"{d.get('brier_score_delta', 0.0):+.4f} |",
         f"| **ROC-AUC** | {c_p.roc_auc:.4f} | {ch_p.roc_auc:.4f} | "

@@ -73,7 +73,7 @@ Adjust parameters in `.env` as needed.
 
 ### 4. Run Tests & Lint
 ```bash
-# Full test suite (250 tests)
+# Full test suite (281 tests)
 pytest
 
 # Code linter

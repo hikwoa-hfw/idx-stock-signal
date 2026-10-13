@@ -363,4 +363,23 @@ Log Perubahan Tambahan (13 Oktober 2026)
    5. Membangun CLI tool `scripts/evaluate_models.py` dengan opsi `--champion-version`, `--challenger-version`, `--dataset-path`, `--from-outcomes`, `--output-format`, `--save-report`, `--min-sample-size`, `--promote-if-passed`, dan menambahkan target `evaluate` pada `Makefile`.
    6. Menulis pengujian unit dan integrasi komprehensif (`tests/unit/test_evaluation.py`, `tests/integration/test_evaluation_pipeline.py`, pembaruan `test_smoke.py` dan `test_types.py`).
 
+24. Skeptical Review & Audit Perbaikan Phase 10 (Model Evaluation & Comparator)
+   Masalah:
+   1. Perhitungan Max Drawdown di `compute_trading_metrics` tidak menyertakan modal awal 1.0 pada kurva ekuitas (`np.cumprod(1.0 + clipped_returns)`), sehingga peak pertama diinisialisasi pada ekuitas pasca trade pertama (`0.95`). Akibatnya, trade rugi pertama dari modal awal menghasilkan drawdown 0.0% dan kerugian beruntun menghasilkan nilai drawdown yang jauh lebih rendah dari nilai sesungguhnya.
+   2. Input return non-finite/null pada `compute_trading_metrics` dan panjang array tidak seimbang pada `compute_calibration_bins` / `evaluate_predictions` tidak divalidasi, memicu polusi `NaN` pada metrik atau error `IndexError` numpy yang tidak tertangani.
+   3. `evaluate_dataset` pada `EvaluationEngine` dan CLI script `scripts/evaluate_models.py` tidak memfilter subset baris berdasarkan `model_version`, sehingga saat mengevaluasi dataset outcomes multi-model (Champion dan Challenger dalam 1 tabel), kedua model mengevaluasi data gabungan yang identik dan menghasilkan delta 0.
+   4. `evaluate_model` dan `compare_from_registry` tidak mendukung penyaringan trade berdasarkan probabilitas sinyal (`filter_by_prediction`), sehingga metrik trading selalu mengevaluasi seluruh kandidat peluang tanpa memedulikan apakah model menghasilkan sinyal BUY (`prob >= threshold`) atau tidak.
+   5. Perbandingan gerbang promosi di `ModelComparator` tidak memiliki toleransi floating-point epsilon (`1e-9`), berisiko memicu penolakan palsu (false reject) akibat ketidakakuratan representasi IEEE-754 pada drawdown dan Brier score yang identik.
+   6. Parameter `test_window` berbentuk dictionary ditampilkan sebagai string representasi objek raw Python `{...}` pada tabel perbandingan dan markdown report.
+   7. Metrik delta pada `ComparisonReport` belum menyertakan `avg_win_delta` dan `avg_loss_delta`.
+   Solusi:
+   1. Memperbaiki perhitungan max drawdown dengan menyisipkan modal awal `1.0` di indeks 0 (`np.insert(..., 0, 1.0)`) sehingga penarikan modal dari trade pertama hingga beruntun terhitung dengan akurat (single loss -5% menghasilkan 5.0% drawdown, two losses -5% menghasilkan 9.75% drawdown).
+   2. Menambahkan sanitasi nilai non-finite/null menjadi `0.0` pada `compute_trading_metrics`, serta validasi eksplisit `len(y_true) != len(y_prob)` dengan `ValueError` pada `compute_calibration_bins` dan `evaluate_predictions`.
+   3. Menambahkan opsi `filter_model_version` pada `evaluate_dataset` yang mengisolasi record sesuai `model_version` target jika kolom tersebut ada pada DataFrame, sehingga evaluasi outcome multi-model berjalan presisi.
+   4. Menambahkan parameter `filter_by_prediction` dan `decision_threshold` pada `evaluate_model`, `compare_models`, `compare_from_registry`, serta argumen CLI `--filter-by-prediction` dan `--threshold` pada `scripts/evaluate_models.py`.
+   5. Menambahkan proteksi toleransi floating-point `1e-9` pada aturan gerbang keputusan `ModelComparator` (Profit Factor, Brier Score, Max Drawdown, Expectancy).
+   6. Menambahkan helper `_format_window_str` untuk memformat `test_window` dictionary menjadi format bersih `"start to end"`.
+   7. Menambahkan `avg_win_delta` dan `avg_loss_delta` pada `delta_metrics` `ComparisonReport` serta kolom Avg Win & Avg Loss pada tabel ASCII, Markdown report, dan single model Markdown CLI.
+   8. Menambahkan 9 pengujian baru di `tests/unit/test_evaluation.py` dan `tests/integration/test_evaluation_pipeline.py` (total 281 tests passed, 100% kelulusan, ruff clean, zero regresi).
+
 

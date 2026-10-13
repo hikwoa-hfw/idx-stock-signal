@@ -185,3 +185,99 @@ def test_evaluate_models_cli_single_model(tmp_path: Path):
     parsed = json.loads(res.stdout)
     assert parsed["model_version"] == "test_champ"
     assert parsed["sample_size"] == 5
+
+
+def test_evaluate_models_cli_multi_model_outcomes(tmp_path: Path):
+    dataset_path = tmp_path / "multi_model_outcomes.csv"
+    report_path = tmp_path / "comparison_multi.md"
+
+    # 25 outcomes for champ (moderate performance), 25 outcomes for chall (superior performance)
+    champ_rows = [
+        {
+            "ticker": "BBCA",
+            "model_version": "champ_v1",
+            "binary_target": 1 if i % 2 == 0 else 0,
+            "realized_return": 0.03 if i % 2 == 0 else -0.02,
+            "predicted_probability": 0.60 if i % 2 == 0 else 0.40,
+            "outcome_status": "TP" if i % 2 == 0 else "SL",
+        }
+        for i in range(25)
+    ]
+    chall_rows = [
+        {
+            "ticker": "BBCA",
+            "model_version": "chall_v2",
+            "binary_target": 1 if i % 3 != 0 else 0,
+            "realized_return": 0.05 if i % 3 != 0 else -0.01,
+            "predicted_probability": 0.85 if i % 3 != 0 else 0.15,
+            "outcome_status": "TP" if i % 3 != 0 else "SL",
+        }
+        for i in range(25)
+    ]
+    df = pd.DataFrame(champ_rows + chall_rows)
+    df.to_csv(dataset_path, index=False)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "scripts.evaluate_models",
+        "--champion-version",
+        "champ_v1",
+        "--challenger-version",
+        "chall_v2",
+        "--dataset-path",
+        str(dataset_path),
+        "--output-format",
+        "markdown",
+        "--save-report",
+        str(report_path),
+        "--min-sample-size",
+        "20",
+    ]
+
+    res = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"CLI error: {res.stderr}"
+    assert "Model Evaluation Comparison" in res.stdout
+    # Challenger has better PF and lower Brier score, must be PROMOTE
+    assert "**PROMOTE**" in res.stdout
+    assert report_path.is_file()
+
+
+def test_evaluate_models_cli_single_model_markdown(tmp_path: Path):
+    dataset_path = tmp_path / "test_outcomes.csv"
+    df = pd.DataFrame(
+        {
+            "binary_target": [1, 0, 1],
+            "realized_return": [0.05, -0.02, 0.04],
+            "predicted_probability": [0.8, 0.2, 0.7],
+            "outcome_status": ["TP", "SL", "TP"],
+        }
+    )
+    df.to_csv(dataset_path, index=False)
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "scripts.evaluate_models",
+        "--champion-version",
+        "test_single_md",
+        "--dataset-path",
+        str(dataset_path),
+        "--output-format",
+        "markdown",
+    ]
+
+    res = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0, f"CLI error: {res.stderr}"
+    assert "## Model Evaluation Report: `test_single_md`" in res.stdout
+    assert "| **Win Rate** |" in res.stdout

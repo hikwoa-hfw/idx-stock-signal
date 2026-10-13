@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Optional
 
-from python.common.types import PositionRecord
+from python.common.types import PositionRecord, classify_price_mode
 from python.data.repository import DailyBarRepository
 from python.journal.repository import PositionJournalRepository
 
@@ -33,6 +33,7 @@ class PositionJournalService:
         signal_id: Optional[str] = None,
         fees: float = 0.0,
         notes: Optional[str] = None,
+        mode: Optional[str] = None,
     ) -> PositionRecord:
         """Open a new actual manual trading position.
 
@@ -52,8 +53,11 @@ class PositionJournalService:
             Entry transaction fee / brokerage commission (default 0.0).
         notes : str, optional
             Optional freeform commentary.
+        mode : str, optional
+            Dual-mode price regime ('LOW_PRICE' or 'HIGHER_PRICE').
         """
         resolved_date = entry_date or date.today()
+        resolved_mode = mode or classify_price_mode(float(entry_price))
         record = PositionRecord(
             position_id=str(uuid.uuid4()),
             signal_id=signal_id.strip() if signal_id else None,
@@ -64,6 +68,7 @@ class PositionJournalService:
             status="OPEN",
             fees=float(fees or 0.0),
             notes=notes.strip() if notes else None,
+            mode=resolved_mode,
         )
         return self.repo.create_position(record)
 

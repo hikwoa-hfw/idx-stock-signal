@@ -73,10 +73,21 @@ class PositionJournalRepository:
                         fees REAL NOT NULL DEFAULT 0.0,
                         holding_days INTEGER,
                         notes TEXT,
+                        mode TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     );
                     """
+                )
+                cols = [
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(positions_journal);").fetchall()
+                ]
+                if "mode" not in cols:
+                    conn.execute("ALTER TABLE positions_journal ADD COLUMN mode TEXT;")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_positions_journal_mode "
+                    "ON positions_journal(mode);"
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_positions_journal_status "
@@ -99,6 +110,7 @@ class PositionJournalRepository:
                 conn.close()
 
     def _row_to_record(self, row: sqlite3.Row) -> PositionRecord:
+        mode_val = row["mode"] if "mode" in row.keys() else None
         return PositionRecord(
             position_id=row["position_id"],
             signal_id=row["signal_id"],
@@ -120,6 +132,7 @@ class PositionJournalRepository:
             fees=float(row["fees"]) if row["fees"] is not None else 0.0,
             holding_days=(int(row["holding_days"]) if row["holding_days"] is not None else None),
             notes=row["notes"],
+            mode=mode_val,
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
@@ -137,8 +150,8 @@ class PositionJournalRepository:
                         actual_entry_price, quantity, actual_exit_date,
                         actual_exit_price, status, exit_reason,
                         realized_return, fees, holding_days, notes,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        mode, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         validated.position_id,
@@ -155,6 +168,7 @@ class PositionJournalRepository:
                         validated.fees,
                         validated.holding_days,
                         validated.notes,
+                        validated.mode_id,
                         validated.created_at.isoformat(),
                         validated.updated_at.isoformat(),
                     ),

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 import joblib
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from python.config.settings import settings
 
@@ -22,7 +22,20 @@ class ModelMetadata(BaseModel):
     metrics: dict[str, float] = Field(default_factory=dict)
     status: str = "challenger"  # "champion", "challenger", "archived_champion", or "retired"
     feature_names: list[str] = Field(default_factory=list)
+    mode: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mode_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "mode_id" in data and "mode" not in data:
+                data["mode"] = data["mode_id"]
+        return data
 
     @field_validator("status")
     @classmethod
@@ -59,7 +72,9 @@ class ModelRegistry:
         """Saves model via joblib and metadata as JSON."""
         if metadata.status.lower() == "champion":
             self._demote_existing_champions(
-                task=metadata.task, exclude_version=metadata.model_version
+                task=metadata.task,
+                mode=metadata.mode,
+                exclude_version=metadata.model_version,
             )
 
         art_path = self._artifact_path(metadata.model_version)
@@ -95,24 +110,38 @@ class ModelRegistry:
         raw_meta = json.loads(meta_path.read_text(encoding="utf-8"))
         return ModelMetadata(**raw_meta)
 
-    def list_models(self, task: Optional[str] = None) -> list[ModelMetadata]:
+    def list_models(
+        self,
+        task: Optional[str] = None,
+        mode: Optional[str] = None,
+    ) -> list[ModelMetadata]:
         """List all registered models, sorted by creation date descending."""
         models: list[ModelMetadata] = []
         for p in self.registry_dir.glob("*.json"):
             try:
                 raw = json.loads(p.read_text(encoding="utf-8"))
                 meta = ModelMetadata(**raw)
-                if task is None or meta.task.lower() == task.lower():
-                    models.append(meta)
+                if task is not None and meta.task.lower() != task.lower():
+                    continue
+                if mode is not None:
+                    meta_mode = (meta.mode or "").strip().upper()
+                    target_mode = mode.strip().upper()
+                    if meta_mode != target_mode:
+                        continue
+                models.append(meta)
             except Exception:
                 continue
 
         models.sort(key=lambda m: (m.created_at, m.model_version), reverse=True)
         return models
 
-    def get_champion(self, task: str = "classification") -> Optional[tuple[Any, ModelMetadata]]:
-        """Get the current champion model and metadata for a task."""
-        for meta in self.list_models(task=task):
+    def get_champion(
+        self,
+        task: str = "classification",
+        mode: Optional[str] = None,
+    ) -> Optional[tuple[Any, ModelMetadata]]:
+        """Get the current champion model and metadata for a task, optionally mode-specific."""
+        for meta in self.list_models(task=task, mode=mode):
             if meta.status.lower() == "champion":
                 return self.load_model(meta.model_version)
         return None
@@ -121,16 +150,21 @@ class ModelRegistry:
         self,
         model_version: str,
         demote_to: str = "challenger",
+        mode: Optional[str] = None,
     ) -> ModelMetadata:
-        """Promote a model to champion status, demoting previous champion."""
+        """Promote a model to champion status, demoting previous champion in same mode."""
         meta = self.get_metadata(model_version)
+        effective_mode = mode if mode is not None else meta.mode
         self._demote_existing_champions(
             task=meta.task,
+            mode=effective_mode,
             exclude_version=model_version,
             demote_to=demote_to,
         )
 
         meta.status = "champion"
+        if mode is not None:
+            meta.mode = mode
         meta_path = self._metadata_path(model_version)
         meta_path.write_text(meta.model_dump_json_pretty(), encoding="utf-8")
         return meta
@@ -139,10 +173,11 @@ class ModelRegistry:
         self,
         target_version: Optional[str] = None,
         task: str = "classification",
+        mode: Optional[str] = None,
         demote_current_to: str = "retired",
     ) -> ModelMetadata:
-        """Revert champion to target_version or last known champion."""
-        current_champ = self.get_champion(task=task)
+        """Revert champion to target_version or last known champion in mode."""
+        current_champ = self.get_champion(task=task, mode=mode)
         current_ver = current_champ[1].model_version if current_champ else None
 
         if target_version:
@@ -158,7 +193,7 @@ class ModelRegistry:
                 )
         else:
             candidates = [
-                m for m in self.list_models(task=task)
+                m for m in self.list_models(task=task, mode=mode)
                 if m.model_version != current_ver
             ]
             archived = [m for m in candidates if m.status.lower() == "archived_champion"]
@@ -167,20 +202,32 @@ class ModelRegistry:
             elif candidates:
                 target_meta = candidates[0]
             else:
-                raise ValueError(f"No prior models found in registry for rollback (task={task}).")
+                mode_str = f" mode={mode}" if mode else ""
+                raise ValueError(
+                    f"No prior models found in registry for rollback (task={task}{mode_str})."
+                )
 
-        self.promote_to_champion(target_meta.model_version, demote_to=demote_current_to)
+        self.promote_to_champion(
+            target_meta.model_version,
+            demote_to=demote_current_to,
+            mode=mode,
+        )
         return self.get_metadata(target_meta.model_version)
 
     def _demote_existing_champions(
         self,
         task: str,
+        mode: Optional[str] = None,
         exclude_version: Optional[str] = None,
         demote_to: str = "challenger",
     ) -> None:
         for meta in self.list_models(task=task):
             if exclude_version and meta.model_version == exclude_version:
                 continue
+            if mode is not None:
+                meta_mode = (meta.mode or "").strip().upper()
+                if meta_mode != mode.strip().upper():
+                    continue
             if meta.status.lower() == "champion":
                 meta.status = demote_to
                 path = self._metadata_path(meta.model_version)

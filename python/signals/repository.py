@@ -75,10 +75,21 @@ class SignalRepository:
                         feature_version TEXT NOT NULL,
                         signal_config_version TEXT NOT NULL,
                         feature_snapshot TEXT NOT NULL,
+                        mode TEXT,
                         created_at TEXT NOT NULL,
                         UNIQUE (ticker, signal_date, model_version)
                     );
                     """
+                )
+                cols = [
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(signals_daily);").fetchall()
+                ]
+                if "mode" not in cols:
+                    conn.execute("ALTER TABLE signals_daily ADD COLUMN mode TEXT;")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_signals_mode "
+                    "ON signals_daily(mode);"
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_signals_date_score "
@@ -144,13 +155,13 @@ class SignalRepository:
                 entry_low, entry_high, tp_price, sl_price,
                 max_holding_days, predicted_probability, expected_return,
                 score, model_version, feature_version, signal_config_version,
-                feature_snapshot, created_at
+                feature_snapshot, mode, created_at
             ) VALUES (
                 ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
-                ?, ?
+                ?, ?, ?
             );
         """
 
@@ -172,6 +183,7 @@ class SignalRepository:
                 r.feature_version,
                 r.signal_config_version,
                 json.dumps(r.feature_snapshot),
+                r.mode_id,
                 r.created_at.isoformat(),
             )
             for r in records
@@ -190,6 +202,7 @@ class SignalRepository:
     def _row_to_record(self, r: sqlite3.Row) -> SignalRecord:
         snapshot_raw = r["feature_snapshot"]
         snapshot = json.loads(snapshot_raw) if snapshot_raw else {}
+        mode_val = r["mode"] if "mode" in r.keys() else None
         return SignalRecord(
             signal_id=r["signal_id"],
             ticker=r["ticker"],
@@ -209,6 +222,7 @@ class SignalRepository:
             feature_version=r["feature_version"],
             signal_config_version=r["signal_config_version"],
             feature_snapshot=snapshot,
+            mode=mode_val,
             created_at=datetime.fromisoformat(r["created_at"]),
         )
 
@@ -239,6 +253,7 @@ class SignalRepository:
         model_version: Optional[str] = None,
         min_score: Optional[float] = None,
         min_probability: Optional[float] = None,
+        mode: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> list[SignalRecord]:
         query = "SELECT * FROM signals_daily WHERE 1=1"
@@ -271,6 +286,10 @@ class SignalRepository:
         if min_probability is not None:
             query += " AND predicted_probability >= ?"
             params.append(str(min_probability))
+
+        if mode is not None:
+            query += " AND mode = ?"
+            params.append(mode)
 
         query += " ORDER BY signal_date DESC, score DESC, ticker ASC"
 

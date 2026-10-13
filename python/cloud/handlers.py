@@ -328,18 +328,34 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
 
         champ = model_reg.get_champion(task="classification")
         use_champ = champ is not None and not bool(event.get("no_champion", False))
+        dual_mode = bool(event.get("dual_mode", True))
 
         generated_signals = []
+        signals_payload = []
         if bars_by_ticker:
             try:
-                generated_signals = sig_engine.generate_signals(
-                    signal_date=target_date,
-                    universe=universe,
-                    use_champion=use_champ,
-                    bars_by_ticker=bars_by_ticker,
-                    features_by_ticker=computed_features or None,
-                    config=sig_cfg,
-                )
+                if dual_mode:
+                    dual_res = sig_engine.generate_dual_mode_signals(
+                        signal_date=target_date,
+                        universe=universe,
+                        bars_by_ticker=bars_by_ticker,
+                        config=sig_cfg,
+                        use_champion=use_champ,
+                    )
+                    generated_signals = (
+                        dual_res.get("LOW_PRICE", []) + dual_res.get("HIGHER_PRICE", [])
+                    )
+                    signals_payload = dual_res
+                else:
+                    generated_signals = sig_engine.generate_signals(
+                        signal_date=target_date,
+                        universe=universe,
+                        use_champion=use_champ,
+                        bars_by_ticker=bars_by_ticker,
+                        features_by_ticker=computed_features or None,
+                        config=sig_cfg,
+                    )
+                    signals_payload = generated_signals
                 if generated_signals:
                     sig_repo.save_signals(generated_signals, ignore_existing=True)
             except Exception as sig_err:
@@ -367,8 +383,9 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             if token and chat_id:
                 try:
                     formatted_msg = format_daily_signals(
-                        signals=generated_signals,
+                        signals=signals_payload if dual_mode else generated_signals,
                         target_date=effective_date,
+                        dual_mode=dual_mode,
                     )
                     tg_client = TelegramClient(bot_token=token, chat_id=chat_id)
                     resp = tg_client.send_message(text=formatted_msg)

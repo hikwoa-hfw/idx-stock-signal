@@ -70,6 +70,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Ignore duplicate signals when persisting to database instead of raising error.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["LOW_PRICE", "HIGHER_PRICE", "ALL"],
+        default="ALL",
+        help="Price regime filter: LOW_PRICE (50-300), HIGHER_PRICE (>300), or ALL (default: ALL).",
+    )
+    parser.add_argument(
+        "--dual-mode",
+        action="store_true",
+        help="Generate signals for both LOW_PRICE and HIGHER_PRICE concurrently.",
+    )
     return parser.parse_args()
 
 
@@ -86,16 +97,18 @@ def print_table_signals(signals: list[SignalRecord], target_date: Optional[str])
     print(f"Total Ranked   : {len(signals)}")
     print("-" * 96)
     print(
-        f"{'Rank':<5} {'Ticker':<8} {'Signal':<6} {'Entry Low':<11} {'Entry High':<11} "
+        f"{'Rank':<5} {'Ticker':<8} {'Mode':<13} {'Signal':<6} "
+        f"{'Entry Low':<11} {'Entry High':<11} "
         f"{'TP Price':<11} {'SL Price':<11} {'P(Win)':<8} {'Exp Ret':<9} {'Score':<6}"
     )
-    print("-" * 96)
+    print("-" * 110)
 
     for rank, sig in enumerate(signals, 1):
         ret_str = f"{sig.expected_return * 100:+.2f}%" if sig.expected_return is not None else "N/A"
         prob_str = f"{sig.predicted_probability * 100:.1f}%"
+        mode_str = sig.mode_id or "-"
         print(
-            f"{rank:<5} {sig.ticker:<8} {sig.signal:<6} {sig.entry_low:<11,.2f} "
+            f"{rank:<5} {sig.ticker:<8} {mode_str:<13} {sig.signal:<6} {sig.entry_low:<11,.2f} "
             f"{sig.entry_high:<11,.2f} {sig.tp_price:<11,.2f} {sig.sl_price:<11,.2f} "
             f"{prob_str:<8} {ret_str:<9} {sig.score:<6.1f}"
         )
@@ -214,14 +227,25 @@ def main() -> None:
     engine = SignalEngine(config=config, bar_repo=bar_repo)
 
     try:
-        signals = engine.generate_signals(
-            signal_date=s_date,
-            universe=target_universe,
-            model_version=args.model_version,
-            use_champion=args.use_champion,
-            bars_by_ticker=bars_by_ticker,
-            config=config,
-        )
+        if args.dual_mode or args.mode == "ALL":
+            dual_res = engine.generate_dual_mode_signals(
+                signal_date=s_date,
+                universe=target_universe,
+                bars_by_ticker=bars_by_ticker,
+                config=config,
+                use_champion=args.use_champion,
+            )
+            signals = dual_res.get("LOW_PRICE", []) + dual_res.get("HIGHER_PRICE", [])
+        else:
+            signals = engine.generate_signals(
+                signal_date=s_date,
+                universe=target_universe,
+                model_version=args.model_version,
+                use_champion=args.use_champion,
+                bars_by_ticker=bars_by_ticker,
+                config=config,
+                mode=args.mode,
+            )
     except Exception as e:
         sys.stderr.write(f"[generate_signals] Error during signal generation: {e}\n")
         sys.exit(1)

@@ -16,6 +16,7 @@ from python.common.types import (
     Signal,
     SignalAction,
     TradeRecord,
+    classify_price_mode,
 )
 from python.features.engine import FeatureEngine
 from python.models.dataset import DEFAULT_FEATURE_COLUMNS
@@ -39,6 +40,7 @@ class _ActivePosition:
     signal_prob: Optional[float] = None
     last_close: float = 0.0
     max_holding_days: int = 10
+    mode: Optional[str] = None
 
 
 @dataclass
@@ -49,6 +51,7 @@ class _PendingOrder:
     target_price: Optional[float] = None
     stop_loss: Optional[float] = None
     max_holding_days: Optional[int] = None
+    mode: Optional[str] = None
 
 
 class BacktestEngine:
@@ -117,6 +120,7 @@ class BacktestEngine:
         model: Optional[Any] = None,
         feature_names: Optional[list[str]] = None,
         universe_features: Optional[list[FeatureRecord]] = None,
+        mode: Optional[str] = None,
     ) -> BacktestReport:
         """Executes discrete-event backtest simulation across all bars."""
         if not bars:
@@ -311,6 +315,7 @@ class BacktestEngine:
                         signal_prob=order.signal_prob,
                         last_close=bar.close,
                         max_holding_days=self.config.max_holding_days,
+                        mode=order.mode,
                     )
 
                 pending_orders.clear()
@@ -404,6 +409,7 @@ class BacktestEngine:
                         mfe=mfe,
                         mae=mae,
                         signal_probability=pos.signal_prob,
+                        mode=pos.mode,
                     )
                     closed_trades.append(trade)
                     del open_positions[ticker]
@@ -453,6 +459,22 @@ class BacktestEngine:
                                 sig.action == SignalAction.BUY
                                 and sig.probability >= self.config.probability_threshold
                             ):
+                                sig_mode = (
+                                    getattr(sig, "mode_id", None)
+                                    or getattr(sig, "mode", None)
+                                )
+                                if sig_mode is None:
+                                    has_bar = sig.ticker in day_bars
+                                    ref_price = (
+                                        day_bars[sig.ticker].close
+                                        if (has_bar and day_bars[sig.ticker].close > 0)
+                                        else sig.entry_price
+                                    )
+                                    sig_mode = classify_price_mode(ref_price)
+                                if sig_mode in ("EXCLUDED_BELOW_50", "INVALID"):
+                                    continue
+                                if mode is not None and sig_mode != mode:
+                                    continue
                                 pending_orders.append(
                                     _PendingOrder(
                                         ticker=sig.ticker,
@@ -461,6 +483,7 @@ class BacktestEngine:
                                         target_price=sig.target_price,
                                         stop_loss=sig.stop_loss,
                                         max_holding_days=sig.max_holding_days,
+                                        mode=sig_mode,
                                     )
                                 )
 
@@ -475,11 +498,22 @@ class BacktestEngine:
                         )
                         for r, prob in zip(day_features, probs, strict=True):
                             if prob >= self.config.probability_threshold:
+                                ref_price = (
+                                    day_bars[r.ticker].close
+                                    if (r.ticker in day_bars and day_bars[r.ticker].close > 0)
+                                    else None
+                                )
+                                cand_mode = classify_price_mode(ref_price)
+                                if cand_mode in ("EXCLUDED_BELOW_50", "INVALID"):
+                                    continue
+                                if mode is not None and cand_mode != mode:
+                                    continue
                                 pending_orders.append(
                                     _PendingOrder(
                                         ticker=r.ticker,
                                         signal_date=d,
                                         signal_prob=float(prob),
+                                        mode=cand_mode,
                                     )
                                 )
 
@@ -535,6 +569,7 @@ class BacktestEngine:
                     mfe=mfe,
                     mae=mae,
                     signal_probability=pos.signal_prob,
+                    mode=pos.mode,
                 )
                 closed_trades.append(trade)
                 del open_positions[ticker]

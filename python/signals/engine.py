@@ -5,7 +5,13 @@ from typing import Any, Optional, Sequence
 
 import numpy as np
 
-from python.common.types import DailyBar, FeatureRecord, SignalConfig, SignalRecord
+from python.common.types import (
+    DailyBar,
+    FeatureRecord,
+    SignalConfig,
+    SignalRecord,
+    classify_price_mode,
+)
 from python.config.settings import settings
 from python.data.provider import load_universe
 from python.data.repository import DailyBarRepository
@@ -119,13 +125,17 @@ class SignalEngine:
         regressor: Optional[Any] = None,
         model_version: Optional[str] = None,
         use_champion: bool = False,
+        mode: Optional[str] = None,
         bars_by_ticker: Optional[dict[str, list[DailyBar]]] = None,
         features_by_ticker: Optional[dict[str, list[FeatureRecord]]] = None,
         config: Optional[SignalConfig] = None,
         min_history_bars: int = 20,
     ) -> list[SignalRecord]:
-        """Generate ranked signals for a given trading date."""
+        """Generate ranked signals for a given trading date and optional price mode."""
         cfg = config or self.config
+        eff_mode = (mode or cfg.mode)
+        if eff_mode:
+            eff_mode = eff_mode.strip().upper()
 
         # 1. Gather bars
         raw_bars_map: dict[str, list[DailyBar]] = {}
@@ -223,7 +233,11 @@ class SignalEngine:
                 model_version_str = meta.model_version
                 feature_names = meta.feature_names or DEFAULT_FEATURE_COLUMNS
             elif use_champion:
-                champ = self.model_registry.get_champion(task="classification")
+                champ = None
+                if eff_mode and eff_mode not in ("ALL", "*"):
+                    champ = self.model_registry.get_champion(task="classification", mode=eff_mode)
+                if champ is None:
+                    champ = self.model_registry.get_champion(task="classification")
                 if champ is None:
                     raise ValueError(
                         "No champion classification model registered in model registry."
@@ -232,13 +246,20 @@ class SignalEngine:
                 model_version_str = meta.model_version
                 feature_names = meta.feature_names or DEFAULT_FEATURE_COLUMNS
             else:
-                champ = self.model_registry.get_champion(task="classification")
+                champ = None
+                if eff_mode and eff_mode not in ("ALL", "*"):
+                    champ = self.model_registry.get_champion(task="classification", mode=eff_mode)
+                if champ is None:
+                    champ = self.model_registry.get_champion(task="classification")
                 if champ is not None:
                     classifier, meta = champ
                     model_version_str = meta.model_version
                     feature_names = meta.feature_names or DEFAULT_FEATURE_COLUMNS
                 else:
-                    candidates = self.model_registry.list_models(task="classification")
+                    candidates = self.model_registry.list_models(
+                        task="classification",
+                        mode=eff_mode if eff_mode not in ("ALL", "*") else None,
+                    ) or self.model_registry.list_models(task="classification")
                     if candidates:
                         v = candidates[0].model_version
                         classifier, meta = self.model_registry.load_model(v)
@@ -254,7 +275,11 @@ class SignalEngine:
             feature_names = getattr(classifier, "feature_names_", DEFAULT_FEATURE_COLUMNS)
 
         if regressor is None:
-            champ_reg = self.model_registry.get_champion(task="regression")
+            champ_reg = None
+            if eff_mode and eff_mode not in ("ALL", "*"):
+                champ_reg = self.model_registry.get_champion(task="regression", mode=eff_mode)
+            if champ_reg is None:
+                champ_reg = self.model_registry.get_champion(task="regression")
             if champ_reg is not None:
                 regressor, _ = champ_reg
 
@@ -267,6 +292,16 @@ class SignalEngine:
                 continue
 
             last_bar = filtered_bars[ticker][-1]
+            cand_price = float(last_bar.close)
+            cand_mode = classify_price_mode(cand_price)
+
+            # Strict exclusion: Sub-50 IDR or invalid prices excluded from signals
+            if cand_mode in ("EXCLUDED_BELOW_50", "INVALID"):
+                continue
+
+            # If mode filter is active, only include matching price mode
+            if eff_mode and eff_mode not in ("ALL", "*") and cand_mode != eff_mode:
+                continue
 
             # Vector representation for prediction (sanitized finite floats)
             x_row = []
@@ -288,6 +323,14 @@ class SignalEngine:
 
             prob = float(np.clip(prob, 0.0, 1.0))
 
+            # Fail-closed BUY policy: Non-finite or zero probability blocks BUY
+            if not math.isfinite(prob) or prob <= 0.0:
+                continue
+
+            # 7. Apply risk & liquidity filters
+            if prob < cfg.min_probability:
+                continue
+
             exp_ret: Optional[float] = None
             if regressor is not None:
                 try:
@@ -295,8 +338,8 @@ class SignalEngine:
                 except Exception:
                     exp_ret = None
 
-            # 7. Apply risk & liquidity filters
-            if prob < cfg.min_probability:
+            # Fail-closed if expected return is explicitly required but missing
+            if getattr(cfg, "require_expected_return", False) and exp_ret is None:
                 continue
 
             if cfg.min_expected_return is not None and exp_ret is not None:
@@ -334,6 +377,7 @@ class SignalEngine:
                     "score": score,
                     "feat_rec": feat_rec,
                     "last_bar": last_bar,
+                    "mode": cand_mode,
                 }
             )
 
@@ -409,7 +453,53 @@ class SignalEngine:
                 feature_version=feat_rec.feature_version,
                 signal_config_version=cfg.signal_config_version,
                 feature_snapshot=snapshot,
+                mode=cand.get("mode"),
             )
             results.append(record)
 
         return results
+
+    def generate_dual_mode_signals(
+        self,
+        signal_date: Optional[date] = None,
+        universe: Optional[list[str]] = None,
+        bars_by_ticker: Optional[dict[str, list[DailyBar]]] = None,
+        features_by_ticker: Optional[dict[str, list[FeatureRecord]]] = None,
+        config: Optional[SignalConfig] = None,
+        config_low: Optional[SignalConfig] = None,
+        config_higher: Optional[SignalConfig] = None,
+        use_champion: bool = False,
+        min_history_bars: int = 20,
+        **kwargs: Any,
+    ) -> dict[str, list[SignalRecord]]:
+        """Generate separate ranked signals for LOW_PRICE and HIGHER_PRICE modes."""
+        base_cfg = config or self.config
+        cfg_low = config_low or base_cfg.model_copy(update={"mode": "LOW_PRICE"})
+        cfg_high = config_higher or base_cfg.model_copy(update={"mode": "HIGHER_PRICE"})
+
+        low_signals = self.generate_signals(
+            signal_date=signal_date,
+            universe=universe,
+            mode="LOW_PRICE",
+            bars_by_ticker=bars_by_ticker,
+            features_by_ticker=features_by_ticker,
+            config=cfg_low,
+            use_champion=use_champion,
+            min_history_bars=min_history_bars,
+            **kwargs,
+        )
+        higher_signals = self.generate_signals(
+            signal_date=signal_date,
+            universe=universe,
+            mode="HIGHER_PRICE",
+            bars_by_ticker=bars_by_ticker,
+            features_by_ticker=features_by_ticker,
+            config=cfg_high,
+            use_champion=use_champion,
+            min_history_bars=min_history_bars,
+            **kwargs,
+        )
+        return {
+            "LOW_PRICE": low_signals,
+            "HIGHER_PRICE": higher_signals,
+        }

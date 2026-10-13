@@ -96,12 +96,19 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="SQLite database URL. Defaults to settings.database_url.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["LOW_PRICE", "HIGHER_PRICE", "ALL"],
+        default="ALL",
+        help="Dual-mode price regime filter: LOW_PRICE, HIGHER_PRICE, or ALL (default: ALL).",
+    )
     return parser.parse_args()
 
 
 def load_or_generate_dataset(
     db_url: Optional[str] = None,
     tickers: Optional[list[str]] = None,
+    mode: Optional[str] = None,
 ) -> Dataset:
     db = db_url or settings.database_url
     feat_repo = FeatureRepository(db)
@@ -111,7 +118,8 @@ def load_or_generate_dataset(
     feat_count = feat_repo.count_features()
     lbl_count = lbl_repo.count_labels()
 
-    builder = DatasetBuilder()
+    resolved_mode = mode if mode and mode != "ALL" else None
+    builder = DatasetBuilder(mode=resolved_mode)
 
     if feat_count > 0 and lbl_count > 0:
         dataset = builder.build_from_db(
@@ -175,9 +183,11 @@ def main() -> None:
     )
     print(f"Split Ratios:      {ratios_str}")
 
-    dataset = load_or_generate_dataset(db_url=args.db_url, tickers=args.ticker)
+    dataset = load_or_generate_dataset(db_url=args.db_url, tickers=args.ticker, mode=args.mode)
+    if args.mode != "ALL":
+        dataset = dataset.filter_by_mode(args.mode)
     if len(dataset) == 0:
-        print("[train_model] Error: No valid samples found to train model.")
+        print(f"[train_model] Error: No valid samples found to train model (mode={args.mode}).")
         return
 
     print(f"Total Samples:     {len(dataset)} across {len(set(dataset.tickers))} tickers")
@@ -263,6 +273,7 @@ def main() -> None:
             metrics=metrics,
             status=status,
             feature_names=dataset.feature_names,
+            mode=args.mode if args.mode != "ALL" else None,
         )
 
         registry = ModelRegistry()

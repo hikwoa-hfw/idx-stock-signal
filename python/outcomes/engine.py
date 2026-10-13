@@ -8,6 +8,7 @@ from python.common.types import (
     SignalDailySnapshot,
     SignalOutcomeRecord,
     SignalRecord,
+    classify_price_mode,
 )
 from python.config.settings import settings
 from python.data.repository import DailyBarRepository
@@ -203,6 +204,9 @@ class OutcomeEngine:
         mfe = (highest_high - ep) / ep
         mae = (lowest_low - ep) / ep
 
+        signal_mode = getattr(signal, "mode_id", None) or getattr(signal, "mode", None)
+        mode_val = signal_mode or classify_price_mode(ep)
+
         kwargs: dict = {
             "signal_id": signal.signal_id,
             "ticker": clean_ticker,
@@ -211,6 +215,7 @@ class OutcomeEngine:
             "entry_price": ep,
             "mfe": mfe,
             "mae": mae,
+            "mode": mode_val,
         }
         if outcome_id:
             kwargs["outcome_id"] = outcome_id

@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from datetime import date
-from typing import Optional, Sequence, Union
+from typing import Any, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
 
-from python.common.types import FeatureRecord, LabelRecord
+from python.common.types import FeatureRecord, LabelRecord, classify_price_mode
 from python.features.repository import FeatureRepository
 from python.labels.repository import LabelRepository
 
@@ -59,6 +59,7 @@ class Dataset:
     tickers: np.ndarray
     feature_names: list[str]
     metadata: pd.DataFrame
+    mode_id: Optional[str] = None
 
     def __len__(self) -> int:
         return len(self.y)
@@ -74,6 +75,7 @@ class Dataset:
                 tickers=np.empty((0,), dtype="object"),
                 feature_names=list(self.feature_names),
                 metadata=self.metadata.iloc[0:0].copy().reset_index(drop=True),
+                mode_id=self.mode_id,
             )
 
         return Dataset(
@@ -84,6 +86,7 @@ class Dataset:
             tickers=self.tickers[idx],
             feature_names=list(self.feature_names),
             metadata=self.metadata.iloc[idx].copy().reset_index(drop=True),
+            mode_id=self.mode_id,
         )
 
     def filter_by_date_range(
@@ -101,6 +104,49 @@ class Dataset:
         indices = np.where(mask)[0]
         return self.select_indices(indices)
 
+    def filter_by_mode(self, mode: str) -> "Dataset":
+        """Filter dataset samples strictly to a specific price mode."""
+        if self.metadata.empty or "mode" not in self.metadata.columns:
+            return self
+        target_mode = mode.strip().upper()
+        mask = self.metadata["mode"].astype(str).str.upper() == target_mode
+        indices = np.where(mask)[0]
+        res = self.select_indices(indices)
+        res.mode_id = target_mode
+        return res
+
+    def get_summary(self) -> dict[str, Any]:
+        """Provides report on sample count, class balance, dates, and ticker coverage."""
+        total = len(self)
+        if total == 0:
+            return {
+                "total_samples": 0,
+                "positive_samples": 0,
+                "negative_samples": 0,
+                "class_balance_ratio": 0.0,
+                "unique_tickers": 0,
+                "date_min": None,
+                "date_max": None,
+                "mode": self.mode_id,
+            }
+        pos = int(np.sum(self.y == 1))
+        neg = int(np.sum(self.y == 0))
+        ratio = float(pos / total) if total > 0 else 0.0
+        mode_counts = {}
+        if not self.metadata.empty and "mode" in self.metadata.columns:
+            mode_counts = self.metadata["mode"].value_counts().to_dict()
+        return {
+            "total_samples": total,
+            "positive_samples": pos,
+            "negative_samples": neg,
+            "class_balance_ratio": round(ratio, 4),
+            "unique_tickers": len(set(self.tickers)),
+            "date_min": str(min(self.dates)),
+            "date_max": str(max(self.dates)),
+            "mode": self.mode_id,
+            "mode_counts": mode_counts,
+        }
+
 
 class DatasetBuilder:
     """Builds clean numerical feature and target matrices for model training."""
@@ -111,19 +157,22 @@ class DatasetBuilder:
         exclude_ambiguous: bool = True,
         drop_na: bool = False,
         impute_strategy: Optional[str] = "median",
+        mode: Optional[str] = None,
     ) -> None:
         self.feature_cols = feature_cols or list(DEFAULT_FEATURE_COLUMNS)
         self.exclude_ambiguous = exclude_ambiguous
         self.drop_na = drop_na
         self.impute_strategy = impute_strategy
+        self.mode = mode
 
     def build_from_records(
         self,
         features: list[FeatureRecord],
         labels: list[LabelRecord],
+        mode: Optional[str] = None,
     ) -> Dataset:
         if not features or not labels:
-            return self._empty_dataset()
+            return self._empty_dataset(mode_id=mode or self.mode)
 
         feat_rows = []
         for f in features:
@@ -139,15 +188,20 @@ class DatasetBuilder:
             lbl_rows.append(d)
         lbl_df = pd.DataFrame(lbl_rows)
 
-        return self.build_from_dfs(feat_df, lbl_df)
+        return self.build_from_dfs(feat_df, lbl_df, mode=mode)
 
     def build_from_dfs(
         self,
         features_df: pd.DataFrame,
         labels_df: pd.DataFrame,
+        mode: Optional[str] = None,
     ) -> Dataset:
+        eff_mode = (mode or self.mode)
+        if eff_mode:
+            eff_mode = eff_mode.strip().upper()
+
         if features_df.empty or labels_df.empty:
-            return self._empty_dataset()
+            return self._empty_dataset(mode_id=eff_mode)
 
         feat = features_df.copy()
         lbl = labels_df.copy()
@@ -175,7 +229,20 @@ class DatasetBuilder:
         )
 
         if merged.empty:
-            return self._empty_dataset()
+            return self._empty_dataset(mode_id=eff_mode)
+
+        # Assign historical price mode based on decision entry price
+        if "entry_price" in merged.columns:
+            merged["mode"] = merged["entry_price"].apply(classify_price_mode)
+        elif "mode" not in merged.columns:
+            merged["mode"] = "INVALID"
+
+        # Filter by mode if requested
+        if eff_mode and eff_mode not in ("ALL", "*"):
+            merged = merged[merged["mode"] == eff_mode].reset_index(drop=True)
+
+        if merged.empty:
+            return self._empty_dataset(mode_id=eff_mode)
 
         # Sort chronologically by date, then ticker
         merged = merged.sort_values(by=["date", "ticker"]).reset_index(drop=True)
@@ -184,7 +251,7 @@ class DatasetBuilder:
         valid_targets = merged["binary_target"].notna() & merged["realized_return"].notna()
         merged = merged[valid_targets].reset_index(drop=True)
         if merged.empty:
-            return self._empty_dataset()
+            return self._empty_dataset(mode_id=eff_mode)
 
         for col in self.feature_cols:
             if col not in merged.columns:
@@ -194,7 +261,7 @@ class DatasetBuilder:
             valid_mask = merged[self.feature_cols].notna().all(axis=1)
             merged = merged[valid_mask].reset_index(drop=True)
             if merged.empty:
-                return self._empty_dataset()
+                return self._empty_dataset(mode_id=eff_mode)
 
         if self.impute_strategy == "median":
             for col in self.feature_cols:
@@ -221,6 +288,7 @@ class DatasetBuilder:
             tickers=tickers,
             feature_names=list(self.feature_cols),
             metadata=merged,
+            mode_id=eff_mode,
         )
 
     def build_from_db(
@@ -232,6 +300,7 @@ class DatasetBuilder:
         end_date: Optional[date] = None,
         feature_version: Optional[str] = None,
         label_version: Optional[str] = None,
+        mode: Optional[str] = None,
     ) -> Dataset:
         features = feature_repo.get_feature_matrix(
             tickers=tickers,
@@ -245,9 +314,27 @@ class DatasetBuilder:
             end_date=end_date,
             label_version=label_version,
         )
-        return self.build_from_records(features, labels)
+        return self.build_from_records(features, labels, mode=mode)
 
-    def _empty_dataset(self) -> Dataset:
+    def build_dataset(
+        self,
+        mode: str,
+        features: Optional[list[FeatureRecord]] = None,
+        labels: Optional[list[LabelRecord]] = None,
+        feature_repo: Optional[FeatureRepository] = None,
+        label_repo: Optional[LabelRepository] = None,
+        **kwargs: Any,
+    ) -> Dataset:
+        """Build mode-specific dataset ('LOW_PRICE' or 'HIGHER_PRICE')."""
+        if features is not None and labels is not None:
+            return self.build_from_records(features=features, labels=labels, mode=mode)
+        if feature_repo is not None and label_repo is not None:
+            return self.build_from_db(
+                feature_repo=feature_repo, label_repo=label_repo, mode=mode, **kwargs
+            )
+        raise ValueError("Must provide either (features, labels) or (feature_repo, label_repo)")
+
+    def _empty_dataset(self, mode_id: Optional[str] = None) -> Dataset:
         return Dataset(
             X=np.empty((0, len(self.feature_cols)), dtype=np.float64),
             y=np.empty((0,), dtype=np.int64),
@@ -256,4 +343,5 @@ class DatasetBuilder:
             tickers=np.empty((0,), dtype="object"),
             feature_names=list(self.feature_cols),
             metadata=pd.DataFrame(),
+            mode_id=mode_id,
         )

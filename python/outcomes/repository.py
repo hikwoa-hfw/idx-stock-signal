@@ -71,9 +71,20 @@ class OutcomeRepository:
                         exit_reason TEXT,
                         resolved_at TEXT,
                         notes TEXT,
+                        mode TEXT,
                         UNIQUE (signal_id)
                     );
                     """
+                )
+                cols = [
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(outcomes_daily);").fetchall()
+                ]
+                if "mode" not in cols:
+                    conn.execute("ALTER TABLE outcomes_daily ADD COLUMN mode TEXT;")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_outcomes_mode "
+                    "ON outcomes_daily(mode);"
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_outcomes_signal_id "
@@ -121,6 +132,7 @@ class OutcomeRepository:
         resolved_at_val = (
             datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None
         )
+        mode_val = row["mode"] if "mode" in row.keys() else None
         return SignalOutcomeRecord(
             outcome_id=row["outcome_id"],
             signal_id=row["signal_id"],
@@ -140,6 +152,7 @@ class OutcomeRepository:
             exit_reason=row["exit_reason"],
             resolved_at=resolved_at_val,
             notes=row["notes"],
+            mode=mode_val,
         )
 
     def _row_to_snapshot(self, row: sqlite3.Row) -> SignalDailySnapshot:
@@ -170,8 +183,8 @@ class OutcomeRepository:
                     INSERT INTO outcomes_daily (
                         outcome_id, signal_id, ticker, signal_date, entry_date, entry_price,
                         outcome_status, realized_return, holding_days, mfe, mae,
-                        exit_date, exit_price, exit_reason, resolved_at, notes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        exit_date, exit_price, exit_reason, resolved_at, notes, mode
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(signal_id) DO UPDATE SET
                         outcome_status = excluded.outcome_status,
                         realized_return = excluded.realized_return,
@@ -182,7 +195,8 @@ class OutcomeRepository:
                         exit_price = excluded.exit_price,
                         exit_reason = excluded.exit_reason,
                         resolved_at = COALESCE(outcomes_daily.resolved_at, excluded.resolved_at),
-                        notes = COALESCE(excluded.notes, outcomes_daily.notes);
+                        notes = COALESCE(excluded.notes, outcomes_daily.notes),
+                        mode = COALESCE(outcomes_daily.mode, excluded.mode);
                     """,
                     (
                         rec.outcome_id,
@@ -201,6 +215,7 @@ class OutcomeRepository:
                         rec.exit_reason,
                         rec.resolved_at.isoformat() if rec.resolved_at else None,
                         rec.notes,
+                        rec.mode_id,
                     ),
                 )
         finally:
@@ -223,8 +238,8 @@ class OutcomeRepository:
                         INSERT INTO outcomes_daily (
                             outcome_id, signal_id, ticker, signal_date, entry_date, entry_price,
                             outcome_status, realized_return, holding_days, mfe, mae,
-                            exit_date, exit_price, exit_reason, resolved_at, notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            exit_date, exit_price, exit_reason, resolved_at, notes, mode
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(signal_id) DO UPDATE SET
                             outcome_status = excluded.outcome_status,
                             realized_return = excluded.realized_return,
@@ -237,7 +252,8 @@ class OutcomeRepository:
                             resolved_at = COALESCE(
                                 outcomes_daily.resolved_at, excluded.resolved_at
                             ),
-                            notes = COALESCE(excluded.notes, outcomes_daily.notes);
+                            notes = COALESCE(excluded.notes, outcomes_daily.notes),
+                            mode = COALESCE(outcomes_daily.mode, excluded.mode);
                         """,
                         (
                             rec.outcome_id,
@@ -256,6 +272,7 @@ class OutcomeRepository:
                             rec.exit_reason,
                             rec.resolved_at.isoformat() if rec.resolved_at else None,
                             rec.notes,
+                            rec.mode_id,
                         ),
                     )
         finally:
@@ -312,7 +329,10 @@ class OutcomeRepository:
                 conn.close()
 
     def get_open_outcomes(
-        self, as_of_date: Optional[date] = None, ticker: Optional[str] = None
+        self,
+        as_of_date: Optional[date] = None,
+        ticker: Optional[str] = None,
+        mode: Optional[str] = None,
     ) -> list[SignalOutcomeRecord]:
         conn = self._get_connection()
         try:
@@ -325,6 +345,9 @@ class OutcomeRepository:
                 clean_t = ticker.strip().upper().removesuffix(".JK")
                 query += " AND ticker = ?"
                 params.append(clean_t)
+            if mode is not None:
+                query += " AND mode = ?"
+                params.append(mode)
             query += " ORDER BY entry_date ASC, signal_date ASC;"
             cursor = conn.execute(query, params)
             return [self._row_to_outcome(row) for row in cursor.fetchall()]
@@ -337,6 +360,7 @@ class OutcomeRepository:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         ticker: Optional[str] = None,
+        mode: Optional[str] = None,
     ) -> list[SignalOutcomeRecord]:
         conn = self._get_connection()
         try:
@@ -352,6 +376,9 @@ class OutcomeRepository:
                 clean_t = ticker.strip().upper().removesuffix(".JK")
                 query += " AND ticker = ?"
                 params.append(clean_t)
+            if mode is not None:
+                query += " AND mode = ?"
+                params.append(mode)
             query += " ORDER BY signal_date ASC, ticker ASC;"
             cursor = conn.execute(query, params)
             return [self._row_to_outcome(row) for row in cursor.fetchall()]

@@ -133,6 +133,36 @@ class IngestionTickerStatus(BaseModel):
     attempt_count: int = 1
 
 
+class PriceMode(str, Enum):
+    LOW_PRICE = "LOW_PRICE"
+    HIGHER_PRICE = "HIGHER_PRICE"
+    EXCLUDED_BELOW_50 = "EXCLUDED_BELOW_50"
+    INVALID = "INVALID"
+
+
+def classify_price_mode(price: Optional[float]) -> str:
+    """Classifies a decision/close price into dual modes or exclusion.
+
+    IDR 50 to 300 (inclusive) -> LOW_PRICE
+    Strictly > 300 -> HIGHER_PRICE
+    < 50 -> EXCLUDED_BELOW_50
+    NaN / non-positive / non-finite -> INVALID
+    """
+    if price is None:
+        return PriceMode.INVALID.value
+    try:
+        p = float(price)
+    except (ValueError, TypeError):
+        return PriceMode.INVALID.value
+    if not math.isfinite(p) or p <= 0:
+        return PriceMode.INVALID.value
+    if p < 50.0:
+        return PriceMode.EXCLUDED_BELOW_50.value
+    if 50.0 <= p <= 300.0:
+        return PriceMode.LOW_PRICE.value
+    return PriceMode.HIGHER_PRICE.value
+
+
 class SignalAction(str, Enum):
     BUY = "BUY"
     HOLD = "HOLD"
@@ -158,6 +188,11 @@ class Signal(BaseModel):
     probability: float
     model_version: str
     score: Optional[float] = None
+    mode: Optional[str] = None
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
 
 
 class Position(BaseModel):
@@ -172,6 +207,11 @@ class Position(BaseModel):
     is_open: bool = True
     close_date: Optional[date] = None
     close_price: Optional[float] = None
+    mode: Optional[str] = None
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
 
 
 class Prediction(BaseModel):
@@ -180,7 +220,12 @@ class Prediction(BaseModel):
     model_version: str
     probability: float
     expected_return: Optional[float] = None
+    mode: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
 
 
 class Outcome(BaseModel):
@@ -287,7 +332,20 @@ class LabelRecord(BaseModel):
     exit_date: Optional[date] = None
     exit_price: Optional[float] = None
     ambiguity_policy: str = "conservative"
+    mode: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mode_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "mode_id" in data and "mode" not in data:
+                data["mode"] = data["mode_id"]
+        return data
 
     @field_validator("ticker")
     @classmethod
@@ -487,6 +545,19 @@ class TradeRecord(BaseModel):
     mfe: float = 0.0
     mae: float = 0.0
     signal_probability: Optional[float] = None
+    mode: Optional[str] = None
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mode_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "mode_id" in data and "mode" not in data:
+                data["mode"] = data["mode_id"]
+        return data
 
     @field_validator("ticker")
     @classmethod
@@ -609,6 +680,8 @@ class SignalConfig(BaseModel):
     entry_band_pct: float = 0.01
     top_n: int = 5
     signal_config_version: str = "v1.0.0"
+    mode: Optional[str] = None
+    require_expected_return: bool = False
     weights: dict[str, float] = Field(
         default_factory=lambda: {
             "probability": 0.40,
@@ -618,6 +691,10 @@ class SignalConfig(BaseModel):
             "regime": 0.15,
         }
     )
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
 
     @field_validator("min_probability")
     @classmethod
@@ -677,7 +754,20 @@ class SignalRecord(BaseModel):
     feature_version: str = "v1.0.0"
     signal_config_version: str = "v1.0.0"
     feature_snapshot: dict[str, Any] = Field(default_factory=dict)
+    mode: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mode_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "mode_id" in data and "mode" not in data:
+                data["mode"] = data["mode_id"]
+        return data
 
     @field_validator("ticker")
     @classmethod
@@ -750,8 +840,21 @@ class PositionRecord(BaseModel):
     fees: float = 0.0
     holding_days: Optional[int] = None
     notes: Optional[str] = None
+    mode: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mode_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "mode_id" in data and "mode" not in data:
+                data["mode"] = data["mode_id"]
+        return data
 
     @field_validator("signal_id")
     @classmethod
@@ -888,6 +991,19 @@ class SignalOutcomeRecord(BaseModel):
     exit_reason: Optional[str] = None
     resolved_at: Optional[datetime] = None
     notes: Optional[str] = None
+    mode: Optional[str] = None
+
+    @property
+    def mode_id(self) -> Optional[str]:
+        return self.mode
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mode_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "mode_id" in data and "mode" not in data:
+                data["mode"] = data["mode_id"]
+        return data
 
     @field_validator("ticker")
     @classmethod

@@ -89,8 +89,8 @@ class TelegramBotDispatcher:
             )
 
         target_date: date = distinct_dates[-1]
-        signals = self.signal_repo.get_signals(signal_date=target_date, limit=10)
-        return format_daily_signals(signals=signals, target_date=target_date)
+        signals = self.signal_repo.get_signals(signal_date=target_date)
+        return format_daily_signals(signals=signals, target_date=target_date, dual_mode=True)
 
     def handle_signals(self, args: Optional[list[str]] = None) -> str:
         limit = 5
@@ -114,15 +114,43 @@ class TelegramBotDispatcher:
         return "\n".join(lines)
 
     def handle_model(self, args: Optional[list[str]] = None) -> str:
-        champion = self.model_registry.get_champion(task="classification")
-        if champion is None:
+        low_champ = self.model_registry.get_champion(task="classification", mode="LOW_PRICE")
+        high_champ = self.model_registry.get_champion(task="classification", mode="HIGHER_PRICE")
+        legacy_champ = self.model_registry.get_champion(task="classification")
+
+        if low_champ or high_champ:
+            lines = ["🧠 *Model Registry (Dual-Mode)*\n"]
+            if low_champ:
+                _, m = low_champ
+                m_items = sorted(m.metrics.items())[:3]
+                metric_str = ", ".join(f"`{k}`: {v:.4f}" for k, v in m_items) or "N/A"
+                lines.append(
+                    f"🏆 *Champion [LOW_PRICE]*: `{m.model_version}` ({m.algorithm})\n"
+                    f"  Metrics: {metric_str}"
+                )
+            else:
+                lines.append("• *LOW_PRICE*: No champion promoted yet")
+
+            if high_champ:
+                _, m = high_champ
+                m_items = sorted(m.metrics.items())[:3]
+                metric_str = ", ".join(f"`{k}`: {v:.4f}" for k, v in m_items) or "N/A"
+                lines.append(
+                    f"\n🏆 *Champion [HIGHER_PRICE]*: `{m.model_version}` ({m.algorithm})\n"
+                    f"  Metrics: {metric_str}"
+                )
+            else:
+                lines.append("\n• *HIGHER_PRICE*: No champion promoted yet")
+            return "\n".join(lines)
+
+        if legacy_champ is None:
             all_models = self.model_registry.list_models()
             if not all_models:
                 return "ℹ️ No models registered in model registry."
             meta = all_models[0]
             status_text = "Challenger (No Champion Promoted)"
         else:
-            _, meta = champion
+            _, meta = legacy_champ
             status_text = "Champion 🏆"
 
         lines = [

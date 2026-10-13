@@ -75,7 +75,8 @@ def run_poller(poll_timeout: int = 30) -> None:
                 chat = msg.get("chat", {})
                 chat_id = chat.get("id")
                 text = msg.get("text", "")
-                user_info = msg.get("from", {}).get("username") or msg.get("from", {}).get("first_name", "user")
+                from_info = msg.get("from", {})
+                user_info = from_info.get("username") or from_info.get("first_name", "user")
 
                 if not text or not chat_id:
                     continue

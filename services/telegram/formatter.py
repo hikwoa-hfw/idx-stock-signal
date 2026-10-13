@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Union
 
 from python.common.types import SignalRecord
 
@@ -123,20 +123,37 @@ def _derive_market_summary(
     return ihsg, breadth, vol
 
 
-def format_daily_signals(
-    signals: Sequence[SignalRecord],
+def format_dual_mode_signals(
+    signals: Union[dict[str, Sequence[SignalRecord]], Sequence[SignalRecord]],
     target_date: Optional[date] = None,
     market_summary: Optional[dict[str, str]] = None,
 ) -> str:
-    """Formats ranked daily signals into Section 42 deterministic Markdown format."""
+    """Formats dual-mode signals in accordance with Guide 06 Section 11."""
+    if isinstance(signals, dict):
+        low_signals = list(signals.get("LOW_PRICE", []))
+        high_signals = list(signals.get("HIGHER_PRICE", []))
+        all_sigs = low_signals + high_signals
+    else:
+        all_sigs = list(signals)
+        low_signals = [
+            s for s in all_sigs
+            if (s.mode or "").upper() == "LOW_PRICE"
+            or (not s.mode and 50 <= s.entry_high <= 300)
+        ]
+        high_signals = [
+            s for s in all_sigs
+            if (s.mode or "").upper() == "HIGHER_PRICE"
+            or (not s.mode and s.entry_high > 300)
+        ]
+
     if target_date is None:
-        if signals:
-            target_date = signals[0].signal_date
+        if all_sigs:
+            target_date = all_sigs[0].signal_date
         else:
             target_date = date.today()
 
     date_str = target_date.strftime("%d %b %Y")
-    first_snapshot = signals[0].feature_snapshot if signals else {}
+    first_snapshot = all_sigs[0].feature_snapshot if all_sigs else {}
     ihsg_val, breadth_val, vol_val = _derive_market_summary(first_snapshot, market_summary)
 
     blocks: list[str] = [
@@ -144,14 +161,96 @@ def format_daily_signals(
         f"MARKET\nIHSG       : {ihsg_val}\nBreadth    : {breadth_val}\nVolatility : {vol_val}",
     ]
 
-    if not signals:
+    def _format_mode_candidates(mode_sigs: list[SignalRecord]) -> str:
+        if not mode_sigs:
+            return "NO SIGNAL (No candidates passed hard gates)"
+
+        cand_blocks = []
+        for idx, s in enumerate(mode_sigs, 1):
+            prob_val = int(round(s.predicted_probability * 100))
+            ret_str = (
+                _format_pct(s.expected_return * 100)
+                if s.expected_return is not None
+                else "N/A"
+            )
+            if s.entry_low < s.entry_high:
+                entry_str = f"{s.entry_low:,.0f}–{s.entry_high:,.0f}"
+            else:
+                entry_str = f"{s.entry_low:,.0f}"
+
+            tp_pct = ((s.tp_price / s.entry_high) - 1.0) * 100 if s.entry_high > 0 else 5.0
+            sl_pct = ((s.sl_price / s.entry_low) - 1.0) * 100 if s.entry_low > 0 else -2.0
+            tp_str = _format_pct(tp_pct)
+            sl_str = _format_pct(sl_pct)
+
+            bullets = derive_rationale(s.feature_snapshot)
+            reasons_str = "\n   ".join(f"• {b}" for b in bullets)
+
+            block = (
+                f"{idx}. {s.ticker}\n"
+                f"   Status: {s.signal}\n"
+                f"   Probability: {prob_val}%\n"
+                f"   Expected return: {ret_str}\n"
+                f"   Entry / TP / SL: {entry_str} / {tp_str} / {sl_str}\n"
+                f"   Horizon: {s.max_holding_days}D\n"
+                f"   Model: {s.model_version}\n"
+                f"   Reasons:\n"
+                f"   {reasons_str}"
+            )
+            cand_blocks.append(block)
+
+        return "\n\n".join(cand_blocks)
+
+    low_text = _format_mode_candidates(low_signals)
+    high_text = _format_mode_candidates(high_signals)
+    blocks.append(f"━━━━━━━━━━━━━━━━\nMODE A — LOW_PRICE (IDR 50–300)\n{low_text}")
+    blocks.append(f"━━━━━━━━━━━━━━━━\nMODE B — HIGHER_PRICE (> IDR 300)\n{high_text}")
+
+    return "\n\n".join(blocks)
+
+
+def format_daily_signals(
+    signals: Union[Sequence[SignalRecord], dict[str, Sequence[SignalRecord]]],
+    target_date: Optional[date] = None,
+    market_summary: Optional[dict[str, str]] = None,
+    dual_mode: bool = False,
+) -> str:
+    """Formats ranked daily signals into section Markdown format.
+
+    If dual_mode is True or signals is a dict, formats according to Guide 06 dual-mode spec.
+    Otherwise formats according to classic Section 42 single-mode spec for backward compatibility.
+    """
+    if dual_mode or isinstance(signals, dict):
+        return format_dual_mode_signals(
+            signals=signals,
+            target_date=target_date,
+            market_summary=market_summary,
+        )
+
+    sig_list = list(signals)
+    if target_date is None:
+        if sig_list:
+            target_date = sig_list[0].signal_date
+        else:
+            target_date = date.today()
+
+    date_str = target_date.strftime("%d %b %Y")
+    first_snapshot = sig_list[0].feature_snapshot if sig_list else {}
+    ihsg_val, breadth_val, vol_val = _derive_market_summary(first_snapshot, market_summary)
+
+    blocks: list[str] = [
+        f"🤖 DAILY STOCK SIGNAL\n{date_str}",
+        f"MARKET\nIHSG       : {ihsg_val}\nBreadth    : {breadth_val}\nVolatility : {vol_val}",
+    ]
+
+    if not sig_list:
         blocks.append("━━━━━━━━━━━━━━━━")
         blocks.append("No BUY signals qualified for today.")
         return "\n\n".join(blocks)
 
     rank_icons = {1: "🥇", 2: "🥈", 3: "🥉"}
 
-    for idx, s in enumerate(signals, 1):
+    for idx, s in enumerate(sig_list, 1):
         badge = rank_icons.get(idx, f"{idx}.")
         score_val = int(round(s.score))
         prob_val = int(round(s.predicted_probability * 100))

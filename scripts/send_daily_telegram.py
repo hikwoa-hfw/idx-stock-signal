@@ -57,6 +57,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="SQLite database URL. Defaults to settings.database_url.",
     )
+    parser.add_argument(
+        "--single-mode",
+        action="store_true",
+        help="Format single mode instead of default dual-mode sections.",
+    )
     return parser.parse_args()
 
 
@@ -100,16 +105,33 @@ def main() -> None:
         cfg = SignalConfig(top_n=args.top_n)
         engine = SignalEngine(config=cfg, bar_repo=bar_repo)
         try:
-            signals = engine.generate_signals(
-                signal_date=target_date,
-                universe=universe,
-                model_version=args.model_version,
-                use_champion=args.use_champion,
-                bars_by_ticker=bars_by_ticker,
-            )
-            if signals:
-                sig_repo.save_signals(signals, ignore_existing=True)
-                target_date = signals[0].signal_date
+            if not args.single_mode:
+                dual_results = engine.generate_dual_mode_signals(
+                    signal_date=target_date,
+                    universe=universe,
+                    bars_by_ticker=bars_by_ticker,
+                    config=cfg,
+                    use_champion=args.use_champion,
+                )
+                low_sigs = dual_results.get("LOW_PRICE", [])
+                high_sigs = dual_results.get("HIGHER_PRICE", [])
+                all_signals = low_sigs + high_sigs
+                if all_signals:
+                    sig_repo.save_signals(all_signals, ignore_existing=True)
+                    target_date = all_signals[0].signal_date
+                signals = dual_results
+            else:
+                signals = engine.generate_signals(
+                    signal_date=target_date,
+                    universe=universe,
+                    model_version=args.model_version,
+                    use_champion=args.use_champion,
+                    bars_by_ticker=bars_by_ticker,
+                    config=cfg,
+                )
+                if signals:
+                    sig_repo.save_signals(signals, ignore_existing=True)
+                    target_date = signals[0].signal_date
         except Exception as e:
             sys.stderr.write(f"[send_daily_telegram] Error during signal generation: {e}\n")
             sys.exit(1)
@@ -120,12 +142,16 @@ def main() -> None:
                 target_date = distinct_dates[-1]
 
         signals = (
-            sig_repo.get_signals(signal_date=target_date, limit=args.top_n)
+            sig_repo.get_signals(signal_date=target_date)
             if target_date is not None
             else []
         )
 
-    message = format_daily_signals(signals=signals, target_date=target_date)
+    message = format_daily_signals(
+        signals=signals,
+        target_date=target_date,
+        dual_mode=not args.single_mode,
+    )
 
     if args.dry_run:
         print(message)

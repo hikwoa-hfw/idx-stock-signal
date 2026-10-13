@@ -20,7 +20,7 @@ class ModelMetadata(BaseModel):
     validation_start: Optional[str] = None
     validation_end: Optional[str] = None
     metrics: dict[str, float] = Field(default_factory=dict)
-    status: str = "challenger"  # "champion" or "challenger"
+    status: str = "challenger"  # "champion", "challenger", "archived_champion", or "retired"
     feature_names: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -28,8 +28,11 @@ class ModelMetadata(BaseModel):
     @classmethod
     def validate_status(cls, v: str) -> str:
         s = v.strip().lower()
-        if s not in ("champion", "challenger"):
-            raise ValueError(f"status must be 'champion' or 'challenger', got '{v}'")
+        if s not in ("champion", "challenger", "archived_champion", "retired"):
+            raise ValueError(
+                "status must be 'champion', 'challenger', 'archived_champion', "
+                f"or 'retired', got '{v}'"
+            )
         return s
 
     def model_dump_json_pretty(self) -> str:
@@ -114,21 +117,62 @@ class ModelRegistry:
                 return self.load_model(meta.model_version)
         return None
 
-    def promote_to_champion(self, model_version: str) -> ModelMetadata:
-        """Promote a challenger model to champion status, demoting previous champion."""
+    def promote_to_champion(
+        self,
+        model_version: str,
+        demote_to: str = "challenger",
+    ) -> ModelMetadata:
+        """Promote a model to champion status, demoting previous champion."""
         meta = self.get_metadata(model_version)
-        self._demote_existing_champions(task=meta.task, exclude_version=model_version)
+        self._demote_existing_champions(
+            task=meta.task,
+            exclude_version=model_version,
+            demote_to=demote_to,
+        )
 
         meta.status = "champion"
         meta_path = self._metadata_path(model_version)
         meta_path.write_text(meta.model_dump_json_pretty(), encoding="utf-8")
         return meta
 
-    def _demote_existing_champions(self, task: str, exclude_version: Optional[str] = None) -> None:
+    def rollback_champion(
+        self,
+        target_version: Optional[str] = None,
+        task: str = "classification",
+        demote_current_to: str = "retired",
+    ) -> ModelMetadata:
+        """Revert champion to target_version or last known champion."""
+        current_champ = self.get_champion(task=task)
+        current_ver = current_champ[1].model_version if current_champ else None
+
+        if target_version:
+            target_meta = self.get_metadata(target_version)
+        else:
+            candidates = [
+                m for m in self.list_models(task=task)
+                if m.model_version != current_ver
+            ]
+            archived = [m for m in candidates if m.status.lower() == "archived_champion"]
+            if archived:
+                target_meta = archived[0]
+            elif candidates:
+                target_meta = candidates[0]
+            else:
+                raise ValueError(f"No prior models found in registry for rollback (task={task}).")
+
+        self.promote_to_champion(target_meta.model_version, demote_to=demote_current_to)
+        return self.get_metadata(target_meta.model_version)
+
+    def _demote_existing_champions(
+        self,
+        task: str,
+        exclude_version: Optional[str] = None,
+        demote_to: str = "challenger",
+    ) -> None:
         for meta in self.list_models(task=task):
             if exclude_version and meta.model_version == exclude_version:
                 continue
             if meta.status.lower() == "champion":
-                meta.status = "challenger"
+                meta.status = demote_to
                 path = self._metadata_path(meta.model_version)
                 path.write_text(meta.model_dump_json_pretty(), encoding="utf-8")

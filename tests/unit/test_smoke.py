@@ -59,5 +59,11 @@ def test_project_root_exists():
     assert (root / "python" / "models" / "evaluation.py").is_file()
     assert (root / "python" / "models" / "comparator.py").is_file()
     assert (root / "scripts" / "evaluate_models.py").is_file()
+    assert (root / "python" / "retraining" / "__init__.py").is_file()
+    assert (root / "python" / "retraining" / "trigger.py").is_file()
+    assert (root / "python" / "retraining" / "dataset.py").is_file()
+    assert (root / "python" / "retraining" / "gate.py").is_file()
+    assert (root / "python" / "retraining" / "pipeline.py").is_file()
+    assert (root / "scripts" / "retrain_model.py").is_file()
 
 

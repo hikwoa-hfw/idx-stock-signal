@@ -1,152 +1,135 @@
-# Walkthrough — Phase 10: Model Evaluation & Champion/Challenger Comparator (Audit & Hardening)
+# Walkthrough — Phase 11: Retraining Pipeline
 
-Dokumen ini mencatat rincian implementasi dan audit perbaikan **Phase 10 — Model Evaluation** sesuai panduan arsitektur `docs/04_ai_agent_coding_development_guide_BEI_stock_signal.md` (Sections 26, 27, 28, 30, 31, 32, 50, dan Phase 10 pada Section 65) serta `docs/03_plan_ai_stock_signal_BEI_daily.md`.
+## Ringkasan Pekerjaan
+Mengimplementasikan **Phase 11 — Retraining Pipeline** sesuai spesifikasi Sections 29, 30, 31, 32, 33, 50, dan Section 65 pada panduan pengembangan (`docs/04_ai_agent_coding_development_guide_BEI_stock_signal.md` dan `docs/03_plan_ai_stock_signal_BEI_daily.md`).
 
----
-
-## 1. Task Breakdown & Komponen yang Dibangun & Diaudit
-
-Phase 10 berfokus pada pembuktian edge model secara ilmiah dan objektif:
-- Mengukur kualitas probabilitas prediksi (Brier score, calibration curve, ECE, log loss, ROC-AUC).
-- Mengukur kinerja trading out-of-sample (win rate, profit factor, expectancy, max drawdown, Sharpe ratio, avg win, avg loss).
-- Menyediakan automated promotion gate untuk membandingkan model Champion dan Challenger pada dataset out-of-sample yang identik secara kronologis atau dari matured outcomes.
-
-### A. Domain Models (`python/common/types.py`)
-- **`TradingMetrics`**:
-  - `win_rate`: Rasio trade profit terhadap total trade.
-  - `profit_factor`: Gross gains dibagi gross losses (mengembalikan `inf` jika tanpa kerugian).
-  - `expectancy`: Rata-rata persentase return per trade.
-  - `max_drawdown`: Penurunan ekuitas puncak-ke-lembah maksimum dari modal awal ($1.0$).
-  - `sharpe`: Annualized Sharpe ratio (frekuensi 252 hari).
-  - `avg_win`, `avg_loss`, `total_trades`, `tp_rate`, `sl_rate`, `expiry_rate`.
-- **`PredictionMetrics`**:
-  - `brier_score`: MSE probabilitas vs target biner.
-  - `log_loss`: Binary cross-entropy dengan probability clipping ($10^{-15}$).
-  - `roc_auc`: Area under the ROC curve.
-  - `ece`: Expected Calibration Error.
-  - `accuracy`: Akurasi klasifikasi pada threshold keputusan.
-- **`CalibrationBin`**:
-  - `bin_index`, `lower_bound`, `upper_bound`, `sample_count`, `mean_predicted`, `observed_frequency`, `gap`.
-- **`EvaluationReport`**:
-  - Metadata model (`model_version`, `evaluation_date`, `dataset_version`, `sample_size`, `status`).
-  - Kontainer bertipe `trading_metrics`, `prediction_metrics`, dan list `calibration_bins`.
-  - Serialisasi JSON via `.to_dict()`.
-- **`ComparisonRecommendation` & `ComparisonReport`**:
-  - `champion_version`, `challenger_version`, `test_window`.
-  - Kontainer `champion_metrics` dan `challenger_metrics` bertipe `EvaluationReport`.
-  - `delta_metrics`: Selisih kuantitatif antar metrik (`challenger - champion`), termasuk `avg_win_delta` dan `avg_loss_delta`.
-  - `recommendation`: Status keputusan promosi (`PROMOTE`, `REJECT`, `INCONCLUSIVE`).
-  - `rationale`: Log argumentasi eksplisit setiap aturan evaluasi.
-
-### B. Evaluation Engine (`python/models/evaluation.py` & `python/evaluation/`)
-- `compute_calibration_bins(y_true, y_prob, n_bins=10)`:
-  - Memvalidasi kesamaan panjang array input `y_true` dan `y_prob` (`ValueError` jika berbeda).
-  - Menyaring nilai non-finite secara aman.
-  - Membagi probabilitas ke dalam $n$ bin seragam ($0.0 \dots 1.0$).
-  - Menghitung deviasi kalibrasi berbobot (ECE) dan detail setiap reliability bin.
-- `compute_trading_metrics(returns, outcome_statuses=None)`:
-  - Menyaring dan menormalisasi input non-finite/null menjadi `0.0`.
-  - **Perbaikan Max Drawdown**: Menyisipkan modal awal `1.0` di indeks 0 kurva ekuitas (`np.insert(..., 0, 1.0)`). Menghilangkan bug di mana trade loss pertama menghasilkan drawdown 0.0%.
-- `EvaluationEngine`:
-  - `evaluate_predictions(y_true, y_prob)`: Menghasilkan `PredictionMetrics` dan bin kalibrasi dengan validasi dimensi.
-  - `evaluate_dataset(df, ...)`: Mengevaluasi dataset Pandas/matured outcomes DataFrame dengan opsi `filter_model_version` otomatis mengisolasi baris milik model terkait.
-  - `evaluate_model(model, X, y_true, returns, ...)`: Menjalankan inferensi model dengan dukungan `filter_by_prediction` dan `decision_threshold` (hanya menghitung trade yang disinyalkan oleh model).
-  - `evaluate_from_outcomes(outcomes, ...)`: Mengevaluasi langsung dari list record `SignalOutcomeRecord`.
-
-### C. Champion vs. Challenger Comparator (`python/models/comparator.py`)
-- `PromotionGateConfig`:
-  - `min_sample_size`: Default 30 (mencegah promosi pada sampel kecil/tidak signifikan).
-  - `min_profit_factor_improvement`: Default +0.05.
-  - `max_brier_worsening`: Default 0.0 (Brier score Challenger harus $\le$ Champion).
-  - `max_drawdown_increase`: Default 0.0 (Max Drawdown tidak boleh memburuk).
-  - `min_expectancy_improvement`: Default 0.0%.
-- `ModelComparator`:
-  - Mengaplikasikan toleransi floating-point epsilon ($10^{-9}$) pada evaluasi batas numerik untuk mencegah penolakan palsu (false reject) akibat pembulatan IEEE-754.
-  - `compare_reports(champion_report, challenger_report)`: Menerapkan gerbang keputusan dan memproduksi `ComparisonReport`.
-  - `compare_models(...)` & `compare_from_registry(...)`: Mendukung penerusan `filter_by_prediction` dan `decision_threshold`.
-- Formatters presentasi laporan:
-  - `format_comparison_table`: Tabel perbandingan ASCII terminal rapi dengan formatting window bersih (`_format_window_str`).
-  - `format_comparison_markdown`: Tabel laporan format GitHub Markdown dengan metrik lengkap.
-  - `format_comparison_json`: Ekspor JSON terstruktur.
-
-### D. CLI Tool & Integrasi Workflow (`scripts/evaluate_models.py` & `Makefile`)
-- CLI Runner `scripts/evaluate_models.py`:
-  - Opsi: `--champion-version`, `--challenger-version`, `--dataset-path`, `--from-outcomes`, `--output-format [table|json|markdown]`, `--save-report`, `--min-sample-size`, `--promote-if-passed`, `--filter-by-prediction`, `--threshold`.
-  - Format output Markdown didukung penuh untuk evaluasi single-model dan perbandingan multi-model.
-- Target `Makefile`:
-  - `make evaluate`: Menjalankan evaluasi dari matured outcomes database dengan format tabel.
+Pipeline ini mengotomatiskan siklus hidup model:
+1. Pengecekan trigger retraining (volume outcomes, degradasi performa Brier/Win Rate, atau forced manual).
+2. Perakitan dataset terpadu (menggabungkan data historis dan matured outcomes dengan purges window kausal).
+3. Pelatihan kandidat challenger model (LightGBM/Logistic terkalibrasi).
+4. Evaluasi gerbang promosi otomatis berbasis `ModelComparator` Phase 10.
+5. Promosi champion atomik dan kapabilitas rollback deterministik ke model sebelumnya.
+6. CLI orchestrator terpadu dan target Makefile.
 
 ---
 
-## 2. File & Line Changes Detail (Audit Session)
+## Perubahan Kode & File
 
-1. **`python/models/evaluation.py`**:
-   - `compute_calibration_bins`: Menambahkan validasi `len(yt) != len(yp)` (`ValueError`) dan penyaringan `np.isfinite`.
-   - `compute_trading_metrics`: Menormalisasi input null/non-finite; menyisipkan modal awal `1.0` pada `equity_curve` (`np.insert(..., 0, 1.0)`) sehingga penarikan modal trade pertama dan beruntun terhitung presisi.
-   - `EvaluationEngine.evaluate_predictions`: Menambahkan validasi dimensi eksplisit.
-   - `EvaluationEngine.evaluate_dataset`: Menambahkan parameter `filter_model_version=True` untuk mengisolasi baris DataFrame berdasarkan kolom `model_version`.
-   - `EvaluationEngine.evaluate_model`: Menambahkan parameter `filter_by_prediction` dan `decision_threshold` untuk menyaring kandidat trade berdasarkan sinyal probabilitas.
+### 1. `python/models/registry.py`
+- **Validasi Status (`ModelMetadata.validate_status`):**
+  - Memperluas status yang diizinkan: `"champion"`, `"challenger"`, `"archived_champion"`, dan `"retired"`.
+- **Dukungan Demote Otomatis (`ModelRegistry.promote_to_champion`):**
+  - Menambahkan parameter `demote_to: str = "challenger"` (default tetap menjaga kompatibilitas pengujian sebelumnya) dan mendukung demosi ke `"archived_champion"`.
+- **Method Rollback Champion (`ModelRegistry.rollback_champion`):**
+  - Mengembalikan status champion ke target versi yang ditentukan atau otomatis mencari archived champion terakhir. Champion saat ini didemosikan menjadi `"retired"`.
 
-2. **`python/models/comparator.py`**:
-   - `ModelComparator.compare_reports`: Menambahkan `avg_win_delta` dan `avg_loss_delta` ke `delta_metrics`; mengaplikasikan toleransi float epsilon $10^{-9}$ pada semua aturan gerbang keputusan.
-   - `ModelComparator.compare_models` & `compare_from_registry`: Meneruskan parameter `filter_by_prediction` dan `decision_threshold`.
-   - `format_comparison_table` & `format_comparison_markdown`: Menggunakan helper `_format_window_str` untuk memformat `test_window` dictionary menjadi `"start to end"`.
+### 2. `python/retraining/trigger.py` (File Baru)
+- **`RetrainingTriggerConfig`:**
+  - Konfigurasi ambang volume (`min_matured_samples = 200`), ukuran rolling window (`rolling_window_size = 50`), batas keselamatan Brier (`brier_safety_floor = 0.25`), dan batas keselamatan Win Rate (`win_rate_safety_floor = 0.45`).
+- **`RetrainingTriggerResult`:**
+  - Data class hasil evaluasi trigger: `should_retrain`, `reasons`, `matured_count`, `rolling_brier`, `rolling_win_rate`, dan `evaluated_at`.
+- **`RetrainingTriggerEvaluator`:**
+  - Mengevaluasi apakah retraining harus dijalankan berdasarkan:
+    1. Operator forced manual trigger (`force=True`).
+    2. Volume trigger: akumulasi matured outcomes $\ge$ threshold.
+    3. Degradasi performa: rolling win rate $<$ floor atau rolling Brier score $>$ floor pada $k$ trade terbaru.
 
-3. **`scripts/evaluate_models.py`**:
-   - Menambahkan argumen CLI `--filter-by-prediction` dan `--threshold`.
-   - Meneruskan filter prediksi ke `compare_from_registry`.
-   - Menambahkan dukungan format Markdown untuk evaluasi model tunggal (`--output-format markdown`).
+### 3. `python/retraining/dataset.py` (File Baru)
+- **`RetrainingDatasetAssembler`:**
+  - Menggabungkan data frame historis dengan matured outcomes (`outcomes_daily` + `signals_daily`).
+  - Menangani deduplikasi record `(ticker, date)` di mana hasil outcome riil diprioritaskan.
+  - Imputasi nilai fitur yang hilang secara median/0.0 deterministik.
+  - Menegakkan `split_walk_forward` dengan `purge_days = 10` untuk mencegah lookahead data leakage antara train set dan validation/test set.
 
-4. **`README.md`**:
-   - Memperbarui jumlah total automated test menjadi 281 tests.
+### 4. `python/retraining/gate.py` (File Baru)
+- **`PromotionGateResult`:**
+  - Domain class hasil evaluasi gerbang promosi: `recommendation` (`PROMOTE`, `REJECT`, `INCONCLUSIVE`), `passed`, `challenger_version`, `champion_version`, `report`, dan `rationale`.
+- **`PromotionGateManager`:**
+  - `evaluate_candidate`: Membandingkan challenger terhadap champion di test dataset menggunakan `ModelComparator` Phase 10. Menangani kasus bootstrap awal (langsung `PROMOTE` jika belum ada champion).
+  - `promote_challenger`: Promosi atomik yang mengubah status challenger menjadi `"champion"` dan champion lama menjadi `"archived_champion"`.
+  - `rollback`: Revert model champion ke versi sebelumnya secara deterministik.
 
-5. **`summary.md`**:
-   - Menambahkan entri ke-24 (Skeptical Review & Audit Perbaikan Phase 10) secara append-only.
+### 5. `python/retraining/pipeline.py` (File Baru)
+- **`RetrainingPipelineConfig` & `RetrainingPipelineResult`:**
+  - Konfigurasi terpusat dan penampung hasil eksekusi pipeline.
+- **`RetrainingPipeline`:**
+  - Mengorkestrasi tahapan end-to-end:
+    1. Evaluasi trigger -> skip jika tidak memenuhi syarat.
+    2. Perakitan dataset terpadu.
+    3. Split train/val/test dengan purge window 10 hari.
+    4. Training model kandidat challenger (LightGBM/Logistic terkalibrasi).
+    5. Penyimpanan model artifact & metadata ke `models/registry/` berstatus `"challenger"`.
+    6. Evaluasi promotion gate terhadap champion saat ini.
+    7. Promosi otomatis jika `--auto-promote` aktif dan gerbang terpenuhi.
 
-6. **`tests/unit/test_evaluation.py`**:
-   - Menambahkan 7 unit test baru: pengujian single-loss max drawdown (5.0%), two-loss drawdown (9.75%), input non-finite/null, validasi ketidakcocokan panjang array, isolasi model_version pada DataFrame, penyaringan trade berdasarkan probabilitas, dan toleransi floating-point comparator.
+### 6. `python/retraining/__init__.py`
+- Mengekspor seluruh modul publik: `RetrainingTriggerConfig`, `RetrainingTriggerEvaluator`, `RetrainingTriggerResult`, `RetrainingDatasetAssembler`, `PromotionGateManager`, `PromotionGateResult`, `RetrainingPipelineConfig`, `RetrainingPipelineResult`, `RetrainingPipeline`.
 
-7. **`tests/integration/test_evaluation_pipeline.py`**:
-   - Menambahkan 2 integration test baru: pengujian CLI multi-model outcomes CSV dataset (memverifikasi isolasi model dan promosi Challenger), dan pengujian single-model dengan format Markdown.
+### 7. `scripts/retrain_model.py` (File Baru)
+- CLI Orchestrator dengan argumen:
+  - `--check-trigger-only`: Cek status trigger tanpa melakukan training.
+  - `--force`: Paksa retraining mengabaikan trigger.
+  - `--min-matured <N>`: Ubah batas minimum sampel volume trigger.
+  - `--auto-promote`: Promosikan challenger otomatis jika gerbang lolos.
+  - `--dry-run`: Jalankan training dan evaluasi tanpa menyimpan artifact atau mengubah registry.
+  - `--rollback-to <version>` / `--rollback`: Kembalikan model champion ke versi target atau versi sebelumnya.
+  - `--algorithm`: lightgbm atau logistic.
+  - `--output-format`: table, json, markdown.
+
+### 8. `Makefile`
+- Menambahkan target `retrain` dan deklarasi `.PHONY`:
+  ```makefile
+  retrain:
+  	$(VENV_PYTHON) -m scripts.retrain_model --auto-promote
+  ```
+
+### 9. Pengujian Komprehensif
+- **`tests/unit/test_retraining.py` (16 unit tests):**
+  - Volume trigger reached / not reached.
+  - Forced manual trigger.
+  - Rolling win rate & Brier score degradation trigger.
+  - Dataset assembly merging, deduplication, imputation, dan purge window enforcement.
+  - Promotion gate evaluation (bootstrap, promote, reject, sample size inconclusive).
+  - Atomic promotion dan rollback verification.
+- **`tests/integration/test_retraining_pipeline.py` (2 integration tests):**
+  - Full end-to-end retraining pipeline dari database SQLite nyata -> trigger -> assemble -> train -> gate -> promote -> rollback.
+  - CLI invocation tests (`--check-trigger-only` dan `--dry-run --force`).
+- **`tests/unit/test_smoke.py`:**
+  - Verifikasi eksistensi seluruh file Phase 11.
 
 ---
 
-## 3. Testing Checklist (Post-Deployment Verification)
+## Testing Checklist
 
-Setelah proses deployment atau clone, verifikasi checklist berikut:
+Berikut checklist pengujian pasca deployment yang dapat diverifikasi:
 
-- [ ] **Linting & Code Style**:
-  ```bash
-  .venv/Scripts/ruff check .
+- [ ] **Pengecekan Trigger:**
+  ```powershell
+  .venv/Scripts/python -m scripts.retrain_model --check-trigger-only --output-format table
   ```
-  *Harus menghasilkan `All checks passed!` tanpa error.*
+  *Verifikasi:* Menampilkan tabel status volume matured outcomes dan rolling metrics tanpa error.
 
-- [ ] **Full Test Suite Execution**:
-  ```bash
-  .venv/Scripts/pytest
+- [ ] **Dry-Run Retraining:**
+  ```powershell
+  .venv/Scripts/python -m scripts.retrain_model --force --dry-run
   ```
-  *Seluruh 281 pengujian unit dan integrasi harus 100% passed.*
+  *Verifikasi:* Melatih model kandidat dan menghitung metrik evaluasi tanpa memodifikasi isi registry.
 
-- [ ] **Single Model Evaluation CLI**:
-  ```bash
-  .venv/Scripts/python -m scripts.evaluate_models --champion-version baseline_v1 --output-format table
+- [ ] **Full Retrain & Auto-Promotion:**
+  ```powershell
+  make retrain
   ```
-  *Memverifikasi CLI menampilkan metrik evaluasi model tunggal.*
+  *Verifikasi:* Model challenger dilatih, dievaluasi terhadap champion, dan dipromosikan jika memenuhi seluruh kriteria Profit Factor, Brier, dan Drawdown.
 
-- [ ] **Champion vs. Challenger Comparator**:
-  ```bash
-  .venv/Scripts/python -m scripts.evaluate_models --champion-version champ_v1 --challenger-version chall_v2 --dataset-path datasets/processed/sample.csv --output-format markdown
+- [ ] **Rollback Champion:**
+  ```powershell
+  .venv/Scripts/python -m scripts.retrain_model --rollback
   ```
-  *Memverifikasi kalkulasi delta metrik dan logika gate rekomendasi (PROMOTE/REJECT/INCONCLUSIVE).*
+  *Verifikasi:* Model champion dikembalikan ke versi sebelum promosi terakhir, dan model yang didemosikan berstatus `"retired"`.
 
-- [ ] **Makefile Target Check**:
-  ```bash
-  make evaluate
+- [ ] **Lint & Test Suite:**
+  ```powershell
+  make lint
+  make test
   ```
-  *Memverifikasi Makefile recipe terhubung dengan environment Python venv secara benar.*
-
-- [ ] **Git Remote & Authentication**:
-  *Remote origin terkonfigurasi ke `https://github.com/hikwoa-hfw/idx-stock-signal.git`. Jalankan push dengan PAT/SSH user:*
-  ```bash
-  git push -u origin main
-  ```
+  *Verifikasi:* 299 tests lulus 100% dan linting ruff bersih tanpa peringatan.

@@ -382,4 +382,21 @@ Log Perubahan Tambahan (13 Oktober 2026)
    7. Menambahkan `avg_win_delta` dan `avg_loss_delta` pada `delta_metrics` `ComparisonReport` serta kolom Avg Win & Avg Loss pada tabel ASCII, Markdown report, dan single model Markdown CLI.
    8. Menambahkan 9 pengujian baru di `tests/unit/test_evaluation.py` dan `tests/integration/test_evaluation_pipeline.py` (total 281 tests passed, 100% kelulusan, ruff clean, zero regresi).
 
+25. Implementasi Phase 11 — Retraining Pipeline (Sections 29–33, 50, Phase 11)
+   Masalah:
+   1. Proyek belum memiliki mesin pemicu retraining otomatis (`RetrainingTriggerEvaluator`) yang mengevaluasi batas volume akumulasi matured outcomes (200–500 outcomes), degradasi performa (rolling Brier score melebihi ambang batas atau rolling win rate jatuh di bawah safety floor), serta trigger manual operator (`force=True`).
+   2. Belum ada modul penyusun dataset retraining (`RetrainingDatasetAssembler`) yang menggabungkan fitur & label historis dengan data matured outcomes terkini secara deduplikasi kausal, serta menegakkan jeda walk-forward purge window (10 hari bursa) untuk mencegah kebocoran informasi lookahead (data leakage).
+   3. Belum ada pipeline pelatihan otomatis kandidat challenger (`RetrainingPipeline`) yang melatih model LightGBM/Logistic terkalibrasi dengan dataset terbaru, menyimpan artifact ke registry berstatus `challenger`, dan merekam metadata pelatihan/validasi secara komprehensif.
+   4. Belum ada mesin gerbang promosi dan rollback terpadu (`PromotionGateManager`) yang mengintegrasikan `ModelComparator` Phase 10 untuk promosi atomik (memperbarui champion lama menjadi `archived_champion` dan challenger menjadi `champion`) serta kemampuan rollback ke versi terdahulu atau champion terakhir.
+   5. Belum ada CLI orchestrator `scripts/retrain_model.py` (dengan argumen `--check-trigger-only`, `--force`, `--min-matured`, `--auto-promote`, `--dry-run`, `--rollback-to`) dan target `retrain` pada `Makefile`.
+   Solusi:
+   1. Membangun modul `python/retraining/trigger.py` dengan konfigurasi `RetrainingTriggerConfig`, domain result `RetrainingTriggerResult`, dan engine evaluasi `RetrainingTriggerEvaluator` yang memeriksa volume trigger, rolling win rate degradation (< 45%), rolling Brier degradation (> 0.25), dan forced trigger.
+   2. Membangun `RetrainingDatasetAssembler` pada `python/retraining/dataset.py` yang menggabungkan dataset historis dan matured outcomes, menduplikasi record berdasarkan prioritas hasil eksekusi riil, mengimputasi missing feature secara deterministik, serta menyediakan method `split_walk_forward` dengan purge window 10 hari.
+   3. Memperluas validasi status pada `ModelMetadata` di `python/models/registry.py` untuk mendukung `archived_champion` dan `retired`, serta menambahkan fungsionalitas `demote_to` pada `promote_to_champion` dan method `rollback_champion`.
+   4. Membangun `PromotionGateManager` pada `python/retraining/gate.py` yang mengevaluasi gerbang promosi berbasis `ModelComparator` (Profit Factor > Champion, Brier <= Champion, Drawdown <= Champion, min sample size), mengeksekusi promosi atomik, dan menangani rollback.
+   5. Membangun `RetrainingPipeline` pada `python/retraining/pipeline.py` yang mengorkestrasi alur trigger check -> dataset assembly -> walk-forward split -> candidate training -> artifact registration -> promotion gate evaluation -> atomic promotion.
+   6. Membangun CLI orchestrator `scripts/retrain_model.py` dengan format output tabel, JSON, dan Markdown, serta menambahkan target `retrain` pada `Makefile`.
+   7. Menulis pengujian unit dan integrasi komprehensif (`tests/unit/test_retraining.py` dan `tests/integration/test_retraining_pipeline.py`) serta memperbarui `test_smoke.py` (total 299 tests passed, 100% kelulusan, ruff 100% clean).
+
+
 

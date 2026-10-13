@@ -42,6 +42,8 @@ datasets/features/*
 *.parquet
 *.feather
 *.csv
+!configs/**/*.csv
+!configs/universe/seed_universe.csv
 *.tsv
 *.xlsx
 *.db

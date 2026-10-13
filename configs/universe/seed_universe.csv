@@ -1,0 +1,211 @@
+ticker,company_name,sector,exchange,selected_as_of,selection_source,selection_reason,active
+BBCA.JK,Bank Central Asia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BBRI.JK,Bank Rakyat Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BMRI.JK,Bank Mandiri Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BBNI.JK,Bank Negara Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BBTN.JK,Bank Tabungan Negara Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BRIS.JK,Bank Syariah Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BDMN.JK,Bank Danamon Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BNGA.JK,Bank CIMB Niaga Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MEGA.JK,Bank Mega Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PNBN.JK,Bank Pan Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+NISP.JK,Bank OCBC NISP Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BTPS.JK,Bank BTPN Syariah Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+AGRO.JK,Bank Raya Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BJBR.JK,Bank Pembangunan Daerah Jawa Barat Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BJTM.JK,Bank Pembangunan Daerah Jawa Timur Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ARTO.JK,Bank Jago Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BBHI.JK,Allo Bank Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BNII.JK,Bank Maybank Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BTPN.JK,Bank SMBC Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BCIC.JK,Bank JTrust Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BFIN.JK,BFI Finance Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ADMF.JK,Adira Dinamika Multi Finance Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+CFIN.JK,Clipan Finance Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PNLF.JK,Panin Financial Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TRIM.JK,Trimegah Sekuritas Indonesia Tbk,Financials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BRPT.JK,Barito Pacific Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TPIA.JK,Chandra Asri Pacific Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MDKA.JK,Merdeka Copper Gold Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ANTM.JK,Aneka Tambang Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+INCO.JK,Vale Indonesia Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+INTP.JK,Indocement Tunggal Prakarsa Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SMGR.JK,Semen Indonesia Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MBMA.JK,Merdeka Battery Materials Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ESSA.JK,Essi Multiartha Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ARCI.JK,Archi Indonesia Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TINS.JK,Timah Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+KRAS.JK,Krakatau Steel Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+AVIA.JK,Avia Avian Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+AMMN.JK,Amman Mineral Internasional Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+NCKL.JK,Trimegah Bangun Persada Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PSAB.JK,J Resources Asia Pasifik Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BRMS.JK,Bumi Resources Minerals Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+AGII.JK,Samator Indo Gas Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+INKP.JK,Indah Kiat Pulp & Paper Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TKIM.JK,Pabrik Kertas Tjiwi Kimia Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SMBR.JK,Semen Baturaja Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+WSBP.JK,Waskita Beton Precast Tbk,Basic Materials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ADRO.JK,Adaro Energy Indonesia Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PTBA.JK,Bukit Asam Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ITMG.JK,Indo Tambangraya Megah Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PGAS.JK,Perusahaan Gas Negara Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MEDC.JK,Medco Energi Internasional Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+AKRA.JK,AKR Corporindo Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BYAN.JK,Bayan Resources Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+HRUM.JK,Harum Energy Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+INDY.JK,Indika Energy Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+DOID.JK,Delta Dunia Makmur Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BUMI.JK,Bumi Resources Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ENRG.JK,Energi Mega Persada Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ELSA.JK,Elnusa Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MBAP.JK,Mitrabara Adiperdana Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ABMM.JK,ABM Investama Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+RAJA.JK,Rukun Raharja Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TOBA.JK,TBS Energi Utama Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+APEX.JK,Apexindo Pratama Duta Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ADMR.JK,Adaro Minerals Indonesia Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+KKGI.JK,Resource Alam Indonesia Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+DEWA.JK,Darma Henwa Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BSSR.JK,Baramulti Suksessarana Tbk,Energy,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ICBP.JK,Indofood CBP Sukses Makmur Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+INDF.JK,Indofood Sukses Makmur Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+UNVR.JK,Unilever Indonesia Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MYOR.JK,Mayora Indah Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+CPIN.JK,Charoen Pokphand Indonesia Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+JPFA.JK,Japfa Comfeed Indonesia Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+HMSP.JK,H.M. Sampoerna Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+GGRM.JK,Gudang Garam Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+CMRY.JK,Cisarua Mountain Dairy Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+AMRT.JK,Sumber Alfaria Trijaya Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MIDI.JK,Midi Utama Indonesia Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SIDO.JK,Industri Jamu Dan Farmasi Sido Muncul Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+CLEO.JK,Sariguna Primatirta Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ROTI.JK,Nippon Indosari Corpindo Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+STTP.JK,Siantar Top Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ULTJ.JK,Ultra Jaya Milk Industry & Trading Company Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+AALI.JK,Astra Agro Lestari Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+LSIP.JK,PP London Sumatra Indonesia Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SSMS.JK,Sawit Sumbermas Sarana Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TAPG.JK,Triputra Agro Persada Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SIMP.JK,Salim Ivomas Pratama Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+DSNG.JK,Dharma Satya Nusantara Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TBLA.JK,Tunas Baru Lampung Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BWPT.JK,Eagle High Plantations Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+GOOD.JK,Garudafood Putra Putri Jaya Tbk,Consumer Non-Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ASII.JK,Astra International Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ACES.JK,Aspirasi Hidup Indonesia Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MAPI.JK,Mitra Adiperkasa Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MAPA.JK,MAP Aktif Adiperkasa Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ERAA.JK,Erajaya Swasembada Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MNCN.JK,Media Nusantara Citra Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SCMA.JK,Surya Citra Media Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+AUTO.JK,Astra Otoparts Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+DRMA.JK,Dharma Polimetal Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SMSM.JK,Selamat Sempurna Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+GJTL.JK,Gajah Tunggal Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+IMAS.JK,Indomobil Sukses Internasional Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+RALS.JK,Ramayana Lestari Sentosa Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+LPPF.JK,Matahari Department Store Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+FILM.JK,MD Pictures Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+WOOD.JK,Integra Indocabinet Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PZZA.JK,Sarimelati Kencana Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MPMX.JK,Mitra Pinasthika Mustika Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BMTR.JK,Global Mediacom Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MSIN.JK,MNC Digital Entertainment Tbk,Consumer Cyclicals,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+KLBF.JK,Kalbe Farma Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MIKA.JK,Mitra Keluarga Karyasehat Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+HEAL.JK,Medikaloka Hermina Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SILO.JK,Siloam International Hospitals Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SAME.JK,Sarana Meditama Metropolitan Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PRDA.JK,Prodia Widyahusada Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TSPC.JK,Tempo Scan Pacific Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SRAJ.JK,Sejahteraraya Anugrahjaya Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PEHA.JK,Phapros Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+KAEF.JK,Kimia Farma Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+INAF.JK,Indofarma Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+IRRA.JK,Itama Ranoraya Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MEDS.JK,Hetzer Medical Indonesia Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+OMED.JK,Jayamas Medica Industri Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MERK.JK,Merck Tbk,Healthcare,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TLKM.JK,Telkom Indonesia Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ISAT.JK,Indosat Ooredoo Hutchison Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+EXCL.JK,XL Axiata Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TOWR.JK,Sarana Menara Nusantara Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TBIG.JK,Tower Bersama Infrastructure Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+JSMR.JK,Jasa Marga Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MTEL.JK,Dayamitra Telekomunikasi Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+CENT.JK,Centratama Telekomunikasi Indonesia Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+WIKA.JK,Wijaya Karya Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PTPP.JK,PP Persero Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ADHI.JK,Adhi Karya Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+WEGE.JK,Wijaya Karya Bangunan Gedung Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TOTL.JK,Total Bangun Persada Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+POWR.JK,Cikarang Listrindo Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PGEO.JK,Pertamina Geothermal Energy Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BREN.JK,Barito Renewables Energy Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+META.JK,Nusantara Infrastructure Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+IPCC.JK,Indonesia Kendaraan Terminal Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+KEEN.JK,Kencana Energi Lestari Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ACST.JK,Acset Indonusa Tbk,Infrastructure,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BSDE.JK,Bumi Serpong Damai Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+CTRA.JK,Ciputra Development Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PWON.JK,Pakuwon Jati Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SMRA.JK,Summarecon Agung Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ASRI.JK,Alam Sutera Realty Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+LPKR.JK,Lippo Karawaci Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+KIJA.JK,Kawasan Industri Jababeka Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+DILD.JK,Intiland Development Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+DMAS.JK,Puradelta Lestari Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BKSL.JK,Sentul City Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BEST.JK,Bekasi Fajar Industrial Estate Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ASRM.JK,Asuransi Ramayana Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PPRO.JK,PP Properti Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SSIA.JK,Surya Semesta Internusa Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MDLN.JK,Modernland Realty Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+GPRA.JK,Perdana Gapuraprima Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+RDTX.JK,Roda Vivatex Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SMDM.JK,Suryamas Dutamakmur Tbk,Properties & Real Estate,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+GOTO.JK,GoTo Gojek Tokopedia Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BUKA.JK,Bukalapak.com Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+EMTK.JK,Elang Mahkota Teknologi Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+WIRG.JK,WIR Asia Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+DCII.JK,DCI Indonesia Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+EDGE.JK,Indointernet Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BELI.JK,Global Digital Niaga Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+GLVA.JK,Galva Technologies Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MLPT.JK,Multipolar Technology Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MTDL.JK,Metrodata Electronics Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TECH.JK,Indosterling Technomedia Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+NFCX.JK,NFC Indonesia Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MCAS.JK,M Cash Integrasi Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+KREN.JK,Quantum Clovera Investama Tbk,Technology,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ASSA.JK,Adi Sarana Armada Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BIRD.JK,Blue Bird Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SMDR.JK,Samudera Indonesia Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TMAS.JK,Temas Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+GIAA.JK,Garuda Indonesia Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TNCA.JK,Trimuda Nuansa Citra Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BPTR.JK,Batavia Prosperindo Trans Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+WEHA.JK,Panorama Transportasi Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TRJA.JK,Transkon Jaya Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+JAYA.JK,Armada Berjaya Trans Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+HAIS.JK,Hasnur Internasional Shipping Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+CMPP.JK,AirAsia Indonesia Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+PORT.JK,Nusantara Pelabuhan Handal Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SAFE.JK,Steady Safe Tbk,Transportation & Logistics,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+UNTR.JK,United Tractors Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+HEXA.JK,Hexindo Adiperkasa Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+KOBX.JK,Kobexindo Tractors Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MARK.JK,Mark Dynamics Indonesia Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BMSR.JK,Bintang Mitra Semestaraya Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+ARNA.JK,Arwana Citramulia Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+MLIA.JK,Mulia Industrindo Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+IMPC.JK,Impack Pratama Industri Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+BTON.JK,Betonjaya Manunggal Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+CCSI.JK,Communication Cable Systems Indonesia Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+DYAN.JK,Dyandra Media International Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+LTLS.JK,Lautan Luas Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+SPTO.JK,Surya Pertiwi Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+TOTO.JK,Surya Toto Indonesia Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1
+JECC.JK,Jembo Cable Company Tbk,Industrials,IDX,2026-01-02,IDX_LIQUID_200,Market cap and liquidity screen,1

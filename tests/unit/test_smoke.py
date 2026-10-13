@@ -65,5 +65,12 @@ def test_project_root_exists():
     assert (root / "python" / "retraining" / "gate.py").is_file()
     assert (root / "python" / "retraining" / "pipeline.py").is_file()
     assert (root / "scripts" / "retrain_model.py").is_file()
+    assert (root / "python" / "cloud" / "__init__.py").is_file()
+    assert (root / "python" / "cloud" / "s3_sync.py").is_file()
+    assert (root / "python" / "cloud" / "handlers.py").is_file()
+    assert (root / "infra" / "aws" / "template.yaml").is_file()
+    assert (root / "infra" / "aws" / "Dockerfile").is_file()
+    assert (root / "scripts" / "deploy_aws.py").is_file()
+
 
 

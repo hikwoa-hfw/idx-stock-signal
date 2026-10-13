@@ -401,3 +401,15 @@ Log Perubahan Tambahan (13 Oktober 2026)
 
 
 
+26. Implementasi Phase 12 — Cloud Deployment, Serverless Architecture & AWS S3 Sync
+   Masalah:
+   1. Proyek belum memiliki mekanisme sinkronisasi penyimpanan cloud (S3) untuk file basis data SQLite (`stock_signals.db`) dan model champion joblib/json saat berjalan pada lingkungan ephemeral serverless AWS Lambda (/tmp).
+   2. Belum ada handler pipeline AWS Lambda (`lambda_daily_pipeline_handler` dan `lambda_retraining_handler`) untuk mengorkestrasi seluruh tahapan (download DB & model, ingest bars harian, resolve outcome, generate Top-N sinyal, siarkan Telegram, upload DB dan log ke S3) secara otomatis.
+   3. Belum ada Infrastructure as Code (IaC) SAM/CloudFormation (`infra/aws/template.yaml`) yang mendefinisikan bucket S3, IAM role least-privilege, Lambda function (Python 3.12, memory 1536-2048 MB, timeout 300-600s), CloudWatch log groups & alarm, serta EventBridge scheduler (`cron(30 9 ? * MON-FRI *)` atau jam 16:30 WIB).
+   4. Belum ada script provisioning dan deployment otomatis idempotent berbasis Boto3 (`scripts/deploy_aws.py`), container packaging `Dockerfile` untuk Lambda, serta target `deploy` pada `Makefile`.
+   Solusi:
+   1. Membangun modul sinkronisasi S3 di `python/cloud/s3_sync.py` (`download_database`, `upload_database`, `sync_models_from_s3`, `sync_models_to_s3`, `bootstrap_database`) dengan verifikasi integritas checksum SHA-256 dan MD5, pembuatan cadangan otomatis bertanda waktu (`database/backups/`), serta inisialisasi skema mandiri jika basis data belum ada di S3.
+   2. Mengimplementasikan AWS Lambda handlers di `python/cloud/handlers.py` (`lambda_daily_pipeline_handler` dan `lambda_retraining_handler`) yang mengeksekusi siklus harian lengkap secara strictly causal dengan penanganan eksepsi terstruktur dan respons JSON.
+   3. Menyusun template IaC AWS SAM di `infra/aws/template.yaml` mendefinisikan bucket S3 (`idx-stock-signal-436095651956-data`) terenkripsi AES256 dan terversi, least-privilege IAM execution role, CloudWatch Log Groups dengan retensi 30 hari, CloudWatch alarm, dan trigger EventBridge harian jam 16:30 WIB.
+   4. Membangun CLI deployer idempotent di `scripts/deploy_aws.py` mendukung opsi `--dry-run`, `--create-bucket`, `--deploy-lambda`, dan `--test-invoke`, menyusun `infra/aws/Dockerfile` untuk containerized Lambda, serta menambahkan target `deploy` pada `Makefile`.
+   5. Menulis unit tests komprehensif di `tests/unit/test_aws.py` (mock S3, mock IAM, mock EventBridge, mock Lambda, packaging zip) dan end-to-end integration test di `tests/integration/test_cloud_pipeline.py`, serta memperbarui `tests/unit/test_smoke.py` (total 318 tests passed, 100% ruff clean, zero regresi).

@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Serverless Daily Pipeline and Retraining Infrastructure for BEI Stock Signal AI
+
+Parameters:
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+    Description: Deployment environment stage.
+
+  DataBucketName:
+    Type: String
+    Default: idx-stock-signal-436095651956-data
+    Description: S3 Bucket name for SQLite database, models, and artifacts.
+
+  TelegramBotToken:
+    Type: String
+    NoEcho: true
+    Default: 8774288238:AAEXsM9ivOv6AeTCzoNgsVRSoEFkS0QRJwQ
+    Description: Telegram Bot Token for signal broadcasting.
+
+  TelegramChatId:
+    Type: String
+    Default: '514541354'
+    Description: Telegram Chat or Channel ID for signal broadcasting.
+
+  ScheduleCron:
+    Type: String
+    Default: cron(30 9 ? * MON-FRI *)
+    Description: Schedule for daily pipeline (16:30 WIB = 09:30 UTC Mon-Fri).
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 300
+    MemorySize: 1536
+    Tracing: Active
+    Environment:
+      Variables:
+        APP_ENV: !Ref Environment
+        S3_BUCKET: !Ref DataBucketName
+        TELEGRAM_BOT_TOKEN: !Ref TelegramBotToken
+        TELEGRAM_CHAT_ID: !Ref TelegramChatId
+        MARKET_DATA_PROVIDER: yfinance
+        DATABASE_URL: sqlite:////tmp/stock_signals.db
+        MODEL_REGISTRY_PATH: /tmp/models
+        PYTHONPATH: .
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref DataBucketName
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldBackups
+            Status: Enabled
+            Prefix: database/backups/
+            ExpirationInDays: 90
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub idx-stock-signal-lambda-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3DataBucketAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub arn:aws:s3:::${DataBucketName}
+                  - !Sub arn:aws:s3:::${DataBucketName}/*
+        - PolicyName: CloudWatchLogsAndMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+        - PolicyName: SSMParameterAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                  - ssm:GetParametersByPath
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/idx-stock-signal/*
+
+  DailyPipelineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/idx-daily-pipeline
+      RetentionInDays: 30
+
+  RetrainingPipelineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/idx-retraining-pipeline
+      RetentionInDays: 30
+
+  DailyPipelineFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: [DailyPipelineLogGroup, LambdaExecutionRole]
+    Properties:
+      FunctionName: idx-daily-pipeline
+      Handler: python.cloud.handlers.lambda_daily_pipeline_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      EphemeralStorage:
+        Size: 1024
+      Events:
+        DailyMarketCloseSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScheduleCron
+            Name: idx-daily-pipeline-schedule
+            Description: Trigger daily pipeline at 16:30 WIB (09:30 UTC) Mon-Fri
+
+  RetrainingPipelineFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: [RetrainingPipelineLogGroup, LambdaExecutionRole]
+    Properties:
+      FunctionName: idx-retraining-pipeline
+      Handler: python.cloud.handlers.lambda_retraining_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 600
+      MemorySize: 2048
+      EphemeralStorage:
+        Size: 1024
+
+  DailyPipelineErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: idx-daily-pipeline-errors
+      AlarmDescription: Alarm triggered when daily pipeline Lambda encounters errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref DailyPipelineFunction
+
+Outputs:
+  BucketName:
+    Description: Target S3 Bucket
+    Value: !Ref DataBucket
+
+  DailyPipelineArn:
+    Description: Daily Pipeline Lambda ARN
+    Value: !GetAtt DailyPipelineFunction.Arn
+
+  RetrainingPipelineArn:
+    Description: Retraining Pipeline Lambda ARN
+    Value: !GetAtt RetrainingPipelineFunction.Arn

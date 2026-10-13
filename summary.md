@@ -415,3 +415,21 @@ Log Perubahan Tambahan (13 Oktober 2026)
    3. Mengintegrasikan `FeatureEngine` dan `FeatureRepository` pada Step 4 `lambda_daily_pipeline_handler` untuk mengekstrak dan menyimpan fitur ke `features_daily`, serta menambahkan Step 6 log uploader ke `s3://{bucket}/logs/daily_pipeline_{date}_{ts}.json`.
    4. Memperbaiki template SAM `infra/aws/template.yaml` dengan `CodeUri: ../..`, menambahkan retry backoff untuk propagasi IAM role pada `scripts/deploy_aws.py`, serta menyelaraskan target `deploy` pada `Makefile`.
    5. Menambahkan pengujian regresi untuk retrain promoted (`test_lambda_retraining_handler_promoted`) dan WAL checkpointing (`test_upload_database_wal_checkpoint`), menghasilkan total 320 tests passed (100% kelulusan, ruff 100% clean, zero regresi).
+Log Perubahan Tambahan (13 Oktober 2026)
+27. Penyelesaian & Live Staging Deployment Phase 12 — Resilient Pipeline, Stage Isolation, Billing Alert & Test Reconciliation
+   Masalah:
+   1. Rekonsiliasi jumlah test repository: Phase 0–10 = 281 tests, Phase 11 = 23 tests, sedangkan repo melaporkan 320 tests; terdapat 16 preliminary tests Phase 12 (15 di test_aws.py dan 1 di test_cloud_pipeline.py) yang belum terdokumentasi formal dalam audit kelulusan.
+   2. Handler AWS Lambda lambda_daily_pipeline_handler belum memiliki proteksi eksekusi ganda (duplicate-run protection) sehingga eksekusi berulang pada hari bursa yang sama berisiko menimpa log atau meregenerasi sinyal identik tanpa persetujuan eksplisit.
+   3. Pipeline belum memiliki bounded exponential backoff retry pada saat kegagalan market data provider, dan belum memiliki failure alert otomatis via Telegram dengan penyensoran token/kredensial sensitif untuk notifikasi instan operator.
+   4. Script provisioning scripts/deploy_aws.py belum mendukung isolasi stage deployment (--stage dev|staging|prod), memicu tabrakan nama resource dan variabel lingkungan antar stage.
+   5. Infrastruktur SAM infra/aws/template.yaml belum memiliki CloudWatch Billing Metric Alarm untuk EstimatedCharges guna menjamin Free Tier AWS ($1.00 USD protection).
+   6. Script deploy_aws.py memasukkan reserved key AWS_REGION pada konfigurasi variabel lingkungan Lambda dan tidak memiliki waiter / retry penanganan ResourceConflictException saat pembaruan kode dan konfigurasi Lambda dilakukan berurutan.
+   Solusi:
+   1. Melakukan rekonsiliasi dan verifikasi menyeluruh: 281 tests (Phase 0–10) + 23 tests (Phase 11) + 16 tests preliminary (Phase 12) = 320 tests baseline, diperluas menjadi 326 tests tanpa mengurangi cakupan uji yang sudah ada.
+   2. Mengimplementasikan duplicate-run protection di python/cloud/handlers.py: memeriksa ketersediaan sinyal di basis data (signals_daily) atau log S3 untuk tanggal target; melewatinya dengan status SKIPPED_DUPLICATE kecuali jika force_rerun=True.
+   3. Mengimplementasikan bounded exponential backoff retry pada konsumsi market data di lambda_daily_pipeline_handler (default 3 percobaan dengan interval eksponensial), serta mekanisme dispatch_failure_alert() dengan sanitasi token (mask_sensitive_error) yang menyiarkan alert kegagalan kritis langsung ke Telegram operator.
+   4. Menambahkan dukungan --stage [dev|staging|prod] (default staging) pada scripts/deploy_aws.py, mengisolasi nama fungsi (idx-daily-pipeline-staging, idx-retraining-pipeline-staging), IAM execution role (idx-stock-signal-lambda-role-staging), EventBridge schedule (idx-daily-pipeline-schedule-staging), dan tag environment APP_ENV.
+   5. Menambahkan BillingAlertAlarm (AWS/Billing, EstimatedCharges, Period 21600s / 6 jam, Threshold $1.00 USD) pada infra/aws/template.yaml serta mendokumentasikan batas Free Tier AWS ($0/bulan).
+   6. Menghapus reserved key AWS_REGION dari env_vars Lambda dan mengintegrasikan Boto3 waiter function_updated serta backoff retry untuk mencegah ResourceConflictException.
+   7. Melakukan deployment langsung (live deploy) ke akun AWS target (436095651956, ap-southeast-3): S3 bucket idx-stock-signal-436095651956-data terbuat dan terisi data seed, basis data, dan model champion; IAM role dan kedua fungsi Lambda staging terdeploy; EventBridge schedule aktif; serta uji kirim notifikasi Telegram terverifikasi sukses (message_id: 14).
+   8. Menambahkan 6 unit test baru di tests/unit/test_aws.py, seluruh 326 test lulus 100% (zero failure, ruff 100% clean).

@@ -287,15 +287,34 @@ def deploy_lambda_function(
             FunctionName=function_name,
             ZipFile=zip_bytes,
         )
+        try:
+            waiter = lambda_client.get_waiter("function_updated")
+            waiter.wait(
+                FunctionName=function_name,
+                WaiterConfig={"Delay": 2, "MaxAttempts": 30},
+            )
+        except Exception:
+            pass
+
         sys.stdout.write(f"[deploy_aws] Updating configuration for {function_name}...\n")
-        resp = lambda_client.update_function_configuration(
-            FunctionName=function_name,
-            Handler=handler,
-            Role=role_arn,
-            Timeout=timeout,
-            MemorySize=memory_size,
-            Environment={"Variables": env_vars},
-        )
+        resp = None
+        for attempt in range(6):
+            try:
+                resp = lambda_client.update_function_configuration(
+                    FunctionName=function_name,
+                    Handler=handler,
+                    Role=role_arn,
+                    Timeout=timeout,
+                    MemorySize=memory_size,
+                    Environment={"Variables": env_vars},
+                )
+                break
+            except ClientError as exc:
+                code = exc.response.get("Error", {}).get("Code")
+                if code == "ResourceConflictException" and attempt < 5:
+                    time.sleep(2)
+                    continue
+                raise
         func_arn = resp["FunctionArn"]
     else:
         sys.stdout.write(f"[deploy_aws] Creating new Lambda function: {function_name}...\n")
@@ -435,6 +454,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         help=f"AWS region (default: {DEFAULT_REGION}).",
     )
     parser.add_argument(
+        "--stage",
+        choices=["dev", "development", "staging", "prod", "production"],
+        default="staging",
+        help="Deployment stage environment (default: staging).",
+    )
+    parser.add_argument(
         "--role-name",
         default=DEFAULT_ROLE_NAME,
         help="IAM role name for Lambda functions.",
@@ -444,6 +469,26 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     region = args.region or os.getenv("AWS_REGION") or settings.aws_region or DEFAULT_REGION
     bucket = args.bucket or os.getenv("S3_BUCKET") or settings.s3_bucket or DEFAULT_BUCKET
+
+    stage_raw = (args.stage or "staging").strip().lower()
+    if stage_raw in ("dev", "development"):
+        stage_name = "development"
+        stage_suffix = "-dev"
+    elif stage_raw in ("staging",):
+        stage_name = "staging"
+        stage_suffix = "-staging"
+    else:
+        stage_name = "production"
+        stage_suffix = ""
+
+    daily_func = f"{DAILY_FUNCTION_NAME}{stage_suffix}"
+    retrain_func = f"{RETRAIN_FUNCTION_NAME}{stage_suffix}"
+    schedule_rule = f"{SCHEDULE_RULE_NAME}{stage_suffix}"
+    effective_role_name = (
+        args.role_name
+        if args.role_name != DEFAULT_ROLE_NAME
+        else f"{DEFAULT_ROLE_NAME}{stage_suffix}"
+    )
 
     if not args.create_bucket and not args.deploy_lambda and not args.test_invoke:
         # Default behavior: run full deploy sequence
@@ -458,7 +503,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         events_client = session.client("events")
 
         sys.stdout.write(
-            f"[deploy_aws] Initializing deployment to AWS (Region: {region}, Bucket: {bucket})\n"
+            f"[deploy_aws] Initializing deployment to AWS (Stage: {stage_name}, "
+            f"Region: {region}, Bucket: {bucket})\n"
         )
 
         # 1. Bucket and seeds
@@ -468,7 +514,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         # 2. Deploy Lambda and Schedules
         if args.deploy_lambda:
-            role_arn = ensure_iam_role(iam_client, args.role_name, bucket, dry_run=args.dry_run)
+            role_arn = ensure_iam_role(
+                iam_client, effective_role_name, bucket, dry_run=args.dry_run
+            )
             sys.stdout.write("[deploy_aws] Packaging application zip...\n")
             zip_bytes = build_lambda_zip()
             sys.stdout.write(f"[deploy_aws] Zip package built: {len(zip_bytes) / 1024:.1f} KB\n")
@@ -484,9 +532,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 or ""
             )
             env_vars = {
-                "APP_ENV": "production",
+                "APP_ENV": stage_name,
                 "S3_BUCKET": bucket,
-                "AWS_REGION": region,
                 "TELEGRAM_BOT_TOKEN": tg_tok,
                 "TELEGRAM_CHAT_ID": tg_chat,
                 "MARKET_DATA_PROVIDER": "yfinance",
@@ -495,10 +542,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "PYTHONPATH": ".",
             }
 
-
             daily_arn = deploy_lambda_function(
                 lambda_client=lambda_client,
-                function_name=DAILY_FUNCTION_NAME,
+                function_name=daily_func,
                 handler="python.cloud.handlers.lambda_daily_pipeline_handler",
                 role_arn=role_arn,
                 zip_bytes=zip_bytes,
@@ -510,7 +556,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
             deploy_lambda_function(
                 lambda_client=lambda_client,
-                function_name=RETRAIN_FUNCTION_NAME,
+                function_name=retrain_func,
                 handler="python.cloud.handlers.lambda_retraining_handler",
                 role_arn=role_arn,
                 zip_bytes=zip_bytes,
@@ -523,16 +569,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             setup_eventbridge_schedule(
                 events_client=events_client,
                 lambda_client=lambda_client,
-                rule_name=SCHEDULE_RULE_NAME,
+                rule_name=schedule_rule,
                 schedule_cron=SCHEDULE_CRON,
                 lambda_arn=daily_arn,
-                function_name=DAILY_FUNCTION_NAME,
+                function_name=daily_func,
                 dry_run=args.dry_run,
             )
 
         # 3. Test invocation
         if args.test_invoke:
-            invoke_lambda_dry_run(lambda_client, DAILY_FUNCTION_NAME)
+            invoke_lambda_dry_run(lambda_client, daily_func)
 
 
         sys.stdout.write("[deploy_aws] Deployment completed successfully.\n")

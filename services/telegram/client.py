@@ -87,8 +87,12 @@ class TelegramClient:
         timeout: float = 10.0,
         max_retries: int = 3,
         base_url: str = "https://api.telegram.org",
+        token: Optional[str] = None,
     ) -> None:
-        self.bot_token = bot_token if bot_token is not None else settings.telegram_bot_token
+        effective_token = bot_token if bot_token is not None else token
+        self.bot_token = (
+            effective_token if effective_token is not None else settings.telegram_bot_token
+        )
         self.chat_id = chat_id if chat_id is not None else settings.telegram_chat_id
         self.timeout = timeout
         self.max_retries = max_retries

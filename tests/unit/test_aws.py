@@ -426,3 +426,190 @@ def test_deploy_aws_helpers():
     inv_res = invoke_lambda_dry_run(mock_lambda, "idx-daily-pipeline")
     assert inv_res == {"status": "SUCCESS"}
 
+
+def test_mask_sensitive_error():
+    from python.cloud.handlers import mask_sensitive_error
+
+    err_text = (
+        "Error in bot8774288238:AAEXsM9ivOv6AeTCzoNgsVRSoEFkS0QRJwQ with "
+        "AKIAIOSFODNN7EXAMPLE credentials"
+    )
+    masked = mask_sensitive_error(err_text)
+    assert "8774288238:AAEXsM9ivOv6AeTCzoNgsVRSoEFkS0QRJwQ" not in masked
+    assert "bot***:***" in masked or "***:***" in masked
+    assert "AKIAIOSFODNN7EXAMPLE" not in masked
+    assert "AKIA***" in masked
+
+
+def test_dispatch_failure_alert():
+    from python.cloud.handlers import dispatch_failure_alert
+
+    # Suppressed on dry_run / skip_telegram
+    res_dry = dispatch_failure_alert("Error 1", event={"dry_run": True})
+    assert res_dry is False
+
+    # Dispatched when tokens present
+    with patch("python.cloud.handlers.TelegramClient") as MockTG:
+        mock_instance = MagicMock()
+        MockTG.return_value = mock_instance
+        res = dispatch_failure_alert(
+            error_msg="Database connection timeout",
+            stage="test_stage",
+            event={
+                "dry_run": False,
+                "skip_telegram": False,
+                "telegram_token": "mock_token",
+                "telegram_chat_id": "12345",
+            },
+        )
+        assert res is True
+        mock_instance.send_message.assert_called_once()
+        args, kwargs = mock_instance.send_message.call_args
+        sent_text = kwargs.get("text", "")
+        assert "BEI Stock Signal Failure" in sent_text
+        assert "Database connection timeout" in sent_text
+
+
+def test_duplicate_run_protection_db(tmp_path: Path):
+    from datetime import date
+
+    from python.common.types import SignalRecord
+    from python.signals.repository import SignalRepository
+
+    db_path = tmp_path / "dup_test.db"
+    bootstrap_database(db_path)
+    db_url = f"sqlite:///{db_path.as_posix()}"
+    sig_repo = SignalRepository(database_url=db_url)
+
+    target_d = date(2026, 10, 13)
+    sig_record = SignalRecord(
+        signal_id="sig_test_1",
+        ticker="BBCA",
+        signal_date=target_d,
+        signal="BUY",
+        entry_low=9900.0,
+        entry_high=10100.0,
+        tp_price=10500.0,
+        sl_price=9700.0,
+        max_holding_days=10,
+        predicted_probability=0.8,
+        expected_return=0.05,
+        score=0.8,
+        model_version="champ_v1",
+    )
+    sig_repo.save_signals([sig_record])
+
+    event = {
+        "s3_bucket": None,
+        "local_db_path": str(db_path),
+        "tmp_dir": str(tmp_path),
+        "date": "2026-10-13",
+        "force_rerun": False,
+        "dry_run": True,
+        "skip_telegram": True,
+        "skip_s3_upload": True,
+    }
+
+    # 1. Without force_rerun: must skip
+    resp = lambda_daily_pipeline_handler(event, None)
+    assert resp["statusCode"] == 200
+    assert resp["body"]["status"] == "SKIPPED_DUPLICATE"
+    assert resp["body"]["signals_count"] == 1
+
+    # 2. With force_rerun: must proceed
+    event_force = dict(event)
+    event_force["force_rerun"] = True
+    event_force["market_provider"] = "mock"
+    resp_force = lambda_daily_pipeline_handler(event_force, None)
+    assert resp_force["statusCode"] == 200
+    assert resp_force["body"]["status"] == "SUCCESS"
+
+
+def test_duplicate_run_protection_s3_log(tmp_path: Path):
+    s3 = FakeS3Client()
+    bucket = "idx-test-bucket"
+    s3.storage[(bucket, "logs/daily_pipeline_2026-10-13_120000.json")] = (
+        b'{"status": "SUCCESS"}'
+    )
+
+    event = {
+        "s3_bucket": bucket,
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "s3_dup.db"),
+        "date": "2026-10-13",
+        "force_rerun": False,
+        "strict_duplicate_check": True,
+        "_s3_client": s3,
+    }
+
+    resp = lambda_daily_pipeline_handler(event, None)
+    assert resp["statusCode"] == 200
+    assert resp["body"]["status"] == "SKIPPED_DUPLICATE"
+
+
+def test_market_provider_failure_retry_and_alert(tmp_path: Path):
+    call_count = 0
+
+    def mock_failing_ingest(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise ConnectionError("Provider API rate limited")
+
+    with patch("python.cloud.handlers.run_ingest", side_effect=mock_failing_ingest), \
+         patch("python.cloud.handlers.dispatch_failure_alert") as mock_alert:
+
+        event = {
+            "s3_bucket": None,
+            "tmp_dir": str(tmp_path),
+            "local_db_path": str(tmp_path / "retry_test.db"),
+            "max_retries": 3,
+            "backoff_base": 0.01,
+            "backoff_factor": 2.0,
+            "dry_run": True,
+            "skip_telegram": True,
+            "skip_s3_upload": True,
+        }
+        resp = lambda_daily_pipeline_handler(event, None)
+
+        assert call_count == 3
+        mock_alert.assert_called()
+        assert resp["statusCode"] == 500
+        assert resp["body"]["status"] == "FAILED"
+
+
+def test_deploy_aws_stage_support():
+    mock_s3 = MagicMock()
+    mock_iam = MagicMock()
+    mock_lambda = MagicMock()
+    mock_events = MagicMock()
+
+    mock_lambda.get_function.return_value = {"Configuration": {"FunctionArn": "arn:func"}}
+    mock_lambda.update_function_configuration.return_value = {"FunctionArn": "arn:func"}
+    mock_iam.get_role.return_value = {"Role": {"Arn": "arn:role"}}
+    mock_events.put_rule.return_value = {"RuleArn": "arn:rule"}
+
+    with patch("boto3.Session") as MockSession:
+        mock_sess = MagicMock()
+        mock_sess.client.side_effect = lambda svc: {
+            "s3": mock_s3,
+            "iam": mock_iam,
+            "lambda": mock_lambda,
+            "events": mock_events,
+        }[svc]
+        MockSession.return_value = mock_sess
+
+        ret = deploy_main([
+            "--stage", "staging",
+            "--deploy-lambda",
+            "--bucket", "test-b",
+            "--region", "ap-southeast-3",
+        ])
+        assert ret == 0
+        call_names = [
+            call.kwargs.get("FunctionName")
+            for call in mock_lambda.update_function_code.call_args_list
+        ]
+        assert "idx-daily-pipeline-staging" in call_names
+        assert "idx-retraining-pipeline-staging" in call_names
+
+

@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import re
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -36,9 +38,69 @@ from services.telegram.formatter import format_daily_signals
 logger = logging.getLogger(__name__)
 
 
+def mask_sensitive_error(text: str) -> str:
+    """Mask Telegram bot tokens and AWS credential keys in error strings."""
+    sanitized = str(text)
+    sanitized = re.sub(r"bot\d{5,}:[A-Za-z0-9_-]{10,}", "bot***:***", sanitized)
+    sanitized = re.sub(r"\d{8,}:[A-Za-z0-9_-]{20,}", "***:***", sanitized)
+    sanitized = re.sub(r"(AKIA|ASIA)[A-Z0-9]{16}", "AKIA***", sanitized)
+    return sanitized
+
+
+def dispatch_failure_alert(
+    error_msg: str,
+    stage: str = "daily_pipeline",
+    target_date: Optional[date] = None,
+    event: Optional[dict[str, Any]] = None,
+) -> bool:
+    """Dispatch urgent failure alert to Telegram operator with masked error details."""
+    evt = event or {}
+    if evt.get("dry_run") or evt.get("skip_telegram"):
+        logger.info("[DRY-RUN / SKIP] Failure alert suppressed: %s", error_msg)
+        return False
+
+    token = (
+        evt.get("telegram_token")
+        or os.getenv("TELEGRAM_BOT_TOKEN")
+        or settings.telegram_bot_token
+    )
+    chat_id = (
+        evt.get("telegram_chat_id")
+        or os.getenv("TELEGRAM_CHAT_ID")
+        or settings.telegram_chat_id
+    )
+    if not token or not chat_id:
+        logger.warning("Cannot dispatch failure alert: Telegram token or chat_id missing")
+        return False
+
+    run_d = target_date or date.today()
+    masked = mask_sensitive_error(error_msg)
+    alert_msg = (
+        f"🚨 *[ALERT] BEI Stock Signal Failure*\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"• *Stage*: `{stage}`\n"
+        f"• *Date*: `{run_d}`\n"
+        f"• *Error*: `{masked[:400]}`\n"
+        f"• *Timestamp*: `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}`\n\n"
+        f"⚠️ Action required: Check CloudWatch logs."
+    )
+    try:
+        client = TelegramClient(bot_token=token, chat_id=str(chat_id))
+        client.send_message(text=alert_msg)
+        logger.info("Failure alert dispatched to Telegram chat %s", chat_id)
+        return True
+    except Exception as alert_err:
+        logger.error("Failed to dispatch failure alert via Telegram: %s", alert_err)
+        return False
+
+
 def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     try:
-        s3_bucket = event.get("s3_bucket") or os.getenv("S3_BUCKET") or settings.s3_bucket
+        s3_bucket = (
+            event["s3_bucket"]
+            if "s3_bucket" in event
+            else (os.getenv("S3_BUCKET") or settings.s3_bucket)
+        )
         tmp_dir = Path(event.get("tmp_dir") or os.getenv("TMP_DIR", "/tmp"))
         db_target = event.get("local_db_path") or tmp_dir / "stock_signals.db"
         local_db_path = Path(db_target).resolve()
@@ -75,7 +137,52 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
         out_repo = OutcomeRepository(database_url=db_url)
         feat_repo = FeatureRepository(database_url=db_url)
 
-        # Step 2: Ingest market bars
+        # Duplicate-run protection: check DB & S3 logs unless force_rerun
+        force_rerun = bool(event.get("force_rerun", False))
+        check_date = target_date or date.today()
+        if not force_rerun:
+            existing_signals = sig_repo.get_signals_by_date(check_date)
+            if existing_signals:
+                logger.info(
+                    "Pipeline already executed: %d signals exist in DB for %s. Skipping.",
+                    len(existing_signals),
+                    check_date,
+                )
+                return {
+                    "statusCode": 200,
+                    "body": {
+                        "status": "SKIPPED_DUPLICATE",
+                        "message": f"Pipeline already executed successfully for {check_date}",
+                        "date": str(check_date),
+                        "signals_count": len(existing_signals),
+                    },
+                }
+
+            if s3_bucket:
+                try:
+                    s3_c = _get_s3_client(s3_client)
+                    list_resp = s3_c.list_objects_v2(
+                        Bucket=s3_bucket,
+                        Prefix=f"logs/daily_pipeline_{check_date}_",
+                    )
+                    contents = list_resp.get("Contents", [])
+                    if contents and event.get("strict_duplicate_check", False):
+                        logger.info(
+                            "Pipeline run log exists in S3 for %s. Skipping (force_rerun=False).",
+                            check_date,
+                        )
+                        return {
+                            "statusCode": 200,
+                            "body": {
+                                "status": "SKIPPED_DUPLICATE",
+                                "message": f"Pipeline run log exists in S3 for {check_date}",
+                                "date": str(check_date),
+                            },
+                        }
+                except Exception as s3_err:
+                    logger.warning("Could not check duplicate runs in S3: %s", s3_err)
+
+        # Step 2: Ingest market bars with bounded exponential backoff retry
         raw_tickers = event.get("tickers")
         tickers_list = (
             [t.strip().upper().removesuffix(".JK") for t in raw_tickers if t.strip()]
@@ -88,17 +195,51 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             start_date_val = datetime.strptime(str(event["start_date"]).strip(), "%Y-%m-%d").date()
 
         ingested_count = 0
-        try:
-            ingested_count = run_ingest(
-                provider_name=provider_name,
-                tickers=tickers_list,
-                db_url=db_url,
-                mode=event.get("ingest_mode", "incremental"),
-                start_date=start_date_val,
-                end_date=target_date,
+        max_retries = int(event.get("max_retries", 3))
+        backoff_base = float(event.get("backoff_base", 1.0))
+        backoff_factor = float(event.get("backoff_factor", 2.0))
+        max_backoff = float(event.get("max_backoff", 10.0))
+        ingest_error: Optional[Exception] = None
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                ingested_count = run_ingest(
+                    provider_name=provider_name,
+                    tickers=tickers_list,
+                    db_url=db_url,
+                    mode=event.get("ingest_mode", "incremental"),
+                    start_date=start_date_val,
+                    end_date=target_date,
+                )
+                ingest_error = None
+                break
+            except Exception as err:
+                ingest_error = err
+                logger.warning(
+                    "Market ingestion attempt %d/%d failed: %s",
+                    attempt,
+                    max_retries,
+                    err,
+                )
+                if attempt < max_retries:
+                    sleep_s = min(backoff_base * (backoff_factor ** (attempt - 1)), max_backoff)
+                    time.sleep(sleep_s)
+
+        if ingest_error is not None:
+            logger.error(
+                "Market data provider failed after %d retries: %s",
+                max_retries,
+                ingest_error,
             )
-        except Exception as ingest_err:
-            logger.warning("Market ingestion encountered issue: %s", ingest_err)
+            dispatch_failure_alert(
+                error_msg=(
+                    f"Market data ingestion failed after {max_retries} attempts: {ingest_error}"
+                ),
+                stage="market_ingestion",
+                target_date=target_date,
+                event=event,
+            )
+            raise ingest_error
 
         # Step 3: Resolve open outcomes
         ambiguity_policy = event.get("ambiguity_policy", "conservative")
@@ -179,7 +320,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                         signals=generated_signals,
                         target_date=effective_date,
                     )
-                    tg_client = TelegramClient(token=token, chat_id=chat_id)
+                    tg_client = TelegramClient(bot_token=token, chat_id=chat_id)
                     resp = tg_client.send_message(text=formatted_msg)
                     msg_id = resp.get("result", {}).get("message_id")
                     telegram_status = f"SENT_{msg_id}" if msg_id else "SENT"
@@ -241,6 +382,12 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
 
     except Exception as exc:
         logger.exception("Daily pipeline execution failed")
+        dispatch_failure_alert(
+            error_msg=str(exc),
+            stage="daily_pipeline",
+            target_date=target_date,
+            event=event,
+        )
         return {
             "statusCode": 500,
             "body": {
@@ -252,7 +399,11 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
 
 def lambda_retraining_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     try:
-        s3_bucket = event.get("s3_bucket") or os.getenv("S3_BUCKET") or settings.s3_bucket
+        s3_bucket = (
+            event["s3_bucket"]
+            if "s3_bucket" in event
+            else (os.getenv("S3_BUCKET") or settings.s3_bucket)
+        )
         tmp_dir = Path(event.get("tmp_dir") or os.getenv("TMP_DIR", "/tmp"))
         local_db_path = Path(event.get("local_db_path") or tmp_dir / "stock_signals.db").resolve()
         local_models_dir = Path(event.get("local_models_dir") or tmp_dir / "models").resolve()

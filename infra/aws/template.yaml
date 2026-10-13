@@ -175,6 +175,22 @@ Resources:
         - Name: FunctionName
           Value: !Ref DailyPipelineFunction
 
+  BillingAlertAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub idx-stock-signal-billing-alert-${Environment}
+      AlarmDescription: Alarm triggered when estimated AWS monthly charges exceed $1.00 USD (Free Tier Protection)
+      MetricName: EstimatedCharges
+      Namespace: AWS/Billing
+      Statistic: Maximum
+      Period: 21600
+      EvaluationPeriods: 1
+      Threshold: 1.0
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: Currency
+          Value: USD
+
 Outputs:
   BucketName:
     Description: Target S3 Bucket

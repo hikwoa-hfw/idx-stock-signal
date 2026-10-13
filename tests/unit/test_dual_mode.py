@@ -1,6 +1,8 @@
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from python.common.types import (
     DailyBar,
     PositionRecord,
@@ -11,10 +13,15 @@ from python.common.types import (
     TradeRecord,
     classify_price_mode,
 )
+from python.labels.engine import LabelEngine
+from python.labels.repository import LabelRepository
 from python.models.baseline import LogisticRegressionBaseline
 from python.models.dataset import Dataset
 from python.models.registry import ModelMetadata, ModelRegistry
+from python.outcomes.dataset import build_matured_outcomes_dataset
+from python.outcomes.repository import OutcomeRepository
 from python.signals.engine import SignalEngine
+from python.signals.repository import SignalRepository
 from services.telegram.formatter import format_dual_mode_signals
 
 # ==============================================================================
@@ -432,3 +439,298 @@ def test_telegram_dual_mode_formatter():
     empty_dict = {"LOW_PRICE": [], "HIGHER_PRICE": [high_sig]}
     empty_text = format_dual_mode_signals(empty_dict, target_date=date(2026, 8, 20))
     assert "NO SIGNAL" in empty_text
+
+
+# ==============================================================================
+# 7. Strict Champion Isolation & Model-Mode Incompatibility Guards
+# ==============================================================================
+
+def test_signal_engine_mode_isolation_and_no_cross_champion_borrowing(tmp_path: Path):
+    reg = ModelRegistry(registry_dir=tmp_path / "reg")
+    clf = LogisticRegressionBaseline()
+    clf.fit([[0.01], [-0.01]], [1, 0], feature_names=["return_1d"])
+
+    meta_high = ModelMetadata(
+        model_version="champ_high_only",
+        algorithm="logistic",
+        task="classification",
+        mode="HIGHER_PRICE",
+        status="champion",
+        training_start="2026-08-01",
+        training_end="2026-08-10",
+        feature_names=["return_1d"],
+    )
+    reg.save_model(clf, meta_high)
+
+    engine = SignalEngine(
+        model_registry=reg,
+        config=SignalConfig(min_probability=0.01),
+    )
+
+    bars = {
+        "GOTO": [
+            DailyBar(
+                ticker="GOTO",
+                date=date(2026, 8, i + 1),
+                open=70.0,
+                high=72.0,
+                low=68.0,
+                close=70.0,
+                volume=500_000.0,
+                provider="test",
+            )
+            for i in range(25)
+        ]
+    }
+
+    # 1. LOW_PRICE with use_champion=True must NOT borrow HIGHER_PRICE champion
+    err_msg = "No champion classification model registered in model registry for mode 'LOW_PRICE'"
+    with pytest.raises(ValueError, match=err_msg):
+        engine.generate_signals(
+            signal_date=date(2026, 8, 25),
+            universe=["GOTO"],
+            bars_by_ticker=bars,
+            mode="LOW_PRICE",
+            use_champion=True,
+        )
+
+    # 2. Explicit model_version tagged for HIGHER_PRICE cannot be used for LOW_PRICE
+    with pytest.raises(ValueError, match="incompatible with requested mode 'LOW_PRICE'"):
+        engine.generate_signals(
+            signal_date=date(2026, 8, 25),
+            universe=["GOTO"],
+            bars_by_ticker=bars,
+            mode="LOW_PRICE",
+            model_version="champ_high_only",
+        )
+
+    # 3. generate_dual_mode_signals isolates missing champion to LOW_PRICE
+    bars["BBCA"] = [
+        DailyBar(
+            ticker="BBCA",
+            date=date(2026, 8, i + 1),
+            open=10000.0,
+            high=10200.0,
+            low=9900.0,
+            close=10000.0,
+            volume=10_000_000.0,
+            provider="test",
+        )
+        for i in range(25)
+    ]
+    dual_res = engine.generate_dual_mode_signals(
+        signal_date=date(2026, 8, 25),
+        universe=["GOTO", "BBCA"],
+        bars_by_ticker=bars,
+        use_champion=True,
+    )
+    assert dual_res["LOW_PRICE"] == []  # fail-closed for LOW_PRICE
+    assert len(dual_res["HIGHER_PRICE"]) == 1
+    assert dual_res["HIGHER_PRICE"][0].ticker == "BBCA"
+
+
+# ==============================================================================
+# 8. LabelEngine & LabelRepository Mode Persistence & Migration
+# ==============================================================================
+
+def test_label_engine_and_repository_mode_support(tmp_path: Path):
+    lbl_engine = LabelEngine(tp_pct=0.05, sl_pct=0.02, max_holding_days=5)
+
+    # Low-price entry bar (price 80)
+    b_low_entry = DailyBar(
+        ticker="GOTO", date=date(2026, 8, 1), open=80.0, high=82.0, low=78.0,
+        close=80.0, volume=1e5, provider="t",
+    )
+    b_low_fwd = [
+        DailyBar(
+            ticker="GOTO", date=date(2026, 8, 2), open=80.0, high=86.0, low=79.0,
+            close=85.0, volume=1e5, provider="t",
+        )
+    ]
+    rec_low = lbl_engine.compute_label_for_bar(b_low_entry, b_low_fwd)
+    assert rec_low is not None
+    assert rec_low.mode_id == "LOW_PRICE"
+
+    # Higher-price entry bar (price 5000)
+    b_high_entry = DailyBar(
+        ticker="TLKM", date=date(2026, 8, 1), open=5000.0, high=5100.0, low=4900.0,
+        close=5000.0, volume=1e5, provider="t",
+    )
+    b_high_fwd = [
+        DailyBar(
+            ticker="TLKM", date=date(2026, 8, 2), open=5000.0, high=5300.0, low=4950.0,
+            close=5250.0, volume=1e5, provider="t",
+        )
+    ]
+    rec_high = lbl_engine.compute_label_for_bar(b_high_entry, b_high_fwd)
+    assert rec_high is not None
+    assert rec_high.mode_id == "HIGHER_PRICE"
+
+    # Sub-50 entry bar (price 45)
+    b_sub_entry = DailyBar(
+        ticker="PENNY", date=date(2026, 8, 1), open=45.0, high=46.0, low=44.0,
+        close=45.0, volume=1e5, provider="t",
+    )
+    b_sub_fwd = [
+        DailyBar(
+            ticker="PENNY", date=date(2026, 8, 2), open=45.0, high=48.0, low=44.0,
+            close=47.5, volume=1e5, provider="t",
+        )
+    ]
+    rec_sub = lbl_engine.compute_label_for_bar(b_sub_entry, b_sub_fwd)
+    assert rec_sub is not None
+    assert rec_sub.mode_id == "EXCLUDED_BELOW_50"
+
+    # Save to LabelRepository and verify mode queries
+    repo = LabelRepository(f"sqlite:///{tmp_path}/test_labels.db")
+    saved = repo.save_labels([rec_low, rec_high, rec_sub])
+    assert saved == 3
+
+    assert repo.count_labels(mode="LOW_PRICE") == 1
+    assert repo.count_labels(mode="HIGHER_PRICE") == 1
+    assert repo.count_labels(mode="EXCLUDED_BELOW_50") == 1
+
+    low_recs = repo.get_all_labels(mode="LOW_PRICE")
+    assert len(low_recs) == 1
+    assert low_recs[0].ticker == "GOTO"
+    assert low_recs[0].mode_id == "LOW_PRICE"
+
+
+# ==============================================================================
+# 9. Outcomes Dataset Mode Segmentation
+# ==============================================================================
+
+def test_outcomes_dataset_mode_segmentation(tmp_path: Path):
+    db_path = f"sqlite:///{tmp_path}/test_outcomes.db"
+    out_repo = OutcomeRepository(db_path)
+    sig_repo = SignalRepository(db_path)
+
+    sig_low = SignalRecord(
+        signal_id="sig-goto-1",
+        ticker="GOTO",
+        signal_date=date(2026, 8, 1),
+        signal="BUY",
+        entry_low=80.0,
+        entry_high=80.0,
+        tp_price=84.0,
+        sl_price=78.4,
+        max_holding_days=10,
+        predicted_probability=0.75,
+        score=75.0,
+        model_version="m_low",
+        mode="LOW_PRICE",
+    )
+    sig_high = SignalRecord(
+        signal_id="sig-bbca-1",
+        ticker="BBCA",
+        signal_date=date(2026, 8, 1),
+        signal="BUY",
+        entry_low=10000.0,
+        entry_high=10000.0,
+        tp_price=10500.0,
+        sl_price=9800.0,
+        max_holding_days=10,
+        predicted_probability=0.80,
+        score=80.0,
+        model_version="m_high",
+        mode="HIGHER_PRICE",
+    )
+    sig_repo.save_signals([sig_low, sig_high])
+
+    out_low = SignalOutcomeRecord(
+        outcome_id="out-goto-1",
+        signal_id="sig-goto-1",
+        ticker="GOTO",
+        signal_date=date(2026, 8, 1),
+        entry_date=date(2026, 8, 2),
+        entry_price=80.0,
+        outcome_status="TP",
+        realized_return=0.05,
+        holding_days=3,
+        exit_date=date(2026, 8, 5),
+        exit_price=84.0,
+        exit_reason="TP",
+        mode="LOW_PRICE",
+    )
+    out_high = SignalOutcomeRecord(
+        outcome_id="out-bbca-1",
+        signal_id="sig-bbca-1",
+        ticker="BBCA",
+        signal_date=date(2026, 8, 1),
+        entry_date=date(2026, 8, 2),
+        entry_price=10000.0,
+        outcome_status="TP",
+        realized_return=0.05,
+        holding_days=4,
+        exit_date=date(2026, 8, 6),
+        exit_price=10500.0,
+        exit_reason="TP",
+        mode="HIGHER_PRICE",
+    )
+    out_repo.save_outcomes([out_low, out_high])
+
+    df_low = build_matured_outcomes_dataset(out_repo, sig_repo, mode="LOW_PRICE")
+    assert len(df_low) == 1
+    assert df_low.iloc[0]["ticker"] == "GOTO"
+    assert df_low.iloc[0]["mode"] == "LOW_PRICE"
+
+    df_high = build_matured_outcomes_dataset(out_repo, sig_repo, mode="HIGHER_PRICE")
+    assert len(df_high) == 1
+    assert df_high.iloc[0]["ticker"] == "BBCA"
+    assert df_high.iloc[0]["mode"] == "HIGHER_PRICE"
+
+
+# ==============================================================================
+# 10. Registry Demotion Mode Isolation
+# ==============================================================================
+
+def test_registry_unsegmented_champion_does_not_demote_segmented(tmp_path: Path):
+    reg = ModelRegistry(registry_dir=tmp_path / "reg")
+    clf = LogisticRegressionBaseline()
+    clf.fit([[0.01]], [1], feature_names=["f1"])
+
+    # Register LOW_PRICE champion
+    meta_low = ModelMetadata(
+        model_version="low_champ",
+        algorithm="logistic",
+        task="classification",
+        mode="LOW_PRICE",
+        status="champion",
+        training_start="2026-08-01",
+        training_end="2026-08-10",
+        feature_names=["f1"],
+    )
+    reg.save_model(clf, meta_low)
+
+    # Register HIGHER_PRICE champion
+    meta_high = ModelMetadata(
+        model_version="high_champ",
+        algorithm="logistic",
+        task="classification",
+        mode="HIGHER_PRICE",
+        status="champion",
+        training_start="2026-08-01",
+        training_end="2026-08-10",
+        feature_names=["f1"],
+    )
+    reg.save_model(clf, meta_high)
+
+    # Register an unsegmented legacy champion (mode=None)
+    meta_legacy = ModelMetadata(
+        model_version="legacy_champ",
+        algorithm="logistic",
+        task="classification",
+        mode=None,
+        status="champion",
+        training_start="2026-08-01",
+        training_end="2026-08-10",
+        feature_names=["f1"],
+    )
+    reg.save_model(clf, meta_legacy)
+
+    # Both low_champ and high_champ MUST remain champions in their modes
+    champ_low = reg.get_champion(task="classification", mode="LOW_PRICE")
+    champ_high = reg.get_champion(task="classification", mode="HIGHER_PRICE")
+    assert champ_low is not None and champ_low[1].model_version == "low_champ"
+    assert champ_high is not None and champ_high[1].model_version == "high_champ"
+

@@ -1,7 +1,13 @@
 import math
 from typing import Optional, Union
 
-from python.common.types import AmbiguityPolicy, DailyBar, LabelOutcome, LabelRecord
+from python.common.types import (
+    AmbiguityPolicy,
+    DailyBar,
+    LabelOutcome,
+    LabelRecord,
+    classify_price_mode,
+)
 
 DEFAULT_TP_PCT: float = 0.05
 DEFAULT_SL_PCT: float = 0.02
@@ -189,6 +195,7 @@ class LabelEngine:
             exit_date=exit_date,
             exit_price=exit_price,
             ambiguity_policy=self.ambiguity_policy,
+            mode=classify_price_mode(ep),
         )
 
     def compute_labels(

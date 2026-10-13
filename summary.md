@@ -454,3 +454,21 @@ Log Perubahan Tambahan (13 Oktober 2026)
    7. Menambahkan kolom `mode TEXT` dan migrasi skema SQLite otomatis pada `signals_daily`, `positions_journal`, dan `outcomes_daily`, serta memastikan immutabilitas mode keputusan saat eksekusi posisi dan backtesting di `python/backtest/engine.py`.
    8. Memperbarui CLI scripts (`generate_signals.py`, `send_daily_telegram.py`, `train_model.py`, `run_telegram_bot.py`), command bot Telegram (`/daily`, `/model`), dan AWS Lambda handler `lambda_daily_pipeline_handler` untuk mendukung opsi dual-mode.
    9. Menambahkan 10 pengujian baru (`tests/unit/test_dual_mode.py` [9 unit tests] dan `tests/integration/test_dual_mode_pipeline.py` [1 integration test]) dengan 100% kelulusan (total 339 tests passed, ruff clean, zero regresi).
+
+29. Penguatan & Perbaikan Audit Arsitektur Dual-Mode BEI Stock Signal (LOW_PRICE & HIGHER_PRICE)
+   Masalah:
+   1. Kebocoran champion lintas-mode (cross-mode champion contamination): Pada `SignalEngine`, ketika model champion untuk `LOW_PRICE` belum tersedia di registry, fallback `get_champion()` tanpa argumen mode secara tidak sengaja meminjam model champion `HIGHER_PRICE` (dan sebaliknya), melanggar aturan isolasi ketat Guide 06.
+   2. Ketidaksesuaian tag mode pada inferensi: `SignalEngine` tidak memvalidasi kecocokan `meta.mode` terhadap `eff_mode` ketika `model_version` eksplisit diberikan, sehingga model berlabel `HIGHER_PRICE` dapat dieksekusi pada saham `LOW_PRICE`.
+   3. Entitas Label belum mendukung mode: `LabelEngine.compute_label_for_bar()` tidak menyematkan atribut `mode` pada `LabelRecord`, dan tabel basis data `labels_daily` di `LabelRepository` belum memiliki kolom `mode`, migrasi skema, maupun filter kueri mode.
+   4. Evaluasi outcome dan dataset comparison belum terisolasi per mode: `build_matured_outcomes_dataset()` di `python/outcomes/dataset.py` tidak memiliki parameter filter `mode` dan tidak menyertakan kolom `mode` di DataFrame hasil; `scripts/evaluate_models.py` belum menyediakan opsi CLI `--mode` untuk evaluasi champion vs challenger independen.
+   5. Demosi champion model unsegmented: `ModelRegistry._demote_existing_champions()` mendemosi seluruh champion saat model unsegmented (mode=None) didaftarkan, mengorbankan status champion segmented.
+   6. Argumen CLI scripts & format CSV: `scripts/send_daily_telegram.py` mengabaikan argumen `--model-version` saat mode dual berjalan; `scripts/generate_signals.py` melewatkan kolom `mode` pada output format CSV.
+   Solusi:
+   1. Memperbaiki resolusi model dan regressor pada `SignalEngine` di `python/signals/engine.py`: melarang peminjaman champion mode lain secara mutlak, hanya mengizinkan fallback ke champion legacy unsegmented (mode is None), dan menolak (fail-closed / ValueError) jika tidak ada model yang kompatibel.
+   2. Menambahkan validasi kompatibilitas `meta.mode` pada `SignalEngine` saat `model_version` eksplisit dimuat, serta isolasi graceful per mode pada `generate_dual_mode_signals`.
+   3. Mengintegrasikan `classify_price_mode(ep)` ke `LabelEngine.compute_label_for_bar()` dan menambahkan kolom `mode TEXT`, migrasi otomatis, indeks, serta filter mode pada `LabelRepository` (`save_labels`, `get_labels`, `get_all_labels`, `count_labels`, `_row_to_record`).
+   4. Menambahkan parameter `mode: Optional[str] = None` dan kolom `mode` pada `build_matured_outcomes_dataset()`, serta menambahkan opsi CLI `--mode [LOW_PRICE|HIGHER_PRICE|ALL]` pada `scripts/evaluate_models.py` untuk perbandingan model dan promosi champion independen.
+   5. Memperbaiki `_demote_existing_champions()` dan `rollback_champion()` pada `ModelRegistry` agar demosi model unsegmented tidak mendemosi model champion bertag mode.
+   6. Meneruskan parameter `model_version` pada `scripts/send_daily_telegram.py` dan `scripts/generate_signals.py`, serta menambahkan kolom `mode` pada header dan baris CSV `scripts/generate_signals.py`.
+   7. Memperbarui handler cloud `lambda_daily_pipeline_handler` di `python/cloud/handlers.py` untuk mendeteksi ketersediaan champion mode (`low_champ` atau `high_champ`).
+   8. Menambahkan 4 unit test baru di `tests/unit/test_dual_mode.py` (total 13 unit tests dual-mode, 343 keseluruhan repo test suite lulus 100%, ruff 100% clean).

@@ -182,6 +182,7 @@ class ModelRegistry:
 
         if target_version:
             target_meta = self.get_metadata(target_version)
+            eff_mode = mode if mode is not None else target_meta.mode
             if target_meta.task.lower() != task.lower():
                 raise ValueError(
                     f"Target model '{target_version}' task '{target_meta.task}' "
@@ -192,6 +193,7 @@ class ModelRegistry:
                     f"Model '{target_version}' is already the active champion for task '{task}'."
                 )
         else:
+            eff_mode = mode
             candidates = [
                 m for m in self.list_models(task=task, mode=mode)
                 if m.model_version != current_ver
@@ -210,7 +212,7 @@ class ModelRegistry:
         self.promote_to_champion(
             target_meta.model_version,
             demote_to=demote_current_to,
-            mode=mode,
+            mode=eff_mode,
         )
         return self.get_metadata(target_meta.model_version)
 
@@ -227,6 +229,9 @@ class ModelRegistry:
             if mode is not None:
                 meta_mode = (meta.mode or "").strip().upper()
                 if meta_mode != mode.strip().upper():
+                    continue
+            else:
+                if meta.mode is not None:
                     continue
             if meta.status.lower() == "champion":
                 meta.status = demote_to

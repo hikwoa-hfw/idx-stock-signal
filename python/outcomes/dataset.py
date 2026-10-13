@@ -14,13 +14,16 @@ def build_matured_outcomes_dataset(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     ticker: Optional[str] = None,
+    mode: Optional[str] = None,
     exclude_ambiguous: bool = False,
 ) -> pd.DataFrame:
     """Merge matured outcomes with original signal metadata and feature snapshots."""
+    eff_mode = mode.strip().upper() if mode and mode != "ALL" else None
     matured_outcomes = outcome_repo.get_matured_outcomes(
         start_date=start_date,
         end_date=end_date,
         ticker=ticker,
+        mode=eff_mode,
     )
     if not matured_outcomes:
         return pd.DataFrame()
@@ -30,6 +33,7 @@ def build_matured_outcomes_dataset(
         start_date=start_date,
         end_date=end_date,
         ticker=ticker,
+        mode=eff_mode,
     )
     sig_map = {s.signal_id: s for s in signals}
 
@@ -56,6 +60,7 @@ def build_matured_outcomes_dataset(
             "exit_reason": out.exit_reason,
             "resolved_at": out.resolved_at.isoformat() if out.resolved_at else None,
             "notes": out.notes,
+            "mode": out.mode_id,
         }
 
         signal = sig_map.get(out.signal_id) or signal_repo.get_signal_by_id(out.signal_id)

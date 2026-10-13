@@ -31,14 +31,17 @@ if sys.platform == "win32":
 def _load_dataset(
     dataset_path: Optional[str] = None,
     from_outcomes: bool = False,
+    mode: Optional[str] = None,
 ) -> pd.DataFrame:
     """Loads evaluation dataset from CSV/Parquet file or database matured outcomes."""
+    eff_mode = mode.strip().upper() if mode and mode != "ALL" else None
     if from_outcomes:
         outcome_repo = OutcomeRepository()
         signal_repo = SignalRepository()
         df = build_matured_outcomes_dataset(
             outcome_repo=outcome_repo,
             signal_repo=signal_repo,
+            mode=eff_mode,
             exclude_ambiguous=True,
         )
         if df.empty:
@@ -51,8 +54,12 @@ def _load_dataset(
             print(f"[ERROR] Dataset file not found: {dataset_path}", file=sys.stderr)
             sys.exit(1)
         if p.suffix.lower() == ".parquet":
-            return pd.read_parquet(p)
-        return pd.read_csv(p)
+            df = pd.read_parquet(p)
+        else:
+            df = pd.read_csv(p)
+        if eff_mode and "mode" in df.columns:
+            df = df[df["mode"].astype(str).str.upper() == eff_mode].reset_index(drop=True)
+        return df
 
     # Fallback to matured outcomes if available, else empty DataFrame
     outcome_repo = OutcomeRepository()
@@ -60,6 +67,7 @@ def _load_dataset(
     df = build_matured_outcomes_dataset(
         outcome_repo=outcome_repo,
         signal_repo=signal_repo,
+        mode=eff_mode,
         exclude_ambiguous=True,
     )
     return df
@@ -126,6 +134,12 @@ def main() -> None:
         action="store_true",
         help="Automatically promote challenger to champion if recommendation is PROMOTE.",
     )
+    parser.add_argument(
+        "--mode",
+        choices=["LOW_PRICE", "HIGHER_PRICE", "ALL"],
+        default=None,
+        help="Price regime filter: LOW_PRICE, HIGHER_PRICE, or ALL (default: evaluate all).",
+    )
 
     args = parser.parse_args()
 
@@ -137,7 +151,7 @@ def main() -> None:
     # Determine champion version
     champ_ver = args.champion_version
     if not champ_ver:
-        champ_meta = registry.get_champion()
+        champ_meta = registry.get_champion(mode=args.mode)
         if champ_meta:
             champ_ver = champ_meta[1].model_version
         else:
@@ -145,7 +159,11 @@ def main() -> None:
 
     chall_ver = args.challenger_version
 
-    df = _load_dataset(dataset_path=args.dataset_path, from_outcomes=args.from_outcomes)
+    df = _load_dataset(
+        dataset_path=args.dataset_path,
+        from_outcomes=args.from_outcomes,
+        mode=args.mode,
+    )
 
     if df.empty:
         print("[INFO] Evaluation dataset is empty. Nothing to evaluate.")
@@ -243,7 +261,7 @@ def main() -> None:
         )
         if should_promote:
             if has_chall_artifact:
-                registry.promote_to_champion(chall_ver)
+                registry.promote_to_champion(chall_ver, mode=args.mode)
                 print(
                     f"[SUCCESS] Model '{chall_ver}' successfully promoted "
                     f"to champion in registry."

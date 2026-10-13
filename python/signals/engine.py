@@ -230,17 +230,36 @@ class SignalEngine:
         if classifier is None:
             if model_version:
                 classifier, meta = self.model_registry.load_model(model_version)
+                if (
+                    eff_mode
+                    and eff_mode not in ("ALL", "*")
+                    and meta.mode
+                    and meta.mode.strip().upper() != eff_mode
+                ):
+                    raise ValueError(
+                        f"Model version '{model_version}' is tagged for mode '{meta.mode}', "
+                        f"incompatible with requested mode '{eff_mode}'."
+                    )
                 model_version_str = meta.model_version
                 feature_names = meta.feature_names or DEFAULT_FEATURE_COLUMNS
             elif use_champion:
                 champ = None
                 if eff_mode and eff_mode not in ("ALL", "*"):
                     champ = self.model_registry.get_champion(task="classification", mode=eff_mode)
-                if champ is None:
+                else:
                     champ = self.model_registry.get_champion(task="classification")
+                if champ is None and eff_mode and eff_mode not in ("ALL", "*"):
+                    legacy_champs = [
+                        m for m in self.model_registry.list_models(task="classification")
+                        if m.mode is None and m.status.lower() == "champion"
+                    ]
+                    if legacy_champs:
+                        champ = self.model_registry.load_model(legacy_champs[0].model_version)
                 if champ is None:
+                    mode_detail = f" for mode '{eff_mode}'" if eff_mode else ""
                     raise ValueError(
-                        "No champion classification model registered in model registry."
+                        f"No champion classification model registered in model registry"
+                        f"{mode_detail}."
                     )
                 classifier, meta = champ
                 model_version_str = meta.model_version
@@ -249,8 +268,15 @@ class SignalEngine:
                 champ = None
                 if eff_mode and eff_mode not in ("ALL", "*"):
                     champ = self.model_registry.get_champion(task="classification", mode=eff_mode)
-                if champ is None:
+                else:
                     champ = self.model_registry.get_champion(task="classification")
+                if champ is None and eff_mode and eff_mode not in ("ALL", "*"):
+                    legacy_champs = [
+                        m for m in self.model_registry.list_models(task="classification")
+                        if m.mode is None and m.status.lower() == "champion"
+                    ]
+                    if legacy_champs:
+                        champ = self.model_registry.load_model(legacy_champs[0].model_version)
                 if champ is not None:
                     classifier, meta = champ
                     model_version_str = meta.model_version
@@ -259,15 +285,22 @@ class SignalEngine:
                     candidates = self.model_registry.list_models(
                         task="classification",
                         mode=eff_mode if eff_mode not in ("ALL", "*") else None,
-                    ) or self.model_registry.list_models(task="classification")
+                    )
+                    if not candidates and eff_mode and eff_mode not in ("ALL", "*"):
+                        candidates = [
+                            m for m in self.model_registry.list_models(task="classification")
+                            if m.mode is None
+                        ]
                     if candidates:
                         v = candidates[0].model_version
                         classifier, meta = self.model_registry.load_model(v)
                         model_version_str = meta.model_version
                         feature_names = meta.feature_names or DEFAULT_FEATURE_COLUMNS
                     else:
+                        mode_detail = f" for mode '{eff_mode}'" if eff_mode else ""
                         raise ValueError(
-                            "No classifier model available in registry and none provided."
+                            f"No classifier model available in registry{mode_detail} "
+                            "and none provided."
                         )
         else:
             if not model_version_str:
@@ -278,8 +311,15 @@ class SignalEngine:
             champ_reg = None
             if eff_mode and eff_mode not in ("ALL", "*"):
                 champ_reg = self.model_registry.get_champion(task="regression", mode=eff_mode)
-            if champ_reg is None:
+            else:
                 champ_reg = self.model_registry.get_champion(task="regression")
+            if champ_reg is None and eff_mode and eff_mode not in ("ALL", "*"):
+                legacy_regs = [
+                    m for m in self.model_registry.list_models(task="regression")
+                    if m.mode is None and m.status.lower() == "champion"
+                ]
+                if legacy_regs:
+                    champ_reg = self.model_registry.load_model(legacy_regs[0].model_version)
             if champ_reg is not None:
                 regressor, _ = champ_reg
 
@@ -477,28 +517,36 @@ class SignalEngine:
         cfg_low = config_low or base_cfg.model_copy(update={"mode": "LOW_PRICE"})
         cfg_high = config_higher or base_cfg.model_copy(update={"mode": "HIGHER_PRICE"})
 
-        low_signals = self.generate_signals(
-            signal_date=signal_date,
-            universe=universe,
-            mode="LOW_PRICE",
-            bars_by_ticker=bars_by_ticker,
-            features_by_ticker=features_by_ticker,
-            config=cfg_low,
-            use_champion=use_champion,
-            min_history_bars=min_history_bars,
-            **kwargs,
-        )
-        higher_signals = self.generate_signals(
-            signal_date=signal_date,
-            universe=universe,
-            mode="HIGHER_PRICE",
-            bars_by_ticker=bars_by_ticker,
-            features_by_ticker=features_by_ticker,
-            config=cfg_high,
-            use_champion=use_champion,
-            min_history_bars=min_history_bars,
-            **kwargs,
-        )
+        try:
+            low_signals = self.generate_signals(
+                signal_date=signal_date,
+                universe=universe,
+                mode="LOW_PRICE",
+                bars_by_ticker=bars_by_ticker,
+                features_by_ticker=features_by_ticker,
+                config=cfg_low,
+                use_champion=use_champion,
+                min_history_bars=min_history_bars,
+                **kwargs,
+            )
+        except ValueError:
+            low_signals = []
+
+        try:
+            higher_signals = self.generate_signals(
+                signal_date=signal_date,
+                universe=universe,
+                mode="HIGHER_PRICE",
+                bars_by_ticker=bars_by_ticker,
+                features_by_ticker=features_by_ticker,
+                config=cfg_high,
+                use_champion=use_champion,
+                min_history_bars=min_history_bars,
+                **kwargs,
+            )
+        except ValueError:
+            higher_signals = []
+
         return {
             "LOW_PRICE": low_signals,
             "HIGHER_PRICE": higher_signals,

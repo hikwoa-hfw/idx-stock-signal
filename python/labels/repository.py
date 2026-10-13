@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from python.common.types import LabelRecord
+from python.common.types import LabelRecord, classify_price_mode
 from python.config.settings import settings
 
 
@@ -71,10 +71,21 @@ class LabelRepository:
                         exit_date TEXT,
                         exit_price REAL,
                         ambiguity_policy TEXT NOT NULL,
+                        mode TEXT,
                         created_at TEXT NOT NULL,
                         PRIMARY KEY (ticker, date, label_version)
                     );
                     """
+                )
+                cols = [
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(labels_daily);").fetchall()
+                ]
+                if "mode" not in cols:
+                    conn.execute("ALTER TABLE labels_daily ADD COLUMN mode TEXT;")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_labels_mode "
+                    "ON labels_daily(mode);"
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_labels_ticker_date "
@@ -112,6 +123,7 @@ class LabelRepository:
                 str(r.exit_date) if r.exit_date else None,
                 r.exit_price,
                 r.ambiguity_policy,
+                r.mode_id or classify_price_mode(r.entry_price),
                 now_iso,
             )
             for r in records
@@ -125,7 +137,7 @@ class LabelRepository:
                 outcome, binary_target, mfe, mae,
                 holding_days, realized_return,
                 exit_date, exit_price,
-                ambiguity_policy, created_at
+                ambiguity_policy, mode, created_at
             ) VALUES (
                 ?, ?, ?,
                 ?, ?, ?,
@@ -133,7 +145,7 @@ class LabelRepository:
                 ?, ?, ?, ?,
                 ?, ?,
                 ?, ?,
-                ?, ?
+                ?, ?, ?
             )
             ON CONFLICT(ticker, date, label_version) DO UPDATE SET
                 entry_price = excluded.entry_price,
@@ -151,6 +163,7 @@ class LabelRepository:
                 exit_date = excluded.exit_date,
                 exit_price = excluded.exit_price,
                 ambiguity_policy = excluded.ambiguity_policy,
+                mode = COALESCE(excluded.mode, labels_daily.mode),
                 created_at = excluded.created_at;
         """
 
@@ -169,6 +182,7 @@ class LabelRepository:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         label_version: Optional[str] = None,
+        mode: Optional[str] = None,
     ) -> list[LabelRecord]:
         clean_ticker = ticker.strip().upper().removesuffix(".JK")
         clauses = ["(ticker = ? OR ticker = ? || '.JK')"]
@@ -183,6 +197,9 @@ class LabelRepository:
         if label_version is not None:
             clauses.append("label_version = ?")
             params.append(label_version)
+        if mode is not None:
+            clauses.append("mode = ?")
+            params.append(mode.strip().upper())
 
         query = f"""
             SELECT * FROM labels_daily
@@ -205,6 +222,7 @@ class LabelRepository:
         label_version: Optional[str] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        mode: Optional[str] = None,
     ) -> list[LabelRecord]:
         clauses: list[str] = []
         params: list[object] = []
@@ -225,6 +243,9 @@ class LabelRepository:
         if end_date is not None:
             clauses.append("date <= ?")
             params.append(str(end_date))
+        if mode is not None:
+            clauses.append("mode = ?")
+            params.append(mode.strip().upper())
 
         where_str = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         query = f"""
@@ -246,6 +267,7 @@ class LabelRepository:
         self,
         ticker: Optional[str] = None,
         label_version: Optional[str] = None,
+        mode: Optional[str] = None,
     ) -> int:
         clauses: list[str] = []
         params: list[object] = []
@@ -256,6 +278,9 @@ class LabelRepository:
         if label_version:
             clauses.append("label_version = ?")
             params.append(label_version)
+        if mode:
+            clauses.append("mode = ?")
+            params.append(mode.strip().upper())
 
         where_str = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         query = f"SELECT COUNT(*) FROM labels_daily {where_str};"
@@ -343,6 +368,11 @@ class LabelRepository:
 
     def _row_to_record(self, row: sqlite3.Row) -> LabelRecord:
         exit_d = date.fromisoformat(row["exit_date"]) if row["exit_date"] else None
+        mode_val = (
+            row["mode"]
+            if "mode" in row.keys() and row["mode"]
+            else classify_price_mode(float(row["entry_price"]))
+        )
         return LabelRecord(
             ticker=row["ticker"],
             date=date.fromisoformat(row["date"]),
@@ -362,5 +392,6 @@ class LabelRepository:
             exit_date=exit_d,
             exit_price=float(row["exit_price"]) if row["exit_price"] is not None else None,
             ambiguity_policy=row["ambiguity_policy"],
+            mode=mode_val,
             created_at=datetime.fromisoformat(row["created_at"]),
         )

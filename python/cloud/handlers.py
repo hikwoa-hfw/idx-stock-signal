@@ -327,7 +327,10 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                 logger.warning("Feature extraction skipped or error: %s", feat_err)
 
         champ = model_reg.get_champion(task="classification")
-        use_champ = champ is not None and not bool(event.get("no_champion", False))
+        low_champ = model_reg.get_champion(task="classification", mode="LOW_PRICE")
+        high_champ = model_reg.get_champion(task="classification", mode="HIGHER_PRICE")
+        has_any_champ = bool(champ or low_champ or high_champ)
+        use_champ = has_any_champ and not bool(event.get("no_champion", False))
         dual_mode = bool(event.get("dual_mode", True))
 
         generated_signals = []

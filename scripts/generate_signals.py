@@ -126,6 +126,7 @@ def print_csv_signals(signals: list[SignalRecord]) -> None:
             "signal_id",
             "ticker",
             "signal_date",
+            "mode",
             "signal",
             "entry_low",
             "entry_high",
@@ -147,6 +148,7 @@ def print_csv_signals(signals: list[SignalRecord]) -> None:
                 s.signal_id,
                 s.ticker,
                 str(s.signal_date),
+                s.mode_id or "",
                 s.signal,
                 s.entry_low,
                 s.entry_high,
@@ -234,6 +236,7 @@ def main() -> None:
                 bars_by_ticker=bars_by_ticker,
                 config=config,
                 use_champion=args.use_champion,
+                model_version=args.model_version,
             )
             signals = dual_res.get("LOW_PRICE", []) + dual_res.get("HIGHER_PRICE", [])
         else:

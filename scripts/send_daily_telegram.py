@@ -112,6 +112,7 @@ def main() -> None:
                     bars_by_ticker=bars_by_ticker,
                     config=cfg,
                     use_champion=args.use_champion,
+                    model_version=args.model_version,
                 )
                 low_sigs = dual_results.get("LOW_PRICE", [])
                 high_sigs = dual_results.get("HIGHER_PRICE", [])

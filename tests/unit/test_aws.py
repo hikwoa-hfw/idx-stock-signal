@@ -293,6 +293,7 @@ def test_lambda_daily_pipeline_handler_error_handling():
         "local_db_path": "",
         "s3_bucket": None,
         "market_provider": "invalid_unknown_provider_xyz",
+        "skip_telegram": True,
     }
     resp = lambda_daily_pipeline_handler(event, None)
     assert resp["statusCode"] == 500

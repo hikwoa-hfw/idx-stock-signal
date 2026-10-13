@@ -55,6 +55,9 @@ retrain:
 deploy:
 	$(VENV_PYTHON) -m scripts.deploy_aws
 
+bot:
+	$(VENV_PYTHON) -m scripts.run_telegram_bot
+
 clean:
 	$(VENV_PYTHON) -c "import shutil, pathlib; [shutil.rmtree(p, ignore_errors=True) for p in pathlib.Path('.').rglob('__pycache__')]; [shutil.rmtree(p, ignore_errors=True) for p in pathlib.Path('.').rglob('.pytest_cache')]"
 

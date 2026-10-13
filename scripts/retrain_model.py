@@ -74,6 +74,17 @@ def parse_args() -> argparse.Namespace:
         help="SQLite database URL. Defaults to settings.database_url.",
     )
     parser.add_argument(
+        "--registry-dir",
+        default=None,
+        help="Directory for model registry. Defaults to settings.model_registry_path.",
+    )
+    parser.add_argument(
+        "--since-date",
+        type=str,
+        default=None,
+        help="Anchor date (YYYY-MM-DD) for evaluating accumulated new matured outcomes.",
+    )
+    parser.add_argument(
         "--output-format",
         choices=["table", "json", "markdown"],
         default="table",
@@ -138,7 +149,7 @@ def format_trigger_output(res: object, fmt: str) -> str:
 def main() -> None:
     args = parse_args()
     db_url = args.db_url or settings.database_url
-    registry = ModelRegistry()
+    registry = ModelRegistry(registry_dir=args.registry_dir)
     gate_mgr = PromotionGateManager(registry=registry)
 
     # 1. Handle Rollback Command
@@ -175,13 +186,20 @@ def main() -> None:
         auto_promote=args.auto_promote,
         force=args.force,
         dry_run=args.dry_run,
+        since_date=args.since_date,
     )
 
+    from python.data.repository import DailyBarRepository
+    from python.features.repository import FeatureRepository
+    from python.labels.repository import LabelRepository
     from python.outcomes.repository import OutcomeRepository
     from python.signals.repository import SignalRepository
 
     outcome_repo = OutcomeRepository(db_url)
     signal_repo = SignalRepository(db_url)
+    feat_repo = FeatureRepository(db_url)
+    lbl_repo = LabelRepository(db_url)
+    bar_repo = DailyBarRepository(db_url)
 
     from python.retraining.trigger import (
         RetrainingTriggerConfig,
@@ -203,6 +221,9 @@ def main() -> None:
     assembler = RetrainingDatasetAssembler(
         outcome_repo=outcome_repo,
         signal_repo=signal_repo,
+        feature_repo=feat_repo,
+        label_repo=lbl_repo,
+        bar_repo=bar_repo,
     )
 
     pipeline = RetrainingPipeline(
@@ -215,8 +236,21 @@ def main() -> None:
 
     # 3. Check trigger only
     if args.check_trigger_only:
+        anchor_date = args.since_date
+        if anchor_date is None:
+            champ = registry.get_champion(task=args.task)
+            if champ is not None and champ[1].training_end:
+                try:
+                    from datetime import date, timedelta
+                    anchor_date = (
+                        date.fromisoformat(champ[1].training_end.strip()) + timedelta(days=1)
+                    ).isoformat()
+                except Exception:
+                    anchor_date = None
+
         trig_res = trigger_eval.evaluate(
             force=args.force,
+            since_date=anchor_date,
             min_matured_samples=args.min_matured,
         )
         print(format_trigger_output(trig_res, args.output_format))
@@ -224,6 +258,7 @@ def main() -> None:
 
     # 4. Run Retraining Pipeline
     res = pipeline.run(
+        since_date=args.since_date,
         force=args.force,
         auto_promote=args.auto_promote,
         dry_run=args.dry_run,

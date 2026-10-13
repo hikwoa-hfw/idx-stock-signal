@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import Optional, Union
 
 import numpy as np
 
@@ -14,6 +14,7 @@ class RetrainingTriggerConfig:
     rolling_window_size: int = 50
     brier_safety_floor: float = 0.25
     win_rate_safety_floor: float = 0.45
+    exclude_ambiguous: bool = True
     force: bool = False
 
 
@@ -53,7 +54,7 @@ class RetrainingTriggerEvaluator:
     def evaluate(
         self,
         force: bool = False,
-        since_date: Optional[date] = None,
+        since_date: Optional[Union[date, str]] = None,
         min_matured_samples: Optional[int] = None,
     ) -> RetrainingTriggerResult:
         reasons: list[str] = []
@@ -62,8 +63,17 @@ class RetrainingTriggerEvaluator:
         if is_forced:
             reasons.append("Manual / forced trigger requested by operator.")
 
-        outcomes = self.outcome_repo.get_matured_outcomes(start_date=since_date)
-        matured_count = len(outcomes)
+        anchor_date: Optional[date] = None
+        if since_date is not None:
+            anchor_date = (
+                date.fromisoformat(since_date.strip())
+                if isinstance(since_date, str)
+                else since_date
+            )
+
+        # 1. Volume trigger: evaluates new accumulated matured outcomes
+        new_outcomes = self.outcome_repo.get_matured_outcomes(start_date=anchor_date)
+        matured_count = len(new_outcomes)
         threshold = (
             min_matured_samples
             if min_matured_samples is not None
@@ -76,12 +86,25 @@ class RetrainingTriggerEvaluator:
                 f">= threshold ({threshold})."
             )
 
+        # 2. Performance degradation: evaluates recent rolling window across market outcomes
+        all_outcomes = (
+            new_outcomes
+            if anchor_date is None
+            else self.outcome_repo.get_matured_outcomes()
+        )
+        if self.config.exclude_ambiguous:
+            eval_outcomes = [
+                o for o in all_outcomes if o.outcome_status.upper() != "AMBIGUOUS"
+            ]
+        else:
+            eval_outcomes = all_outcomes
+
         rolling_win_rate: Optional[float] = None
         rolling_brier: Optional[float] = None
 
-        if matured_count > 0:
-            k = min(matured_count, self.config.rolling_window_size)
-            window = outcomes[-k:]
+        if len(eval_outcomes) > 0:
+            k = min(len(eval_outcomes), self.config.rolling_window_size)
+            window = eval_outcomes[-k:]
 
             wins = sum(
                 1

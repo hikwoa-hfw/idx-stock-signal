@@ -495,3 +495,131 @@ def test_rollback_raises_when_no_prior_models(tmp_path):
     gate_mgr = PromotionGateManager(registry=registry)
     with pytest.raises(ValueError, match="No prior models found"):
         gate_mgr.rollback()
+
+
+def test_trigger_performance_degradation_with_recent_anchor():
+    # 50 total outcomes in DB, all losing (0% win rate).
+    # since_date is 5 days ago, so only 5 new outcomes (volume 5 < 200).
+    # But rolling window over recent 20 trades should detect degradation and trigger.
+    base_d = date(2025, 1, 1)
+    outcomes = [
+        _make_dummy_outcome(i, status="SL", ret=-0.02, d=base_d + timedelta(days=i))
+        for i in range(50)
+    ]
+    evaluator = RetrainingTriggerEvaluator(
+        config=RetrainingTriggerConfig(
+            min_matured_samples=200,
+            rolling_window_size=20,
+            win_rate_safety_floor=0.45,
+        ),
+        outcome_repo=MockOutcomeRepo(outcomes),
+        signal_repo=MockSignalRepo(),
+    )
+    result = evaluator.evaluate(since_date=base_d + timedelta(days=45))
+    assert result.should_retrain is True
+    assert result.matured_count == 5  # 5 new outcomes since anchor
+    assert result.rolling_win_rate == 0.0
+    assert any("Rolling win rate" in r for r in result.reasons)
+
+
+def test_dataset_assembly_feature_preservation_combine_first():
+    # Historical DataFrame has full computed features (return_1d, rsi14, macd).
+    # Outcomes DataFrame for same (ticker, date) only has partial snapshot (return_1d).
+    # Assembler must preserve rsi14 and macd from historical data.
+    assembler = RetrainingDatasetAssembler(
+        feature_cols=["return_1d", "rsi14", "macd"],
+        exclude_ambiguous=True,
+    )
+    h_df = pd.DataFrame([
+        {
+            "ticker": "BBCA",
+            "date": "2025-01-01",
+            "return_1d": 0.01,
+            "rsi14": 55.0,
+            "macd": 0.5,
+            "binary_target": 0,
+            "realized_return": -0.01,
+        }
+    ])
+    o_df = pd.DataFrame([
+        {
+            "ticker": "BBCA",
+            "date": "2025-01-01",
+            "return_1d": 0.02,
+            "binary_target": 1,
+            "realized_return": 0.04,
+            "outcome_status": "TP",
+        }
+    ])
+    ds = assembler.assemble_from_dfs(h_df, o_df)
+    assert len(ds) == 1
+    assert ds.y[0] == 1  # Outcome target takes precedence
+    assert ds.y_return[0] == 0.04
+    # Features preserved from historical data rather than imputed median/0
+    assert ds.X[0][0] == 0.02  # return_1d from outcome
+    assert ds.X[0][1] == 55.0  # rsi14 preserved from historical
+    assert ds.X[0][2] == 0.5   # macd preserved from historical
+
+
+def test_rollback_task_mismatch_raises(tmp_path):
+    registry = ModelRegistry(registry_dir=tmp_path)
+    gate_mgr = PromotionGateManager(registry=registry)
+
+    meta_reg = ModelMetadata(
+        model_version="reg_model_1",
+        algorithm="lightgbm",
+        task="regression",
+        status="archived_champion",
+        training_start="2025-01-01",
+        training_end="2025-03-31",
+    )
+    registry.save_model("dummy_reg", meta_reg)
+
+    with pytest.raises(ValueError, match="does not match requested task"):
+        gate_mgr.rollback(target_version="reg_model_1", task="classification")
+
+
+def test_rollback_same_active_champion_raises(tmp_path):
+    registry = ModelRegistry(registry_dir=tmp_path)
+    gate_mgr = PromotionGateManager(registry=registry)
+
+    meta = ModelMetadata(
+        model_version="champ_v1",
+        algorithm="lightgbm",
+        task="classification",
+        status="champion",
+        training_start="2025-01-01",
+        training_end="2025-03-31",
+    )
+    registry.save_model("dummy_champ", meta)
+
+    with pytest.raises(ValueError, match="already the active champion"):
+        gate_mgr.rollback(target_version="champ_v1", task="classification")
+
+
+def test_walk_forward_split_small_dataset_clamping():
+    assembler = RetrainingDatasetAssembler(
+        feature_cols=["return_1d", "rsi14"],
+        purge_days=10,
+    )
+    # Small dataset spanning only 5 dates
+    dates = [
+        date(2025, 1, 1),
+        date(2025, 1, 2),
+        date(2025, 1, 3),
+        date(2025, 1, 4),
+        date(2025, 1, 5),
+    ]
+    df = pd.DataFrame({
+        "ticker": ["BBCA"] * 5,
+        "date": dates,
+        "return_1d": [0.01] * 5,
+        "rsi14": [50.0] * 5,
+        "binary_target": [1, 0, 1, 0, 1],
+        "realized_return": [0.02, -0.01, 0.03, -0.02, 0.01],
+    })
+    ds = assembler.assemble_from_dfs(df, pd.DataFrame())
+    # Should not raise ValueError even though 5 dates < purge_days (10)
+    train_ds, val_ds, test_ds = assembler.split_walk_forward(ds, purge_days=10)
+    assert len(train_ds) > 0
+    assert len(test_ds) > 0

@@ -107,7 +107,7 @@ class ModelRegistry:
             except Exception:
                 continue
 
-        models.sort(key=lambda m: m.created_at, reverse=True)
+        models.sort(key=lambda m: (m.created_at, m.model_version), reverse=True)
         return models
 
     def get_champion(self, task: str = "classification") -> Optional[tuple[Any, ModelMetadata]]:
@@ -147,6 +147,15 @@ class ModelRegistry:
 
         if target_version:
             target_meta = self.get_metadata(target_version)
+            if target_meta.task.lower() != task.lower():
+                raise ValueError(
+                    f"Target model '{target_version}' task '{target_meta.task}' "
+                    f"does not match requested task '{task}'."
+                )
+            if current_ver and target_meta.model_version == current_ver:
+                raise ValueError(
+                    f"Model '{target_version}' is already the active champion for task '{task}'."
+                )
         else:
             candidates = [
                 m for m in self.list_models(task=task)

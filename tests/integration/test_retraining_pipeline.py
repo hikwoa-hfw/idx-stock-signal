@@ -184,7 +184,12 @@ def test_retraining_pipeline_end_to_end(populated_env):
     assert champ_meta.model_version == res_full.challenger_version
     assert champ_meta.status == "champion"
 
-    # Now train second model as challenger
+    # Subsequent run without force should SKIP because 0 new outcomes occurred since champion
+    res_subsequent = pipeline.run(force=False)
+    assert res_subsequent.status == "SKIPPED"
+    assert res_subsequent.triggered is False
+
+    # Now train second model as challenger with force=True
     res_challenger2 = pipeline.run(
         force=True,
         dry_run=False,
@@ -214,14 +219,19 @@ def test_retrain_cli_options(populated_env):
     import sys
 
     db_url = populated_env["db_url"]
+    reg_dir = populated_env["reg_dir"]
 
-    # 1. Test --check-trigger-only with JSON format
+    # 1. Test --check-trigger-only with JSON format and custom registry-dir / since-date
     cmd_check = [
         sys.executable,
         "-m",
         "scripts.retrain_model",
         "--db-url",
         db_url,
+        "--registry-dir",
+        str(reg_dir),
+        "--since-date",
+        "2025-01-20",
         "--check-trigger-only",
         "--output-format",
         "json",
@@ -230,13 +240,15 @@ def test_retrain_cli_options(populated_env):
     assert res_check.returncode == 0
     assert "should_retrain" in res_check.stdout
 
-    # 2. Test --dry-run and --force with table format
+    # 2. Test --dry-run and --force with table format and custom registry-dir
     cmd_dry = [
         sys.executable,
         "-m",
         "scripts.retrain_model",
         "--db-url",
         db_url,
+        "--registry-dir",
+        str(reg_dir),
         "--force",
         "--dry-run",
         "--algorithm",

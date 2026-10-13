@@ -45,10 +45,17 @@ class PromotionGateManager:
     ) -> PromotionGateResult:
         """Evaluates whether a challenger model satisfies promotion criteria against champion."""
         # Extract evaluation arrays from test_dataset if provided
+        outcome_statuses: Optional[list[str]] = None
         if test_dataset is not None:
             feat_df = pd.DataFrame(test_dataset.X, columns=test_dataset.feature_names)
             y_arr = test_dataset.y
             ret_arr = test_dataset.y_return
+            if (
+                test_dataset.metadata is not None
+                and not test_dataset.metadata.empty
+                and "outcome_status" in test_dataset.metadata.columns
+            ):
+                outcome_statuses = test_dataset.metadata["outcome_status"].tolist()
             if not test_window and len(test_dataset.dates) > 0:
                 test_window = f"{min(test_dataset.dates)} to {max(test_dataset.dates)}"
         else:
@@ -90,6 +97,7 @@ class PromotionGateManager:
             X_test=feat_df,
             y_test=y_arr,
             returns_test=ret_arr,
+            outcome_statuses=outcome_statuses,
             test_window=test_window,
         )
 

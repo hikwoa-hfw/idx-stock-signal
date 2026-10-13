@@ -94,10 +94,11 @@ class RetrainingDatasetAssembler:
         elif o_df.empty:
             merged = h_df.copy()
         else:
-            # Combine: outcomes take precedence over historical labels for identical (ticker, date)
-            # Put outcomes at end, then drop duplicates keep='last'
-            combined = pd.concat([h_df, o_df], ignore_index=True)
-            merged = combined.drop_duplicates(subset=["ticker", "date"], keep="last")
+            # Combine: outcomes take precedence over historical labels for identical (ticker, date),
+            # while preserving non-null feature values from historical data
+            o_indexed = o_df.set_index(["ticker", "date"])
+            h_indexed = h_df.set_index(["ticker", "date"])
+            merged = o_indexed.combine_first(h_indexed).reset_index()
 
         # Sort chronologically strictly by date, then ticker
         merged = merged.sort_values(by=["date", "ticker"]).reset_index(drop=True)
@@ -179,6 +180,17 @@ class RetrainingDatasetAssembler:
     ) -> tuple[Dataset, Optional[Dataset], Dataset]:
         """Chronologically split dataset with purge window to prevent label lookahead leakage."""
         p_days = purge_days if purge_days is not None else self.purge_days
+        if len(dataset.dates) > 0:
+            unique_dates = np.unique([
+                d if isinstance(d, date) else date.fromisoformat(str(d).strip())
+                for d in dataset.dates
+            ])
+            n_unique = len(unique_dates)
+            if n_unique >= 2:
+                n_train = max(1, int(round(n_unique * train_ratio)))
+                if p_days >= n_train:
+                    p_days = max(0, n_train - 1)
+
         train_idx, val_idx, test_idx = split_chronological(
             dates=dataset.dates,
             train_ratio=train_ratio,

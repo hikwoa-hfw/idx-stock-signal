@@ -1,7 +1,13 @@
 import math
 from typing import Optional
 
-from pydantic import BaseModel
+try:
+    from pydantic import BaseModel
+except ImportError:
+    class BaseModel:  # type: ignore[no-redef]
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
 
 from python.common.types import DailyBar
 

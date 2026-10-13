@@ -130,6 +130,12 @@ Resources:
       LogGroupName: /aws/lambda/idx-retraining-pipeline
       RetentionInDays: 30
 
+  TelegramWebhookLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/idx-telegram-webhook
+      RetentionInDays: 30
+
   DailyPipelineFunction:
     Type: AWS::Serverless::Function
     DependsOn: [DailyPipelineLogGroup, LambdaExecutionRole]
@@ -158,6 +164,27 @@ Resources:
       MemorySize: 2048
       EphemeralStorage:
         Size: 1024
+
+  TelegramWebhookFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: [TelegramWebhookLogGroup, LambdaExecutionRole]
+    Properties:
+      FunctionName: idx-telegram-webhook
+      Handler: python.cloud.handlers.lambda_telegram_webhook_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 30
+      MemorySize: 512
+      EphemeralStorage:
+        Size: 512
+      FunctionUrlConfig:
+        AuthType: NONE
+      Events:
+        TelegramWebhookApi:
+          Type: HttpApi
+          Properties:
+            Path: /webhook
+            Method: post
+
 
   DailyPipelineErrorAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -203,3 +230,16 @@ Outputs:
   RetrainingPipelineArn:
     Description: Retraining Pipeline Lambda ARN
     Value: !GetAtt RetrainingPipelineFunction.Arn
+
+  TelegramWebhookArn:
+    Description: Telegram Webhook Lambda ARN
+    Value: !GetAtt TelegramWebhookFunction.Arn
+
+  TelegramWebhookUrl:
+    Description: Telegram Webhook Public Function URL
+    Value: !GetAtt TelegramWebhookFunctionUrl.FunctionUrl
+
+  TelegramWebhookApiEndpoint:
+    Description: Telegram Webhook API Gateway HTTP API Endpoint
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/webhook"
+

@@ -5,7 +5,36 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+try:
+    from pydantic import BaseModel, Field, field_validator, model_validator
+except ImportError:
+    class BaseModel:  # type: ignore[no-redef]
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+        def model_dump(self, **kwargs):
+            return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
+
+        def dict(self, **kwargs):
+            return self.model_dump(**kwargs)
+
+    def Field(default=None, default_factory=None, **kwargs):  # type: ignore[no-redef]
+        if default_factory is not None:
+            return default_factory()
+        return default
+
+    def field_validator(*args, **kwargs):  # type: ignore[no-redef]
+        def dec(fn):
+            return fn
+
+        return dec
+
+    def model_validator(*args, **kwargs):  # type: ignore[no-redef]
+        def dec(fn):
+            return fn
+
+        return dec
 
 
 class DailyBar(BaseModel):

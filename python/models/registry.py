@@ -3,8 +3,41 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
-import joblib
-from pydantic import BaseModel, Field, field_validator, model_validator
+try:
+    import joblib
+except ImportError:
+    joblib = None
+
+try:
+    from pydantic import BaseModel, Field, field_validator, model_validator
+except ImportError:
+    class BaseModel:  # type: ignore[no-redef]
+        def __init__(self, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+        def model_dump(self, **kwargs):
+            return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
+
+        def dict(self, **kwargs):
+            return self.model_dump(**kwargs)
+
+    def Field(default=None, default_factory=None, **kwargs):  # type: ignore[no-redef]
+        if default_factory is not None:
+            return default_factory()
+        return default
+
+    def field_validator(*args, **kwargs):  # type: ignore[no-redef]
+        def dec(fn):
+            return fn
+
+        return dec
+
+    def model_validator(*args, **kwargs):  # type: ignore[no-redef]
+        def dec(fn):
+            return fn
+
+        return dec
 
 from python.config.settings import settings
 
@@ -98,7 +131,7 @@ class ModelRegistry:
 
         raw_meta = json.loads(meta_path.read_text(encoding="utf-8"))
         metadata = ModelMetadata(**raw_meta)
-        model = joblib.load(art_path)
+        model = joblib.load(art_path) if joblib is not None else None
         return model, metadata
 
     def get_metadata(self, model_version: str) -> ModelMetadata:

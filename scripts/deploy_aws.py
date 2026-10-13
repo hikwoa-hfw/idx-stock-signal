@@ -15,6 +15,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from python.config.settings import PROJECT_ROOT, settings
+from services.telegram.client import TelegramClient
 
 if sys.platform == "win32":
     if hasattr(sys.stdout, "reconfigure"):
@@ -27,6 +28,7 @@ DEFAULT_REGION = "ap-southeast-3"
 DEFAULT_ROLE_NAME = "idx-stock-signal-lambda-role"
 DAILY_FUNCTION_NAME = "idx-daily-pipeline"
 RETRAIN_FUNCTION_NAME = "idx-retraining-pipeline"
+WEBHOOK_FUNCTION_NAME = "idx-telegram-webhook"
 SCHEDULE_RULE_NAME = "idx-daily-pipeline-schedule"
 SCHEDULE_CRON = "cron(30 9 ? * MON-FRI *)"
 
@@ -467,6 +469,218 @@ def invoke_lambda_dry_run(
     return parsed
 
 
+def setup_function_url(
+    lambda_client: Any,
+    function_name: str,
+    dry_run: bool = False,
+) -> str:
+    """Create or retrieve Lambda Function URL with public AuthType: NONE and permissions."""
+    if dry_run:
+        sys.stdout.write(
+            f"[DRY-RUN] Configure public Function URL for '{function_name}' (AuthType: NONE)\n"
+        )
+        return "https://mock-dryrun.lambda-url.ap-southeast-3.on.aws/"
+
+    sys.stdout.write(f"[deploy_aws] Configuring Function URL for {function_name}...\n")
+    url = ""
+    try:
+        resp = lambda_client.create_function_url_config(
+            FunctionName=function_name,
+            AuthType="NONE",
+            Cors={
+                "AllowOrigins": ["*"],
+                "AllowMethods": ["POST", "GET"],
+                "AllowHeaders": ["content-type", "x-telegram-bot-api-secret-token"],
+            },
+        )
+        url = str(resp.get("FunctionUrl", ""))
+        sys.stdout.write(f"[deploy_aws] Created Function URL: {url}\n")
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code == "ResourceConflictException":
+            resp = lambda_client.get_function_url_config(FunctionName=function_name)
+            url = str(resp.get("FunctionUrl", ""))
+            sys.stdout.write(f"[deploy_aws] Existing Function URL found: {url}\n")
+        else:
+            raise
+
+    try:
+        lambda_client.add_permission(
+            FunctionName=function_name,
+            StatementId="FunctionURLAllowPublicAccess",
+            Action="lambda:InvokeFunctionUrl",
+            Principal="*",
+            FunctionUrlAuthType="NONE",
+        )
+        sys.stdout.write(
+            f"[deploy_aws] Granted public InvokeFunctionUrl permission on {function_name}\n"
+        )
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code != "ResourceConflictException":
+            raise
+
+    return url
+
+
+def setup_api_gateway_http_api(
+    apigw_client: Any,
+    lambda_client: Any,
+    function_name: str,
+    function_arn: str,
+    region: str = DEFAULT_REGION,
+    dry_run: bool = False,
+) -> str:
+    """Create or retrieve API Gateway HTTP API (v2) route pointing to Webhook Lambda function."""
+    api_name = f"{function_name}-api"
+    if dry_run:
+        sys.stdout.write(
+            f"[DRY-RUN] Provision API Gateway HTTP API '{api_name}' -> {function_name}\n"
+        )
+        return f"https://mock-dryrun.execute-api.{region}.amazonaws.com/webhook"
+
+    sys.stdout.write(f"[deploy_aws] Configuring API Gateway HTTP API for {function_name}...\n")
+    api_id = None
+    api_endpoint = ""
+    try:
+        apis = apigw_client.get_apis()
+        for item in apis.get("Items", []):
+            if item.get("Name") == api_name:
+                api_id = item.get("ApiId")
+                api_endpoint = item.get("ApiEndpoint", "")
+                sys.stdout.write(
+                    f"[deploy_aws] Existing HTTP API found: {api_id} ({api_endpoint})\n"
+                )
+                break
+    except Exception as exc:
+        sys.stderr.write(f"[deploy_aws] Note checking existing APIs: {exc}\n")
+
+    if not api_id:
+        resp = apigw_client.create_api(
+            Name=api_name,
+            ProtocolType="HTTP",
+            Description=f"Telegram Webhook API for {function_name}",
+        )
+        api_id = resp["ApiId"]
+        api_endpoint = resp.get("ApiEndpoint", "")
+        sys.stdout.write(f"[deploy_aws] Created HTTP API: {api_id} ({api_endpoint})\n")
+
+    if not api_endpoint:
+        api_endpoint = f"https://{api_id}.execute-api.{region}.amazonaws.com"
+
+    # Ensure Integration exists
+    integration_id = None
+    try:
+        integrations = apigw_client.get_integrations(ApiId=api_id).get("Items", [])
+        for integ in integrations:
+            uri = integ.get("IntegrationUri", "")
+            if uri == function_arn or uri.endswith(f":function:{function_name}"):
+                integration_id = integ.get("IntegrationId")
+                break
+    except Exception as exc:
+        sys.stderr.write(f"[deploy_aws] Note checking integrations: {exc}\n")
+
+    if not integration_id:
+        integ_resp = apigw_client.create_integration(
+            ApiId=api_id,
+            IntegrationType="AWS_PROXY",
+            IntegrationMethod="POST",
+            IntegrationUri=function_arn,
+            PayloadFormatVersion="2.0",
+            TimeoutInMillis=30000,
+        )
+        integration_id = integ_resp["IntegrationId"]
+        sys.stdout.write(f"[deploy_aws] Created API Gateway integration: {integration_id}\n")
+
+    # Ensure Route exists
+    has_webhook_route = False
+    try:
+        routes = apigw_client.get_routes(ApiId=api_id).get("Items", [])
+        for r in routes:
+            if r.get("RouteKey") == "POST /webhook":
+                has_webhook_route = True
+                break
+    except Exception as exc:
+        sys.stderr.write(f"[deploy_aws] Note checking routes: {exc}\n")
+
+    if not has_webhook_route:
+        apigw_client.create_route(
+            ApiId=api_id,
+            RouteKey="POST /webhook",
+            Target=f"integrations/{integration_id}",
+        )
+        sys.stdout.write(
+            f"[deploy_aws] Created route POST /webhook -> integrations/{integration_id}\n"
+        )
+
+    # Ensure $default stage exists and auto-deploys
+    try:
+        stages = apigw_client.get_stages(ApiId=api_id).get("Items", [])
+        stage_exists = any(s.get("StageName") == "$default" for s in stages)
+        if not stage_exists:
+            apigw_client.create_stage(
+                ApiId=api_id,
+                StageName="$default",
+                AutoDeploy=True,
+            )
+            sys.stdout.write("[deploy_aws] Created $default stage with AutoDeploy\n")
+    except Exception as exc:
+        sys.stderr.write(f"[deploy_aws] Note checking stages: {exc}\n")
+
+    # Ensure Lambda permission for API Gateway
+    try:
+        account_id = function_arn.split(":")[4] if len(function_arn.split(":")) > 4 else "*"
+        source_arn = f"arn:aws:execute-api:{region}:{account_id}:{api_id}/*/*/webhook"
+        stmt_id = f"APIGatewayInvokePermission-{api_id}"
+        lambda_client.add_permission(
+            FunctionName=function_name,
+            StatementId=stmt_id,
+            Action="lambda:InvokeFunction",
+            Principal="apigateway.amazonaws.com",
+            SourceArn=source_arn,
+        )
+        sys.stdout.write(f"[deploy_aws] Granted API Gateway invoke permission on {function_name}\n")
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code != "ResourceConflictException":
+            pass
+
+    webhook_url = f"{api_endpoint.rstrip('/')}/webhook"
+    sys.stdout.write(f"[deploy_aws] HTTP API Webhook URL: {webhook_url}\n")
+    return webhook_url
+
+
+def register_telegram_webhook(
+    bot_token: str,
+    webhook_url: str,
+    secret_token: Optional[str] = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Register Lambda Function URL with Telegram Bot API setWebhook."""
+    clean_url = str(webhook_url)
+    if dry_run:
+        sys.stdout.write(
+            f"[DRY-RUN] Telegram setWebhook -> url: {clean_url}\n"
+        )
+        return {"ok": True, "result": True, "description": "Webhook set (dry-run)"}
+
+    sys.stdout.write(f"[deploy_aws] Registering Telegram webhook: {clean_url}...\n")
+    client = TelegramClient(bot_token=bot_token)
+    resp = client.set_webhook(url=clean_url, secret_token=secret_token)
+    sys.stdout.write(f"[deploy_aws] Telegram setWebhook response: {json.dumps(resp)}\n")
+    return resp
+
+
+def get_telegram_webhook_status(
+    bot_token: str,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Retrieve current Telegram webhook status via getWebhookInfo."""
+    if dry_run:
+        return {"ok": True, "result": {"url": "https://dryrun.lambda-url.ap-southeast-3.on.aws"}}
+    client = TelegramClient(bot_token=bot_token)
+    return client.get_webhook_info()
+
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
@@ -496,6 +710,27 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--deploy-alarm",
         action="store_true",
         help="Deploy or update CloudWatch billing alert alarm.",
+    )
+    parser.add_argument(
+        "--set-webhook",
+        action="store_true",
+        help="Register Lambda Function URL with Telegram setWebhook API.",
+    )
+    parser.add_argument(
+        "--skip-set-webhook",
+        action="store_true",
+        help="Skip automatic registration of Telegram webhook during deploy.",
+    )
+    parser.add_argument(
+        "--webhook-status",
+        action="store_true",
+        help="Query Telegram getWebhookInfo status.",
+    )
+    parser.add_argument(
+        "--webhook-type",
+        choices=["apigw", "function_url", "both"],
+        default="apigw",
+        help="Webhook endpoint type: 'apigw' (API Gateway, default), 'function_url', or 'both'.",
     )
     parser.add_argument(
         "--bucket",
@@ -537,6 +772,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     daily_func = f"{DAILY_FUNCTION_NAME}{stage_suffix}"
     retrain_func = f"{RETRAIN_FUNCTION_NAME}{stage_suffix}"
+    webhook_func = f"{WEBHOOK_FUNCTION_NAME}{stage_suffix}"
     schedule_rule = f"{SCHEDULE_RULE_NAME}{stage_suffix}"
     effective_role_name = (
         args.role_name
@@ -549,6 +785,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         and not args.deploy_lambda
         and not args.test_invoke
         and not args.deploy_alarm
+        and not args.set_webhook
+        and not args.webhook_status
     ):
         # Default behavior: run full deploy sequence
         args.create_bucket = True
@@ -561,6 +799,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         iam_client = session.client("iam")
         lambda_client = session.client("lambda")
         events_client = session.client("events")
+        apigw_client = session.client("apigatewayv2")
 
         sys.stdout.write(
             f"[deploy_aws] Initializing deployment to AWS (Stage: {stage_name}, "
@@ -636,6 +875,46 @@ def main(argv: Optional[list[str]] = None) -> int:
                 dry_run=args.dry_run,
             )
 
+            # Deploy Webhook Lambda and Function URL / API Gateway
+            webhook_arn = deploy_lambda_function(
+                lambda_client=lambda_client,
+                function_name=webhook_func,
+                handler="python.cloud.handlers.lambda_telegram_webhook_handler",
+                role_arn=role_arn,
+                zip_bytes=zip_bytes,
+                env_vars=env_vars,
+                timeout=30,
+                memory_size=512,
+                dry_run=args.dry_run,
+            )
+
+            webhook_url = ""
+            if args.webhook_type in ("apigw", "both"):
+                webhook_url = setup_api_gateway_http_api(
+                    apigw_client=apigw_client,
+                    lambda_client=lambda_client,
+                    function_name=webhook_func,
+                    function_arn=webhook_arn,
+                    region=region,
+                    dry_run=args.dry_run,
+                )
+
+            if args.webhook_type in ("function_url", "both"):
+                fn_url = setup_function_url(
+                    lambda_client=lambda_client,
+                    function_name=webhook_func,
+                    dry_run=args.dry_run,
+                )
+                if not webhook_url:
+                    webhook_url = fn_url
+
+            if tg_tok and webhook_url and not args.skip_set_webhook:
+                register_telegram_webhook(
+                    bot_token=tg_tok,
+                    webhook_url=webhook_url,
+                    dry_run=args.dry_run,
+                )
+
         # 3. CloudWatch Billing Metric Alarm
         if args.deploy_alarm:
             billing_alarm_name = f"idx-stock-signal-billing-alert-{stage_name}"
@@ -661,10 +940,61 @@ def main(argv: Optional[list[str]] = None) -> int:
                         f"[deploy_aws] Note: CloudWatch {region} unavailable: {cw_err}\n"
                     )
 
-        # 4. Test invocation
+        # 4. Standalone set-webhook or webhook-status
+        if args.set_webhook and not args.deploy_lambda:
+            tg_tok = (
+                os.getenv("TELEGRAM_BOT_TOKEN")
+                or settings.telegram_bot_token
+                or ""
+            )
+            webhook_url = ""
+            if args.webhook_type in ("apigw", "both"):
+                if args.dry_run:
+                    webhook_arn = f"arn:aws:lambda:{region}:436095651956:function:{webhook_func}"
+                else:
+                    fn_info = lambda_client.get_function(FunctionName=webhook_func)
+                    webhook_arn = fn_info["Configuration"]["FunctionArn"]
+                webhook_url = setup_api_gateway_http_api(
+                    apigw_client=apigw_client,
+                    lambda_client=lambda_client,
+                    function_name=webhook_func,
+                    function_arn=webhook_arn,
+                    region=region,
+                    dry_run=args.dry_run,
+                )
+
+            if args.webhook_type in ("function_url", "both"):
+                fn_url = setup_function_url(
+                    lambda_client=lambda_client,
+                    function_name=webhook_func,
+                    dry_run=args.dry_run,
+                )
+                if not webhook_url:
+                    webhook_url = fn_url
+
+            if tg_tok and webhook_url:
+                register_telegram_webhook(
+                    bot_token=tg_tok,
+                    webhook_url=webhook_url,
+                    dry_run=args.dry_run,
+                )
+
+        if args.webhook_status:
+            tg_tok = (
+                os.getenv("TELEGRAM_BOT_TOKEN")
+                or settings.telegram_bot_token
+                or ""
+            )
+            if tg_tok:
+                info = get_telegram_webhook_status(tg_tok, dry_run=args.dry_run)
+                formatted_info = json.dumps(info, indent=2)
+                sys.stdout.write(f"[deploy_aws] Telegram Webhook Info:\n{formatted_info}\n")
+            else:
+                sys.stderr.write("[deploy_aws] Error: TELEGRAM_BOT_TOKEN not configured.\n")
+
+        # 5. Test invocation
         if args.test_invoke:
             invoke_lambda_dry_run(lambda_client, daily_func)
-
 
         sys.stdout.write("[deploy_aws] Deployment completed successfully.\n")
         return 0

@@ -17,23 +17,45 @@ from python.cloud.s3_sync import (
 )
 from python.common.types import SignalConfig
 from python.config.settings import settings
-from python.data.provider import DEFAULT_UNIVERSE, load_universe
 from python.data.repository import DailyBarRepository
-from python.features.engine import FeatureEngine
-from python.features.repository import FeatureRepository
-from python.labels.repository import LabelRepository
+from python.journal.repository import PositionJournalRepository
+from python.journal.service import PositionJournalService
 from python.models.registry import ModelRegistry
-from python.outcomes.engine import OutcomeEngine
-from python.outcomes.repository import OutcomeRepository
-from python.retraining.dataset import RetrainingDatasetAssembler
-from python.retraining.gate import PromotionGateManager
-from python.retraining.pipeline import RetrainingPipeline, RetrainingPipelineConfig
-from python.retraining.trigger import RetrainingTriggerConfig, RetrainingTriggerEvaluator
-from python.signals.engine import SignalEngine
 from python.signals.repository import SignalRepository
-from scripts.ingest_daily import run_ingest
+from services.telegram.bot import TelegramBotDispatcher
 from services.telegram.client import TelegramClient
 from services.telegram.formatter import format_daily_signals
+
+try:
+    from python.data.provider import DEFAULT_UNIVERSE, load_universe
+    from python.features.engine import FeatureEngine
+    from python.features.repository import FeatureRepository
+    from python.labels.repository import LabelRepository
+    from python.outcomes.engine import OutcomeEngine
+    from python.outcomes.repository import OutcomeRepository
+    from python.retraining.dataset import RetrainingDatasetAssembler
+    from python.retraining.gate import PromotionGateManager
+    from python.retraining.pipeline import RetrainingPipeline, RetrainingPipelineConfig
+    from python.retraining.trigger import RetrainingTriggerConfig, RetrainingTriggerEvaluator
+    from python.signals.engine import SignalEngine
+    from scripts.ingest_daily import run_ingest
+except ImportError as _import_err:
+    DEFAULT_UNIVERSE = []  # type: ignore[assignment]
+    load_universe = None  # type: ignore[assignment]
+    FeatureEngine = None  # type: ignore[assignment]
+    FeatureRepository = None  # type: ignore[assignment]
+    LabelRepository = None  # type: ignore[assignment]
+    OutcomeEngine = None  # type: ignore[assignment]
+    OutcomeRepository = None  # type: ignore[assignment]
+    RetrainingDatasetAssembler = None  # type: ignore[assignment]
+    PromotionGateManager = None  # type: ignore[assignment]
+    RetrainingPipeline = None  # type: ignore[assignment]
+    RetrainingPipelineConfig = None  # type: ignore[assignment]
+    RetrainingTriggerConfig = None  # type: ignore[assignment]
+    RetrainingTriggerEvaluator = None  # type: ignore[assignment]
+    SignalEngine = None  # type: ignore[assignment]
+    run_ingest = None  # type: ignore[assignment]
+
 
 logger = logging.getLogger(__name__)
 
@@ -582,3 +604,174 @@ def lambda_retraining_handler(event: dict[str, Any], context: Any = None) -> dic
                 "error": str(exc),
             },
         }
+
+
+def lambda_telegram_webhook_handler(
+    event: dict[str, Any], context: Any = None
+) -> dict[str, Any]:
+    """AWS Lambda handler for incoming Telegram Bot webhook updates.
+
+    Processes Telegram updates via Function URL or API Gateway proxy,
+    dispatches commands to TelegramBotDispatcher, responds via TelegramClient,
+    and maintains database sync with S3.
+    """
+    # ponytail: synchronous webhook handler; offload to SQS worker if query latency exceeds 10s.
+    try:
+        # Step 1: Parse payload from event (direct payload or API Gateway proxy body)
+        payload: dict[str, Any] = {}
+        if isinstance(event, dict):
+            raw_body = event.get("body")
+            if raw_body is not None:
+                if isinstance(raw_body, str):
+                    if event.get("isBase64Encoded"):
+                        import base64
+
+                        raw_body = base64.b64decode(raw_body).decode("utf-8")
+                    try:
+                        payload = json.loads(raw_body)
+                    except Exception:
+                        payload = {}
+                elif isinstance(raw_body, dict):
+                    payload = raw_body
+            else:
+                payload = event
+
+        # Step 2: Extract message details
+        msg = (
+            payload.get("message")
+            or payload.get("edited_message")
+            or payload.get("channel_post")
+            or payload
+        )
+        chat = msg.get("chat") if isinstance(msg, dict) else {}
+        chat_id = (
+            chat.get("id")
+            if isinstance(chat, dict)
+            else (msg.get("chat_id") if isinstance(msg, dict) else None)
+        )
+        text = str(msg.get("text", "")).strip() if isinstance(msg, dict) else ""
+
+        # Step 3: Security verification (chat_id and secret header)
+        allowed_chat_id = str(
+            event.get("allowed_chat_id")
+            or os.getenv("TELEGRAM_CHAT_ID")
+            or settings.telegram_chat_id
+            or ""
+        ).strip()
+        sender_chat_id = str(chat_id or "").strip()
+
+        webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
+        if webhook_secret:
+            headers = event.get("headers") or {}
+            token_header = (
+                headers.get("x-telegram-bot-api-secret-token")
+                or headers.get("X-Telegram-Bot-Api-Secret-Token")
+            )
+            if token_header != webhook_secret:
+                logger.warning("Telegram webhook secret mismatch")
+                return {
+                    "statusCode": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"status": "ignored", "reason": "invalid_secret"}),
+                }
+
+        if allowed_chat_id and sender_chat_id != allowed_chat_id:
+            logger.warning(
+                "Unauthorized Telegram webhook request from chat_id: %s (expected %s)",
+                sender_chat_id,
+                allowed_chat_id,
+            )
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"status": "ignored", "reason": "unauthorized"}),
+            }
+
+        if not text:
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"status": "ok", "message": "no_text"}),
+            }
+
+        # Step 4: Sync DB and models from S3
+        s3_bucket = (
+            event.get("s3_bucket")
+            if "s3_bucket" in event
+            else (os.getenv("S3_BUCKET") or settings.s3_bucket)
+        )
+        tmp_dir = Path(event.get("tmp_dir") or os.getenv("TMP_DIR", "/tmp"))
+        local_db_path = Path(event.get("local_db_path") or tmp_dir / "stock_signals.db").resolve()
+        local_models_dir = Path(event.get("local_models_dir") or tmp_dir / "models").resolve()
+        s3_client = event.get("_s3_client")
+
+        if s3_bucket:
+            if not local_db_path.is_file() or event.get("sync_db", True):
+                try:
+                    download_database(s3_bucket, local_db_path, s3_client=s3_client)
+                except Exception as s3_err:
+                    logger.warning("Could not sync DB from S3: %s", s3_err)
+            if not local_models_dir.is_dir() or event.get("sync_models", False):
+                try:
+                    sync_models_from_s3(s3_bucket, local_models_dir, s3_client=s3_client)
+                except Exception as s3_err:
+                    logger.warning("Could not sync models from S3: %s", s3_err)
+        elif not local_db_path.is_file():
+            bootstrap_database(local_db_path)
+
+        # Step 5: Route command through TelegramBotDispatcher
+        db_url = f"sqlite:///{local_db_path.as_posix()}"
+        bar_repo = DailyBarRepository(database_url=db_url)
+        sig_repo = SignalRepository(database_url=db_url)
+        reg = ModelRegistry(registry_dir=local_models_dir)
+        j_repo = PositionJournalRepository(database_url=db_url)
+        j_svc = PositionJournalService(repo=j_repo, bar_repo=bar_repo)
+
+        dispatcher = TelegramBotDispatcher(
+            signal_repo=sig_repo,
+            model_registry=reg,
+            journal_service=j_svc,
+            bar_repo=bar_repo,
+        )
+        reply_text = dispatcher.dispatch(text)
+
+        # Step 6: Persist modified DB to S3 if state mutated
+        if s3_bucket and text.lower().startswith(("/enter", "/exit", "/cancel")):
+            try:
+                upload_database(
+                    s3_bucket=s3_bucket,
+                    local_path=local_db_path,
+                    create_backup=False,
+                    s3_client=s3_client,
+                )
+            except Exception as up_err:
+                logger.warning("Could not persist modified DB to S3: %s", up_err)
+
+        # Step 7: Reply to user via TelegramClient
+        token = (
+            event.get("telegram_token")
+            or os.getenv("TELEGRAM_BOT_TOKEN")
+            or settings.telegram_bot_token
+        )
+        skip_tg = bool(event.get("skip_telegram", False))
+        if not skip_tg and token and sender_chat_id:
+            try:
+                client = TelegramClient(bot_token=token, chat_id=sender_chat_id)
+                client.send_message(text=reply_text)
+            except Exception as send_err:
+                logger.warning("Failed to deliver Telegram reply: %s", send_err)
+
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"status": "ok", "reply": reply_text}),
+        }
+
+    except Exception as exc:
+        logger.exception("Error in lambda_telegram_webhook_handler: %s", exc)
+        return {
+            "statusCode": 200,
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps({"status": "error", "error": str(exc)}),
+        }
+

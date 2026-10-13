@@ -10,6 +10,7 @@ from botocore.exceptions import ClientError
 from python.cloud.handlers import (
     lambda_daily_pipeline_handler,
     lambda_retraining_handler,
+    lambda_telegram_webhook_handler,
 )
 from python.cloud.s3_sync import (
     bootstrap_database,
@@ -26,9 +27,13 @@ from scripts.deploy_aws import (
     ensure_billing_alarm,
     ensure_iam_role,
     ensure_s3_bucket,
+    get_telegram_webhook_status,
     invoke_lambda_dry_run,
+    register_telegram_webhook,
     seed_s3_data,
+    setup_api_gateway_http_api,
     setup_eventbridge_schedule,
+    setup_function_url,
 )
 from scripts.deploy_aws import (
     main as deploy_main,
@@ -595,12 +600,25 @@ def test_deploy_aws_stage_support():
 
     mock_lambda.get_function.return_value = {"Configuration": {"FunctionArn": "arn:func"}}
     mock_lambda.update_function_configuration.return_value = {"FunctionArn": "arn:func"}
+    mock_lambda.create_function_url_config.return_value = {"FunctionUrl": "https://func.url"}
     mock_iam.get_role.return_value = {"Role": {"Arn": "arn:role"}}
     mock_events.put_rule.return_value = {"RuleArn": "arn:rule"}
 
     mock_cw = MagicMock()
+    mock_apigw = MagicMock()
+    mock_apigw.get_apis.return_value = {"Items": []}
+    mock_apigw.create_api.return_value = {
+        "ApiId": "api-staging",
+        "ApiEndpoint": "https://api-staging.execute-api.ap-southeast-3.amazonaws.com",
+    }
+    mock_apigw.get_integrations.return_value = {"Items": []}
+    mock_apigw.create_integration.return_value = {"IntegrationId": "int-staging"}
+    mock_apigw.get_routes.return_value = {"Items": []}
+    mock_apigw.get_stages.return_value = {"Items": []}
 
-    with patch("boto3.Session") as MockSession:
+    with patch("boto3.Session") as MockSession, patch(
+        "scripts.deploy_aws.register_telegram_webhook", return_value={"ok": True}
+    ):
         mock_sess = MagicMock()
         mock_sess.client.side_effect = lambda svc, **kwargs: {
             "s3": mock_s3,
@@ -608,6 +626,7 @@ def test_deploy_aws_stage_support():
             "lambda": mock_lambda,
             "events": mock_events,
             "cloudwatch": mock_cw,
+            "apigatewayv2": mock_apigw,
         }[svc]
         MockSession.return_value = mock_sess
 
@@ -624,6 +643,7 @@ def test_deploy_aws_stage_support():
         ]
         assert "idx-daily-pipeline-staging" in call_names
         assert "idx-retraining-pipeline-staging" in call_names
+        assert "idx-telegram-webhook-staging" in call_names
 
 
 def test_ensure_billing_alarm():
@@ -706,5 +726,314 @@ def test_lambda_retraining_handler_failure_alert(tmp_path: Path):
         _, kwargs = mock_alert.call_args
         assert kwargs["stage"] == "retraining_pipeline"
         assert "GPU out of memory" in kwargs["error_msg"]
+
+
+def test_lambda_telegram_webhook_handler_help_command(tmp_path: Path):
+    import json
+
+    event = {
+        "body": json.dumps({
+            "update_id": 100,
+            "message": {
+                "chat": {"id": 12345},
+                "text": "/help",
+            },
+        }),
+        "allowed_chat_id": "12345",
+        "skip_telegram": True,
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "webhook_test.db"),
+    }
+    resp = lambda_telegram_webhook_handler(event, None)
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["status"] == "ok"
+    assert "BEI Daily Stock Signal Bot" in body["reply"]
+
+
+def test_lambda_telegram_webhook_handler_unauthorized(tmp_path: Path):
+    import json
+
+    event = {
+        "body": json.dumps({
+            "update_id": 101,
+            "message": {
+                "chat": {"id": 99999},
+                "text": "/daily",
+            },
+        }),
+        "allowed_chat_id": "12345",
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "webhook_test.db"),
+    }
+    resp = lambda_telegram_webhook_handler(event, None)
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["status"] == "ignored"
+    assert body["reason"] == "unauthorized"
+
+
+def test_lambda_telegram_webhook_handler_secret_token(tmp_path: Path, monkeypatch):
+    import json
+
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "supersecret123")
+
+    # 1. Invalid secret token
+    event_invalid = {
+        "headers": {"x-telegram-bot-api-secret-token": "wrongtoken"},
+        "body": json.dumps({"message": {"chat": {"id": 12345}, "text": "/help"}}),
+        "allowed_chat_id": "12345",
+    }
+    resp_inv = lambda_telegram_webhook_handler(event_invalid, None)
+    assert resp_inv["statusCode"] == 200
+    assert json.loads(resp_inv["body"])["status"] == "ignored"
+    assert json.loads(resp_inv["body"])["reason"] == "invalid_secret"
+
+    # 2. Valid secret token
+    event_valid = {
+        "headers": {"x-telegram-bot-api-secret-token": "supersecret123"},
+        "body": json.dumps({"message": {"chat": {"id": 12345}, "text": "/help"}}),
+        "allowed_chat_id": "12345",
+        "skip_telegram": True,
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "webhook_test.db"),
+    }
+    resp_val = lambda_telegram_webhook_handler(event_valid, None)
+    assert resp_val["statusCode"] == 200
+    assert json.loads(resp_val["body"])["status"] == "ok"
+
+
+def test_lambda_telegram_webhook_handler_empty_text(tmp_path: Path):
+    import json
+
+    event = {
+        "body": json.dumps({
+            "update_id": 102,
+            "message": {"chat": {"id": 12345}},
+        }),
+        "allowed_chat_id": "12345",
+    }
+    resp = lambda_telegram_webhook_handler(event, None)
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["status"] == "ok"
+    assert body["message"] == "no_text"
+
+
+def test_lambda_telegram_webhook_handler_dispatches_telegram_send(tmp_path: Path):
+    event = {
+        "body": {
+            "update_id": 103,
+            "message": {"chat": {"id": 12345}, "text": "/model"},
+        },
+        "allowed_chat_id": "12345",
+        "telegram_token": "mock_token_123",
+        "skip_telegram": False,
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "webhook_test.db"),
+    }
+    with patch("python.cloud.handlers.TelegramClient") as MockTG:
+        mock_instance = MagicMock()
+        MockTG.return_value = mock_instance
+        resp = lambda_telegram_webhook_handler(event, None)
+        assert resp["statusCode"] == 200
+        mock_instance.send_message.assert_called_once()
+        _, kwargs = mock_instance.send_message.call_args
+        assert "Model" in kwargs["text"] or "model" in kwargs["text"].lower()
+
+
+def test_lambda_telegram_webhook_handler_position_mutation_uploads_db(tmp_path: Path):
+    import json
+
+    s3 = FakeS3Client()
+    bucket = "idx-test-webhook-db"
+    db_file = tmp_path / "journal_test.db"
+    bootstrap_database(db_file)
+
+    event = {
+        "body": json.dumps({
+            "message": {"chat": {"id": 12345}, "text": "/enter BBCA 10000 100"}
+        }),
+        "allowed_chat_id": "12345",
+        "s3_bucket": bucket,
+        "local_db_path": str(db_file),
+        "tmp_dir": str(tmp_path),
+        "skip_telegram": True,
+        "_s3_client": s3,
+    }
+    resp = lambda_telegram_webhook_handler(event, None)
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["status"] == "ok"
+    assert "Position Opened" in body["reply"]
+    assert (bucket, "database/stock_signals.db") in s3.storage
+
+
+def test_setup_function_url_and_telegram_webhook_helpers():
+    mock_lambda = MagicMock()
+    mock_lambda.create_function_url_config.return_value = {
+        "FunctionUrl": "https://test-func-url.lambda-url.ap-southeast-3.on.aws/"
+    }
+
+    url = setup_function_url(mock_lambda, "idx-telegram-webhook", dry_run=False)
+    assert url == "https://test-func-url.lambda-url.ap-southeast-3.on.aws/"
+    mock_lambda.create_function_url_config.assert_called_once()
+    mock_lambda.add_permission.assert_called_once()
+
+    dry_url = setup_function_url(mock_lambda, "idx-telegram-webhook", dry_run=True)
+    assert "lambda-url" in dry_url
+
+    with patch("scripts.deploy_aws.TelegramClient") as MockTG:
+        mock_client = MagicMock()
+        mock_client.set_webhook.return_value = {"ok": True, "result": True}
+        mock_client.get_webhook_info.return_value = {"ok": True, "result": {"url": url}}
+        MockTG.return_value = mock_client
+
+        reg_res = register_telegram_webhook("token123", url, dry_run=False)
+        assert reg_res["ok"] is True
+        mock_client.set_webhook.assert_called_once_with(url=url, secret_token=None)
+
+        info_res = get_telegram_webhook_status("token123", dry_run=False)
+        assert info_res["result"]["url"] == url
+        mock_client.get_webhook_info.assert_called_once()
+
+
+def test_telegram_client_webhook_methods():
+    from services.telegram.client import TelegramClient
+
+    client = TelegramClient(bot_token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = (
+        b'{"ok": true, "result": true, "description": "Webhook was set"}'
+    )
+    mock_resp.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        res_set = client.set_webhook(url="https://sample.url")
+        assert res_set["ok"] is True
+
+        res_info = client.get_webhook_info()
+        assert res_info["ok"] is True
+
+        res_del = client.delete_webhook()
+        assert res_del["ok"] is True
+
+
+def test_setup_api_gateway_http_api_dry_run():
+    mock_apigw = MagicMock()
+    mock_lambda = MagicMock()
+    url = setup_api_gateway_http_api(
+        apigw_client=mock_apigw,
+        lambda_client=mock_lambda,
+        function_name="idx-telegram-webhook",
+        function_arn="arn:aws:lambda:ap-southeast-3:123456789012:function:idx-telegram-webhook",
+        region="ap-southeast-3",
+        dry_run=True,
+    )
+    assert "execute-api.ap-southeast-3.amazonaws.com/webhook" in url
+    mock_apigw.create_api.assert_not_called()
+    mock_lambda.add_permission.assert_not_called()
+
+
+def test_setup_api_gateway_http_api_create_flow():
+    mock_apigw = MagicMock()
+    mock_apigw.get_apis.return_value = {"Items": []}
+    mock_apigw.create_api.return_value = {
+        "ApiId": "api123",
+        "ApiEndpoint": "https://api123.execute-api.ap-southeast-3.amazonaws.com",
+    }
+    mock_apigw.get_integrations.return_value = {"Items": []}
+    mock_apigw.create_integration.return_value = {"IntegrationId": "integ456"}
+    mock_apigw.get_routes.return_value = {"Items": []}
+    mock_apigw.get_stages.return_value = {"Items": []}
+
+    mock_lambda = MagicMock()
+
+    fn_arn = "arn:aws:lambda:ap-southeast-3:123456789012:function:idx-telegram-webhook"
+    url = setup_api_gateway_http_api(
+        apigw_client=mock_apigw,
+        lambda_client=mock_lambda,
+        function_name="idx-telegram-webhook",
+        function_arn=fn_arn,
+        region="ap-southeast-3",
+        dry_run=False,
+    )
+
+    assert url == "https://api123.execute-api.ap-southeast-3.amazonaws.com/webhook"
+    mock_apigw.create_api.assert_called_once_with(
+        Name="idx-telegram-webhook-api",
+        ProtocolType="HTTP",
+        Description="Telegram Webhook API for idx-telegram-webhook",
+    )
+    mock_apigw.create_integration.assert_called_once()
+    mock_apigw.create_route.assert_called_once()
+    mock_apigw.create_stage.assert_called_once()
+    mock_lambda.add_permission.assert_called_once()
+
+
+def test_setup_api_gateway_http_api_existing_flow():
+    mock_apigw = MagicMock()
+    mock_apigw.get_apis.return_value = {
+        "Items": [
+            {
+                "Name": "idx-telegram-webhook-api",
+                "ApiId": "exist123",
+                "ApiEndpoint": "https://exist123.execute-api.ap-southeast-3.amazonaws.com",
+            }
+        ]
+    }
+    fn_arn = "arn:aws:lambda:ap-southeast-3:123456789012:function:idx-telegram-webhook"
+    mock_apigw.get_integrations.return_value = {
+        "Items": [
+            {"IntegrationId": "int999", "IntegrationUri": fn_arn}
+        ]
+    }
+    mock_apigw.get_routes.return_value = {
+        "Items": [{"RouteKey": "POST /webhook"}]
+    }
+    mock_apigw.get_stages.return_value = {
+        "Items": [{"StageName": "$default"}]
+    }
+
+    mock_lambda = MagicMock()
+    mock_lambda.add_permission.side_effect = ClientError(
+        {"Error": {"Code": "ResourceConflictException", "Message": "Conflict"}},
+        "AddPermission",
+    )
+
+    url = setup_api_gateway_http_api(
+        apigw_client=mock_apigw,
+        lambda_client=mock_lambda,
+        function_name="idx-telegram-webhook",
+        function_arn=fn_arn,
+        region="ap-southeast-3",
+        dry_run=False,
+    )
+
+    assert url == "https://exist123.execute-api.ap-southeast-3.amazonaws.com/webhook"
+    mock_apigw.create_api.assert_not_called()
+    mock_apigw.create_integration.assert_not_called()
+    mock_apigw.create_route.assert_not_called()
+    mock_apigw.create_stage.assert_not_called()
+
+
+def test_deploy_main_webhook_options_dry_run():
+    ret = deploy_main([
+        "--dry-run",
+        "--set-webhook",
+        "--webhook-type", "apigw",
+        "--stage", "staging",
+    ])
+    assert ret == 0
+
+    ret_both = deploy_main([
+        "--dry-run",
+        "--set-webhook",
+        "--webhook-type", "both",
+        "--stage", "staging",
+    ])
+    assert ret_both == 0
+
 
 

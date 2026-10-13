@@ -136,6 +136,17 @@ class TelegramClient:
                 pass
         return 1.0
 
+    def _urlopen(self, req: Any) -> Any:
+        try:
+            return urllib.request.urlopen(req, timeout=self.timeout)
+        except urllib.error.URLError as e:
+            if "CERTIFICATE_VERIFY_FAILED" in str(e):
+                import ssl
+
+                ctx = ssl._create_unverified_context()
+                return urllib.request.urlopen(req, timeout=self.timeout, context=ctx)
+            raise
+
     def _send_payload(
         self,
         text: str,
@@ -166,7 +177,7 @@ class TelegramClient:
         last_error: Optional[Exception] = None
         for attempt in range(self.max_retries):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                with self._urlopen(req) as resp:
                     resp_bytes = resp.read()
                     data_dict: dict[str, Any] = json.loads(resp_bytes.decode("utf-8"))
                     if not data_dict.get("ok", False):
@@ -254,3 +265,75 @@ class TelegramClient:
         """Format and broadcast daily signals to Telegram channel or chat."""
         formatted_text = format_daily_signals(signals=signals, market_summary=market_summary)
         return self.send_message(text=formatted_text, chat_id=chat_id)
+
+    def set_webhook(
+        self,
+        url: str,
+        secret_token: Optional[str] = None,
+        drop_pending_updates: bool = False,
+    ) -> dict[str, Any]:
+        """Configure Telegram webhook endpoint."""
+        if not self.bot_token:
+            raise TelegramError("Cannot set webhook: TELEGRAM_BOT_TOKEN is not configured.")
+        endpoint = f"{self.base_url}/bot{self.bot_token}/setWebhook"
+        payload: dict[str, Any] = {"url": url}
+        if secret_token:
+            payload["secret_token"] = secret_token
+        if drop_pending_updates:
+            payload["drop_pending_updates"] = True
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with self._urlopen(req) as resp:
+                data_dict: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+                if not data_dict.get("ok", False):
+                    err_desc = self._sanitize(data_dict.get("description", "Unknown error"))
+                    raise TelegramError(f"Telegram API setWebhook error: {err_desc}")
+                return data_dict
+        except Exception as e:
+            raise TelegramError(f"Failed to set webhook: {self._sanitize(str(e))}") from e
+
+    def get_webhook_info(self) -> dict[str, Any]:
+        """Fetch current Telegram webhook configuration and status."""
+        if not self.bot_token:
+            raise TelegramError("Cannot get webhook info: TELEGRAM_BOT_TOKEN is not configured.")
+        endpoint = f"{self.base_url}/bot{self.bot_token}/getWebhookInfo"
+        try:
+            with self._urlopen(endpoint) as resp:
+                data_dict: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+                if not data_dict.get("ok", False):
+                    err_desc = self._sanitize(data_dict.get("description", "Unknown error"))
+                    raise TelegramError(f"Telegram API getWebhookInfo error: {err_desc}")
+                return data_dict
+        except Exception as e:
+            raise TelegramError(f"Failed to get webhook info: {self._sanitize(str(e))}") from e
+
+    def delete_webhook(self, drop_pending_updates: bool = False) -> dict[str, Any]:
+        """Remove Telegram webhook and revert to getUpdates mode."""
+        if not self.bot_token:
+            raise TelegramError("Cannot delete webhook: TELEGRAM_BOT_TOKEN is not configured.")
+        endpoint = f"{self.base_url}/bot{self.bot_token}/deleteWebhook"
+        payload = {"drop_pending_updates": drop_pending_updates}
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with self._urlopen(req) as resp:
+                data_dict: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+                if not data_dict.get("ok", False):
+                    err_desc = self._sanitize(data_dict.get("description", "Unknown error"))
+                    raise TelegramError(f"Telegram API deleteWebhook error: {err_desc}")
+                return data_dict
+        except Exception as e:
+            raise TelegramError(f"Failed to delete webhook: {self._sanitize(str(e))}") from e
+

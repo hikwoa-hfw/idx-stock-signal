@@ -472,3 +472,29 @@ Log Perubahan Tambahan (13 Oktober 2026)
    6. Meneruskan parameter `model_version` pada `scripts/send_daily_telegram.py` dan `scripts/generate_signals.py`, serta menambahkan kolom `mode` pada header dan baris CSV `scripts/generate_signals.py`.
    7. Memperbarui handler cloud `lambda_daily_pipeline_handler` di `python/cloud/handlers.py` untuk mendeteksi ketersediaan champion mode (`low_champ` atau `high_champ`).
    8. Menambahkan 4 unit test baru di `tests/unit/test_dual_mode.py` (total 13 unit tests dual-mode, 343 keseluruhan repo test suite lulus 100%, ruff 100% clean).
+
+30. Implementasi, Otomasi & Live Deployment 24/7 Telegram Bot Webhook di AWS Lambda & API Gateway
+   Masalah:
+   1. Bot Telegram interaktif sebelumnya memerlukan proses runtime lokal yang berjalan terus menerus (`run_telegram_bot.py`), tidak serverless, dan mati jika mesin lokal dimatikan.
+   2. Pada region AWS `ap-southeast-3` (Jakarta), Lambda Function URL dengan otentikasi publik `AuthType: NONE` mengembalikan respons `403 Forbidden` (`AccessDeniedException`) pada request masuk dari server publik Telegram akibat restriksi regional edge routing.
+   3. Handler AWS Lambda memerlukan dukungan payload v2 / Function URL / API Gateway proxy, verifikasi keamanan (`chat_id` dan webhook secret header), persistensi mutasi state (`/enter`, `/exit`, `/cancel`) kembali ke basis data S3, serta fallback pustaka standar mandiri untuk runtime serverless yang ramping.
+   4. Script provisioning `scripts/deploy_aws.py` belum mendukung pembuatan dan konfigurasi route AWS API Gateway v2 HTTP API (`apigatewayv2`) untuk mengarahkan request webhook ke Lambda secara otomatis.
+   5. Pustaka Telegram client `services/telegram/client.py` belum memiliki method API `set_webhook`, `get_webhook_info`, dan `delete_webhook`.
+   Solusi:
+   1. Mengimplementasikan handler `lambda_telegram_webhook_handler` pada `python/cloud/handlers.py` yang mendukung ekstraksi pesan Telegram dari event API Gateway proxy / Function URL, verifikasi `allowed_chat_id` & `x-telegram-bot-api-secret-token`, sinkronisasi SQLite dari S3, perutean perintah ke `TelegramBotDispatcher`, pengiriman respons via `TelegramClient`, dan persistensi otomatis mutasi posisi ke S3.
+   2. Mengintegrasikan provisioning AWS API Gateway v2 HTTP API (`setup_api_gateway_http_api`) pada `scripts/deploy_aws.py` dengan opsi `--webhook-type [apigw|function_url|both]` (default `apigw`), serta memperbarui template SAM `infra/aws/template.yaml` dengan event `TelegramWebhookApi` bertipe `HttpApi` dan output `TelegramWebhookApiEndpoint`.
+   3. Menambahkan method `set_webhook`, `get_webhook_info`, dan `delete_webhook` pada `services/telegram/client.py` dengan penanganan error dan sanitasi token.
+   4. Menambahkan fallback pustaka standar ringan tanpa dependensi berat (`numpy`, `pandas`, `pydantic`) pada runtime Lambda untuk modul validasi, tipe data, dan registri model.
+   5. Melakukan live deployment ke AWS staging (`436095651956`, region `ap-southeast-3`): Lambda `idx-telegram-webhook-staging` terdeploy, API Gateway `157p0b1mtc` aktif di `https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`, dan webhook Telegram terdaftar aktif (`pending_update_count: 0`, respons live HTTP 200 terverifikasi).
+   6. Menambahkan pengujian komprehensif di `tests/unit/test_aws.py` (total 36 unit tests AWS lulus 100%, total 355 unit & integration tests repo lulus 100%, ruff 100% clean).
+
+Log Perubahan Tambahan (13 Oktober 2026)
+31. Sinkronisasi Deployment Dual-Mode AWS Staging dan Penanganan Sertifikat SSL Windows Corporate
+   Masalah:
+   1. Paket kode pada fungsi AWS Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, dan `idx-telegram-webhook-staging`) masih menggunakan zip lama sebelum pembaruan arsitektur dual-mode (commit 52ec11d).
+   2. Pemanggilan API Telegram via pustaka standar `urllib.request` pada lingkungan Windows corporate mengalami kegagalan validasi sertifikat SSL (`CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate`) saat menjalankan script manajemen webhook `deploy_aws.py --webhook-status`.
+   Solusi:
+   1. Menambahkan helper `_urlopen` dengan graceful SSL context fallback pada `services/telegram/client.py` untuk mengatasi inspeksi sertifikat korporat pada mesin pengembang lokal tanpa mengorbankan keamanan runtime Linux serverless.
+   2. Menjalankan deployment ulang (`scripts/deploy_aws.py --stage staging --deploy-lambda --set-webhook`) yang memaketkan seluruh kode pembaruan dual-mode ke ketiga fungsi Lambda staging AWS (`ap-southeast-3`).
+   3. Memverifikasi status pendaftaran webhook Telegram secara live: endpoint aktif `https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook` terhubung sukses dengan HTTP 200 OK dan 0 pending updates.
+   4. Seluruh pengujian unit dan linting lulus 100% (63 unit tests AWS & Telegram passed, ruff clean).

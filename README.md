@@ -95,11 +95,12 @@ All pipeline commands are exposed via `Makefile` or direct Python modules:
 | **Telegram Dispatch** | `make telegram` or `python -m scripts.send_daily_telegram --dry-run` | Broadcast formatted daily signals report with medal ranks |
 | **Position Journal** | `make positions` or `python -m scripts.manage_positions list` | Track actual portfolio trades (`/enter`, `/exit`, `/positions`) |
 | **Outcome Engine** | `make outcomes` or `python -m scripts.resolve_outcomes --save-db` | Reconcile open signals against market bars & export matured outcomes |
+| **Model Evaluation** | `make evaluate` or `python -m scripts.evaluate_models --from-outcomes` | Evaluate probabilistic calibration & Champion vs. Challenger gates |
 
 ## Project Status
 
-- **Phases 0–9 Complete**: 250 unit & integration tests passing (100% pass rate), ruff 100% clean.
-- **Next Development Phase**: Phase 10 — Model Evaluation (Champion vs. Challenger metrics & calibration report).
+- **Phases 0–10 Complete**: Unit & integration tests passing (100% pass rate), ruff 100% clean.
+- **Next Development Phase**: Phase 11 — Retraining Pipeline (automated dataset builder, candidate training, and rollback).
 
 ## Rules and Guidelines
 - See [`PROJECT_RULES.md`](PROJECT_RULES.md) for documentation protocol (`summary.md` append-only, `walkthrough.md` per session, antislop, and Karpathy guidelines).

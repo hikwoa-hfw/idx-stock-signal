@@ -1,174 +1,168 @@
-# Walkthrough — Phase 9: Outcome Engine & Skeptical Review Audit
+# Walkthrough — Phase 10: Model Evaluation & Champion/Challenger Comparator
 
-Dokumen ini mencatat rincian implementasi **Phase 9 — Outcome Engine** beserta hasil **Skeptical Review & Audit Perbaikan** sesuai dokumen arsitektur `docs/04_ai_agent_coding_development_guide_BEI_stock_signal.md` (Sections 24, 25, 50, dan Phase 9 Section 65) serta `docs/03_plan_ai_stock_signal_BEI_daily.md`.
+Dokumen ini mencatat rincian implementasi **Phase 10 — Model Evaluation** sesuai panduan arsitektur `docs/04_ai_agent_coding_development_guide_BEI_stock_signal.md` (Sections 26, 27, 28, 30, 31, 32, 50, dan Phase 10 pada Section 65) serta `docs/03_plan_ai_stock_signal_BEI_daily.md`.
 
 ---
 
-## 1. Task Breakdown & Implementasi
+## 1. Task Breakdown & Komponen yang Dibangun
 
-Outcome Engine bertugas merekonsiliasi rekomendasi sinyal harian (`signals_daily`) dengan data pergerakan harga pasar riil (`daily_bars`) untuk membuktikan edge model secara objektif melalui evaluasi triple barrier dan snapshot path harian.
+Phase 10 berfokus pada pembuktian edge model secara ilmiah dan objektif:
+- Mengukur kualitas probabilitas prediksi (Brier score, calibration curve, ECE, log loss, ROC-AUC).
+- Mengukur kinerja trading out-of-sample (win rate, profit factor, expectancy, max drawdown, Sharpe ratio).
+- Menyediakan automated promotion gate untuk membandingkan model Champion dan Challenger pada dataset out-of-sample yang identik secara kronologis.
 
 ### A. Domain Models (`python/common/types.py`)
-- **`SignalOutcomeRecord` / `OutcomeRecord`**:
-  - `outcome_id`: UUID string default.
-  - `signal_id`: String ID referensi ke `signals_daily`.
-  - `ticker`: Simbol saham ter-normalisasi uppercase (removesuffix `.JK`).
-  - `signal_date`: Tanggal generasi sinyal (Hari $t$).
-  - `entry_date`: Tanggal eksekusi entry (Hari $t+1$).
-  - `entry_price`: Harga beli pada pembukaan (Open price Hari $t+1$).
-  - `outcome_status`: Status trade (`OPEN`, `TP`, `SL`, `EXPIRY`, `AMBIGUOUS`).
-  - `realized_return`: Net percentage return dari entry ke exit (`None` saat `OPEN`).
-  - `holding_days`: Durasi hari bursa posisi dipegang.
-  - `mfe`: Maximum Favorable Excursion (persentase gain tertinggi selama holding).
-  - `mae`: Maximum Adverse Excursion (persentase loss terendah selama holding).
-  - `exit_date`, `exit_price`, `exit_reason`, `resolved_at`, `notes`.
-  - Lifecycle validator: menjamin status `OPEN` tidak memiliki harga/tanggal keluar, tidak memiliki `realized_return`, tidak memiliki `resolved_at`, serta menolak `entry_date < signal_date` untuk menjaga kausalitas waktu.
-- **`SignalDailySnapshot`**:
-  - `snapshot_id`: UUID string default.
-  - `signal_id`: Referensi sinyal.
-  - `snapshot_date`: Tanggal observasi bursa.
-  - `holding_day`: Hari bursa ke-$k$ ($k \ge 1$).
-  - `close_price`, `high_price`, `low_price`: Harga OHLC harian dengan validasi invariant `high_price >= low_price`.
-  - `return_from_entry`: Return pada penutupan hari $k$.
-  - `mfe_so_far`: Running peak gain hingga hari $k$.
-  - `mae_so_far`: Running worst drawdown hingga hari $k$.
+- **`TradingMetrics`**:
+  - `win_rate`: Rasio trade profit terhadap total trade.
+  - `profit_factor`: Gross gains dibagi gross losses (mengembalikan `inf` jika tanpa kerugian).
+  - `expectancy`: Rata-rata persentase return per trade.
+  - `max_drawdown`: Penurunan ekuitas puncak-ke-lembah maksimum (compounded path).
+  - `sharpe`: Annualized Sharpe ratio (frekuensi 252 hari).
+  - `avg_win`, `avg_loss`, `total_trades`, `tp_rate`, `sl_rate`, `expiry_rate`.
+- **`PredictionMetrics`**:
+  - `brier_score`: MSE probabilitas vs target biner.
+  - `log_loss`: Binary cross-entropy dengan probability clipping ($10^{-15}$).
+  - `roc_auc`: Area under the ROC curve (fallback rank-based jika sklearn tidak tersedia).
+  - `ece`: Expected Calibration Error.
+  - `accuracy`: Akurasi klasifikasi pada threshold keputusan.
+- **`CalibrationBin`**:
+  - `bin_index`, `lower_bound`, `upper_bound`, `sample_count`, `mean_predicted`, `observed_frequency`, `gap`.
+- **`EvaluationReport`**:
+  - Metadata model (`model_version`, `evaluation_date`, `dataset_version`, `sample_size`, `status`).
+  - Kontainer bertipe `trading_metrics`, `prediction_metrics`, dan list `calibration_bins`.
+  - Serialisasi JSON via `.to_dict()`.
+- **`ComparisonRecommendation` & `ComparisonReport`**:
+  - `champion_version`, `challenger_version`, `test_window`.
+  - Kontainer `champion_metrics` dan `challenger_metrics` bertipe `EvaluationReport`.
+  - `delta_metrics`: Selisih kuantitatif antar metrik (`challenger - champion`).
+  - `recommendation`: Status keputusan promosi (`PROMOTE`, `REJECT`, `INCONCLUSIVE`).
+  - `rationale`: Log argumentasi eksplisit setiap aturan evaluasi.
 
-### B. Outcome Storage (`python/outcomes/repository.py`)
-- Menggunakan SQLite dengan WAL mode dan synchronous normal:
-  - Tabel `outcomes_daily`: Menyimpan record outcome aktif (`OPEN`) dan terselesaikan (`TP`, `SL`, `EXPIRY`, `AMBIGUOUS`). Diindeks pada `(signal_id)`, `(ticker)`, `(signal_date)`, `(outcome_status)` dengan constraint `UNIQUE(signal_id)`.
-  - Tabel `signal_snapshots_daily`: Menyimpan progression path harian setiap sinyal. Diindeks pada `(signal_id, snapshot_date)` dengan constraint `UNIQUE(signal_id, snapshot_date)`.
-- Method repository:
-  - `save_outcome` / `save_outcomes`: Upsert idempotensial atomik dengan preservasi `notes` via `COALESCE(excluded.notes, outcomes_daily.notes)` dan `resolved_at` via `COALESCE(outcomes_daily.resolved_at, excluded.resolved_at)`.
-  - `get_outcome_by_signal_id`: Mengambil outcome berdasarkan ID sinyal.
-  - `get_outcome_statuses_map`: Batch lookup efisien memetakan `signal_id -> (outcome_id, outcome_status, notes)`.
-  - `get_open_outcomes`: Mengambil semua sinyal berstatus `OPEN` (opsional filter `as_of_date` dan `ticker`).
-  - `get_matured_outcomes`: Mengambil outcome yang sudah selesai/matur (`!= 'OPEN'`), mendukung filter rentang tanggal dan ticker.
-  - `save_snapshots`: Upsert idempotensial snapshot harian (`ON CONFLICT(signal_id, snapshot_date) DO UPDATE`).
-  - `get_snapshots_by_signal_id`: Mengambil seluruh urutan snapshot harian berdasarkan `holding_day ASC`.
+### B. Evaluation Engine (`python/models/evaluation.py` & `python/evaluation/`)
+- `compute_calibration_bins(y_true, y_prob, n_bins=10)`:
+  - Membagi probabilitas ke dalam $n$ bin seragam ($0.0 \dots 1.0$).
+  - Menghitung deviasi kalibrasi berbobot (ECE) dan detail setiap reliability bin.
+- `compute_trading_metrics(returns, outcome_statuses=None)`:
+  - Mengkalkulasi metrik trade out-of-sample dari array return dan status outcome.
+- `EvaluationEngine`:
+  - `evaluate_predictions(y_true, y_prob)`: Menghasilkan `PredictionMetrics` dan bin kalibrasi.
+  - `evaluate_dataset(df, ...)`: Mengevaluasi dataset Pandas/matured outcomes DataFrame.
+  - `evaluate_model(model, X, y_true, returns, ...)`: Menjalankan inferensi model dan komputasi metrik lengkap.
+  - `evaluate_from_outcomes(outcomes, ...)`: Mengevaluasi langsung dari list record `SignalOutcomeRecord`.
 
-### C. Triple Barrier Outcome Engine (`python/outcomes/engine.py`)
-- Aturan evaluasi triple barrier:
-  1. **Hari $t$**: Sinyal diterbitkan (`signal.signal_date`).
-  2. **Hari $t+1$**: Eksekusi entry pada harga Open candle pertama setelah sinyal (`forward_bars[0].open`). Status menjadi `OPEN` aktif.
-  3. **Hari-hari berikutnya ($k = 1 \dots \text{max\_holding\_days}$)**:
-     - Setiap candle merekam `SignalDailySnapshot` dengan metrik `mfe_so_far` dan `mae_so_far`.
-     - Barrier TP: `bar.high >= signal.tp_price`.
-     - Barrier SL: `bar.low <= signal.sl_price`.
-     - **Penanganan Ambiguitas Same-Candle** (Section 15):
-       - Jika gap up pada open (`open >= TP`): TP dieksekusi pada open.
-       - Jika gap down pada open (`open <= SL`): SL dieksekusi pada open.
-       - Jika candle menyentuh TP dan SL di hari yang sama:
-         * Policy `conservative` (default): Asumsi SL tersentuh lebih dahulu, exit pada `sl_price`.
-         * Policy `optimistic`: Asumsi TP tersentuh lebih dahulu, exit pada `tp_price`.
-         * Policy `ambiguous`: Tandai sebagai `AMBIGUOUS`, exit pada `close`.
-     - **Expiry**: Jika mencapai `max_holding_days` (default 10 hari) tanpa menyentuh TP atau SL, posisi keluar pada `bar.close` hari ke-10 dengan status `EXPIRY`.
-     - **In-flight**: Jika belum mencapai batas hari dan belum menyentuh barrier, status tetap `OPEN`.
-- Method engine:
-  - `evaluate_signal`: Evaluasi murni in-memory terhadap list candle forward, mendukung parameter `notes` untuk preservasi catatan analisis.
-  - `resolve_signal_by_id`: Evaluasi sinyal tunggal dari database. Jika sinyal sudah berstatus matur, mengembalikan data tersimpan secara idempotensial tanpa re-evaluasi kecuali `force_recompute=True`.
-  - `resolve_all_signals`: Rekonsiliasi sinyal aktif dan belum dievaluasi dengan batch status map dan commit batch atomik ke SQLite.
+### C. Champion vs. Challenger Comparator (`python/models/comparator.py`)
+- `PromotionGateConfig`:
+  - `min_sample_size`: Default 30 (mencegah promosi pada sampel kecil/tidak signifikan).
+  - `min_profit_factor_improvement`: Default +0.05.
+  - `max_brier_worsening`: Default 0.0 (Brier score Challenger harus $\le$ Champion).
+  - `max_drawdown_increase`: Default 0.0 (Max Drawdown tidak boleh memburuk).
+  - `min_expectancy_improvement`: Default 0.0%.
+- `ModelComparator`:
+  - `compare_reports(champion_report, challenger_report)`: Menerapkan gerbang keputusan dan memproduksi `ComparisonReport`.
+  - `compare_models(champion_model, challenger_model, X_test, ...)`: Evaluasi sinkron dua objek model pada data uji yang sama.
+  - `compare_from_registry(registry, champ_ver, chall_ver, X_test, ...)`: Pemuatan otomatis model dari `ModelRegistry`.
+- Formatters presentasi laporan:
+  - `format_comparison_table`: Tabel perbandingan ASCII terminal yang rapi.
+  - `format_comparison_markdown`: Tabel laporan format GitHub Markdown.
+  - `format_comparison_json`: Ekspor JSON terstruktur.
 
-### D. Matured Dataset Builder (`python/outcomes/dataset.py`)
-- Menggabungkan data hasil outcome yang sudah matur (`outcome_status != 'OPEN'`) dengan:
-  - Metadata sinyal asli dari `signals_daily` (`predicted_probability`, `expected_return`, `score`, `model_version`, `entry_low/high`, `tp/sl_price`).
-  - Fitur teknikal dan pasar dari `feature_snapshot` (`rsi14`, `atr14`, `return_5d`, dll).
-  - Target biner ML: `binary_target = 1` jika TP, `0` jika lainnya.
-  - Mendukung parameter `exclude_ambiguous` untuk memfilter data ambiguitas sebelum dipakai model training.
-  - Menggunakan pre-fetch caching sinyal untuk eliminasi query N+1.
-- Fungsi `export_matured_dataset` untuk ekspor bersih ke format CSV atau JSON sebagai input langsung untuk Phase 10 (Model Evaluation) dan Phase 11 (Retraining Pipeline).
-
-### E. CLI Runner & Automation (`scripts/resolve_outcomes.py`, `Makefile`)
-- CLI script dengan opsi:
-  - `--as-of-date`: Evaluasi per tanggal tertentu (YYYY-MM-DD).
-  - `--ambiguity-policy`: Pilihan `conservative`, `optimistic`, `ambiguous`.
-  - `--save-db`: Menyimpan hasil evaluasi dan snapshot ke SQLite.
-  - `--export-matured`: Format ekspor dataset (`csv` atau `json`).
-  - `--export-path`: Lokasi file ekspor.
-  - `--ticker`: Filter ticker tertentu.
-  - `--exclude-ambiguous`: Memfilter record AMBIGUOUS saat ekspor dataset.
+### D. CLI Tool & Integrasi Workflow (`scripts/evaluate_models.py` & `Makefile`)
+- CLI Runner `scripts/evaluate_models.py`:
+  - Opsi: `--champion-version`, `--challenger-version`, `--dataset-path`, `--from-outcomes`, `--output-format [table|json|markdown]`, `--save-report`, `--min-sample-size`, `--promote-if-passed`.
+  - Mendukung evaluasi model tunggal maupun komparasi Champion vs. Challenger.
 - Target `Makefile`:
-  - `make outcomes` menjalankan `python -m scripts.resolve_outcomes --save-db`.
+  - `make evaluate`: Menjalankan evaluasi dari matured outcomes database dengan format tabel.
+
+### E. README & Repository Remote
+- Penambahan **AI Authorship Disclosure** di `README.md` sesuai `/antislop-copywriting` (jujur, tidak ada klaim pemasaran berlebihan, menerangkan ~98% kode di-generate oleh AI coding agents di bawah supervisi spesifikasi dan pengujian ketat).
+- Penambahan baris `Model Evaluation` di tabel CLI Pipelines `README.md`.
+- Konfigurasi git remote origin diarahkan ke `https://github.com/hikwoa-hfw/idx-stock-signal.git`.
+- Commit git fungsional Phase 0-9 telah direkam ke branch `main`.
 
 ---
 
-## 2. File & Line Changes Breakdown
+## 2. File & Line Changes Detail
 
-1. [python/common/types.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/python/common/types.py) (lines 874–1035)
-   - Menambahkan `SignalOutcomeRecord`, alias `OutcomeRecord`, dan `SignalDailySnapshot`.
-   - Menambahkan validasi lifecycle: `OPEN` dilarang memiliki `realized_return` dan `resolved_at`, `entry_date >= signal_date`.
-   - Menambahkan validator invariant candle: `high_price >= low_price`.
-2. [python/outcomes/repository.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/python/outcomes/repository.py) (lines 1–425)
-   - SQLite repository tabel `outcomes_daily` dan `signal_snapshots_daily`.
-   - Menambahkan preservasi `notes` dan `resolved_at` via `COALESCE` pada upsert `save_outcome` dan `save_outcomes`.
-   - Menambahkan `get_outcome_statuses_map` untuk optimasi batch lookup.
-   - Menambahkan filter `ticker` pada `get_open_outcomes`.
-3. [python/outcomes/engine.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/python/outcomes/engine.py) (lines 1–350)
-   - Triple barrier evaluation engine dengan snapshot path tracking.
-   - Meneruskan `notes` pada `evaluate_signal`.
-   - Idempotent return pada `resolve_signal_by_id` dengan opsi `force_recompute`.
-   - Optimasi `resolve_all_signals` menggunakan batch status map dan commit simpanan atomik.
-4. [python/outcomes/dataset.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/python/outcomes/dataset.py) (lines 1–125)
-   - `build_matured_outcomes_dataset` dengan pre-fetch caching metadata sinyal.
-   - Penambahan opsi `exclude_ambiguous` untuk membersihkan dataset training ML.
-   - `export_matured_dataset` untuk format CSV dan JSON.
-5. [python/outcomes/__init__.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/python/outcomes/__init__.py) (lines 1–12)
-   - Export publik modul `OutcomeEngine`, `OutcomeRepository`, `build_matured_outcomes_dataset`, `export_matured_dataset`.
-6. [scripts/resolve_outcomes.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/scripts/resolve_outcomes.py) (lines 1–195)
-   - Menambahkan opsi `--exclude-ambiguous` pada parser CLI dan meneruskannya ke dataset exporter.
-7. [Makefile](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/Makefile) (lines 1, 46–47)
-   - Menambahkan target `outcomes` ke `.PHONY` dan mendefinisikan `make outcomes`.
-8. [tests/unit/test_outcomes.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/tests/unit/test_outcomes.py) (lines 1–555)
-   - 16 unit tests mencakup: TP hit, SL hit, max holding expiry, ambiguitas same-candle, gap up/down open, MFE/MAE multi-day progression, status OPEN in-flight, repository CRUD/snapshots, lifecycle `resolve_signal_by_id`, preservasi notes, filter open outcomes, dan exclude ambiguous dataset building.
-9. [tests/integration/test_outcome_pipeline.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/tests/integration/test_outcome_pipeline.py) (lines 1–246)
-   - 2 integration tests menguji end-to-end signal lifecycle, outcome resolution, matured dataset CSV/JSON export, dan CLI execution.
-10. [tests/unit/test_types.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/tests/unit/test_types.py) (lines 615–730)
-    - Validasi Pydantic lengkap untuk lifecycle `SignalOutcomeRecord` dan invariant `SignalDailySnapshot`.
-11. [tests/unit/test_smoke.py](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/tests/unit/test_smoke.py)
-    - Verifikasi smoke test struktur file Phase 9.
-12. [summary.md](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/summary.md) (lines 316–352)
-    - Log entri 21 (Phase 9 Implementation) dan entri 22 (Skeptical Review & Audit Fixes).
+1. **`python/common/types.py`**:
+   - Baris 6: Menambahkan import `Union` pada typing module.
+   - Baris 1048–1123: Menambahkan class `TradingMetrics`, `PredictionMetrics`, `CalibrationBin`, `EvaluationReport`, `ComparisonRecommendation`, dan `ComparisonReport` dengan validasi enum dan lifecycle.
 
----
+2. **`python/models/evaluation.py`**:
+   - File baru: Implementasi fungsi matematis `compute_calibration_bins`, `compute_trading_metrics`, dan kelas `EvaluationEngine`.
 
-## 3. Verification Record
+3. **`python/models/comparator.py`**:
+   - File baru: Implementasi `PromotionGateConfig`, `ModelComparator`, serta helper formatters (`format_comparison_table`, `format_comparison_markdown`, `format_comparison_json`).
 
-- **Test Suite Pass Rate**:
-  ```text
-  250 passed in 29.03s (100% pass rate, 0 failed, 0 warnings)
-  ```
-- **Linter Status**:
-  ```text
-  ruff check . -> All checks passed!
-  ```
+4. **`python/models/__init__.py`**:
+   - Re-ekspor `EvaluationEngine`, `compute_calibration_bins`, `compute_trading_metrics`, `ModelComparator`, `PromotionGateConfig`, dan formatters.
+
+5. **`python/evaluation/__init__.py` & `python/evaluation/engine.py`**:
+   - Re-ekspor modul evaluasi pada package namespace `python.evaluation`.
+
+6. **`scripts/evaluate_models.py`**:
+   - Script CLI runner untuk evaluasi model dan ekspor laporan komparasi.
+
+7. **`Makefile`**:
+   - Menambahkan target `evaluate` ke `.PHONY` dan mendefinisikan recipe `$(VENV_PYTHON) -m scripts.evaluate_models --from-outcomes --output-format table`.
+
+8. **`README.md`**:
+   - Menambahkan section `AI Authorship Disclosure`.
+   - Menambahkan pipeline `Model Evaluation` pada tabel CLI.
+   - Memperbarui `Project Status` menjadi Phases 0–10 Complete.
+
+9. **`summary.md`**:
+   - Append-only: Menambahkan entri ke-23 untuk Phase 10 tanpa menghapus rekaman riwayat sebelumnya.
+
+10. **`tests/unit/test_types.py`**:
+    - Menambahkan pengujian `test_evaluation_report_validation` dan `test_comparison_report_validation`.
+
+11. **`tests/unit/test_evaluation.py`**:
+    - File baru: 16 unit tests untuk komputasi metrik probabilistik, bin kalibrasi ECE, metrik trading, skenario tepi (empty, all wins, all losses), dan gerbang keputusan comparator (`PROMOTE`, `REJECT`, `INCONCLUSIVE`).
+
+12. **`tests/integration/test_evaluation_pipeline.py`**:
+    - File baru: 3 integration tests mencakup end-to-end evaluation dari `ModelRegistry`, CLI runner via subprocess, dan evaluasi single-model JSON.
+
+13. **`tests/unit/test_smoke.py`**:
+    - Memverifikasi keberadaan file artefak Phase 10 (`python/models/evaluation.py`, `python/models/comparator.py`, `scripts/evaluate_models.py`).
 
 ---
 
-## 4. Testing Checklist
+## 3. Testing Checklist (Post-Deployment Verification)
 
-Setelah deploy atau update branch, jalankan checklist verifikasi berikut:
+Setelah proses deployment atau clone, verifikasi checklist berikut:
 
-- [ ] Jalankan test suite lengkap:
+- [ ] **Linting & Code Style**:
   ```bash
-  pytest
+  .venv/Scripts/ruff check .
   ```
-- [ ] Jalankan linter:
+  *Harus menghasilkan `All checks passed!` tanpa error.*
+
+- [ ] **Full Test Suite Execution**:
   ```bash
-  ruff check .
+  .venv/Scripts/pytest
   ```
-- [ ] Verifikasi CLI resolver help:
+  *Seluruh 272 pengujian unit dan integrasi harus 100% passed.*
+
+- [ ] **CLI Model Evaluation (Sample/Test Dataset)**:
   ```bash
-  python -m scripts.resolve_outcomes --help
+  .venv/Scripts/python -m scripts.evaluate_models --champion-version baseline_v1 --output-format table
   ```
-- [ ] Uji coba eksekusi manual resolver ke memory DB:
+  *Memverifikasi CLI dapat menampilkan ringkasan metrik evaluasi ke stdout.*
+
+- [ ] **Champion vs. Challenger Comparator**:
   ```bash
-  python -m scripts.resolve_outcomes --database-url :memory:
+  .venv/Scripts/python -m scripts.evaluate_models --champion-version champ_v1 --challenger-version chall_v2 --dataset-path datasets/processed/sample.csv --output-format markdown
   ```
-- [ ] Uji coba target Makefile:
+  *Memverifikasi kalkulasi delta metrik dan logika gate rekomendasi (PROMOTE/REJECT).*
+
+- [ ] **Makefile Target Check**:
   ```bash
-  make outcomes
+  make evaluate
   ```
-- [ ] Uji coba ekspor dataset matured ke file CSV dengan filter ambiguous:
+  *Memverifikasi Makefile recipe terhubung dengan environment Python venv secara benar.*
+
+- [ ] **Git Authentication & Push**:
+  *Konfigurasi token personal GitHub (PAT) atau SSH key jika ingin melakukan push ke remote origin:*
   ```bash
-  python -m scripts.resolve_outcomes --save-db --export-matured csv --exclude-ambiguous --export-path data/matured_outcomes.csv
+  git push -u origin main
   ```
-- [ ] Periksa bahwa tabel `outcomes_daily` dan `signal_snapshots_daily` terbuat dengan indeks yang benar di SQLite database.

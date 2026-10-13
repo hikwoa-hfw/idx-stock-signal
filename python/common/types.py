@@ -3,7 +3,7 @@ import math
 import uuid
 from datetime import date, datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -1043,4 +1043,81 @@ class SignalDailySnapshot(BaseModel):
                 f"high_price ({self.high_price}) cannot be less than low_price ({self.low_price})"
             )
         return self
+
+
+class TradingMetrics(BaseModel):
+    win_rate: float = 0.0
+    profit_factor: float = 0.0
+    expectancy: float = 0.0
+    max_drawdown: float = 0.0
+    sharpe: float = 0.0
+    avg_win: float = 0.0
+    avg_loss: float = 0.0
+    total_trades: int = 0
+    tp_rate: float = 0.0
+    sl_rate: float = 0.0
+    expiry_rate: float = 0.0
+
+
+class PredictionMetrics(BaseModel):
+    brier_score: float = 0.0
+    log_loss: float = 0.0
+    roc_auc: float = 0.5
+    ece: float = 0.0
+    accuracy: float = 0.0
+
+
+class CalibrationBin(BaseModel):
+    bin_index: int
+    lower_bound: float
+    upper_bound: float
+    sample_count: int
+    mean_predicted: float
+    observed_frequency: float
+    gap: float
+
+
+class EvaluationReport(BaseModel):
+    model_version: str
+    evaluation_date: date = Field(default_factory=date.today)
+    dataset_version: str = "v1.0.0"
+    sample_size: int = 0
+    trading_metrics: TradingMetrics = Field(default_factory=TradingMetrics)
+    prediction_metrics: PredictionMetrics = Field(default_factory=PredictionMetrics)
+    calibration_bins: list[CalibrationBin] = Field(default_factory=list)
+    status: str = "evaluated"
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ComparisonRecommendation(str, Enum):
+    PROMOTE = "PROMOTE"
+    REJECT = "REJECT"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
+class ComparisonReport(BaseModel):
+    champion_version: str
+    challenger_version: str
+    test_window: Union[str, dict[str, Optional[str]]] = ""
+    champion_metrics: EvaluationReport
+    challenger_metrics: EvaluationReport
+    delta_metrics: dict[str, float] = Field(default_factory=dict)
+    recommendation: str = "INCONCLUSIVE"
+    rationale: list[str] = Field(default_factory=list)
+
+    @field_validator("recommendation")
+    @classmethod
+    def validate_recommendation(cls, v: str) -> str:
+        clean = v.strip().upper()
+        if clean not in ("PROMOTE", "REJECT", "INCONCLUSIVE"):
+            raise ValueError(
+                f"recommendation must be 'PROMOTE', 'REJECT', or 'INCONCLUSIVE', got '{v}'"
+            )
+        return clean
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
 

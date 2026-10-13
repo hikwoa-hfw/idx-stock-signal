@@ -349,3 +349,18 @@ Log Perubahan Tambahan (13 Oktober 2026)
    7. Menambahkan dukungan filter `ticker` pada `OutcomeRepository.get_open_outcomes`.
    8. Menambahkan 4 pengujian unit baru di `tests/unit/test_outcomes.py` dan memperluas `tests/unit/test_types.py` (total 250 tests passed, 100% kelulusan, ruff clean, zero regresi).
 
+23. Implementasi Phase 10 — Model Evaluation & Champion/Challenger Comparator
+   Masalah:
+   1. Proyek belum memiliki domain model `EvaluationReport` dan `ComparisonReport` untuk merekam metrik prediksi (Brier score, ECE, log loss, ROC-AUC) serta performa trading out-of-sample (win rate, profit factor, expectancy, max drawdown, Sharpe, avg win/loss).
+   2. Belum ada modul komputasi `EvaluationEngine` yang menghitung reliability bins kalibrasi probabilitas secara seragam serta metrik performa trading secara terintegrasi dari dataset historis atau matured outcomes.
+   3. Belum ada mekanisme pembanding Champion vs. Challenger (`ModelComparator`) dengan gerbang promosi otomatis (promotion gate) berdasarkan batas minimum sampel, perbaikan profit factor, stabilitas Brier score, toleransi drawdown, dan ekspektansi.
+   4. Belum ada CLI runner `scripts/evaluate_models.py` dan target `evaluate` pada `Makefile` untuk mengevaluasi model tunggal maupun komparasi antar model dari registry atau outcomes database dengan format output table, json, dan markdown.
+   Solusi:
+   1. Menambahkan domain model `TradingMetrics`, `PredictionMetrics`, `CalibrationBin`, `EvaluationReport`, `ComparisonRecommendation`, dan `ComparisonReport` pada `python/common/types.py` dengan validasi Pydantic ketat.
+   2. Membangun `EvaluationEngine` di `python/models/evaluation.py` (dan alias di `python/evaluation/engine.py` serta `python/evaluation/__init__.py`) untuk komputasi terpadu ECE, reliability bins, Brier score, ROC-AUC, win rate, profit factor, expectancy, compounded max drawdown, dan Sharpe ratio.
+   3. Membangun `ModelComparator` di `python/models/comparator.py` dengan konfigurasi aturan gerbang keputusan otomatis (`PromotionGateConfig`) yang mengevaluasi apakah Challenger layak dipromosikan ke Champion (`PROMOTE`, `REJECT`, `INCONCLUSIVE`).
+   4. Membangun formatters output komparasi (`format_comparison_table`, `format_comparison_markdown`, `format_comparison_json`).
+   5. Membangun CLI tool `scripts/evaluate_models.py` dengan opsi `--champion-version`, `--challenger-version`, `--dataset-path`, `--from-outcomes`, `--output-format`, `--save-report`, `--min-sample-size`, `--promote-if-passed`, dan menambahkan target `evaluate` pada `Makefile`.
+   6. Menulis pengujian unit dan integrasi komprehensif (`tests/unit/test_evaluation.py`, `tests/integration/test_evaluation_pipeline.py`, pembaruan `test_smoke.py` dan `test_types.py`).
+
+

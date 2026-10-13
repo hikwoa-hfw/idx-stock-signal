@@ -5,7 +5,19 @@ from python.models.baseline import (
     RidgeRegressionBaseline,
     create_baseline_model,
 )
+from python.models.comparator import (
+    ModelComparator,
+    PromotionGateConfig,
+    format_comparison_json,
+    format_comparison_markdown,
+    format_comparison_table,
+)
 from python.models.dataset import Dataset, DatasetBuilder
+from python.models.evaluation import (
+    EvaluationEngine,
+    compute_calibration_bins,
+    compute_trading_metrics,
+)
 from python.models.metrics import (
     compute_brier_score,
     compute_expected_calibration_error,
@@ -40,4 +52,13 @@ __all__ = [
     "evaluate_regression",
     "ModelMetadata",
     "ModelRegistry",
+    "EvaluationEngine",
+    "compute_calibration_bins",
+    "compute_trading_metrics",
+    "ModelComparator",
+    "PromotionGateConfig",
+    "format_comparison_table",
+    "format_comparison_markdown",
+    "format_comparison_json",
 ]
+

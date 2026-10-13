@@ -1,4 +1,4 @@
-.PHONY: test lint format clean install-dev ingest validate features labels train backtest signals telegram send-daily positions outcomes
+.PHONY: test lint format clean install-dev ingest validate features labels train backtest signals telegram send-daily positions outcomes evaluate
 
 VENV_PYTHON = .venv/Scripts/python
 VENV_PYTEST = .venv/Scripts/pytest
@@ -45,6 +45,9 @@ positions:
 
 outcomes:
 	$(VENV_PYTHON) -m scripts.resolve_outcomes --save-db
+
+evaluate:
+	$(VENV_PYTHON) -m scripts.evaluate_models --from-outcomes --output-format table
 
 clean:
 	$(VENV_PYTHON) -c "import shutil, pathlib; [shutil.rmtree(p, ignore_errors=True) for p in pathlib.Path('.').rglob('__pycache__')]; [shutil.rmtree(p, ignore_errors=True) for p in pathlib.Path('.').rglob('.pytest_cache')]"

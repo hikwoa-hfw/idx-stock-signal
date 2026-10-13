@@ -4,7 +4,11 @@ import pytest
 
 from python.common.types import (
     AmbiguityPolicy,
+    CalibrationBin,
+    ComparisonRecommendation,
+    ComparisonReport,
     DailyBar,
+    EvaluationReport,
     FeatureRecord,
     IngestionRun,
     IngestionTickerStatus,
@@ -15,10 +19,12 @@ from python.common.types import (
     OutcomeStatus,
     Position,
     Prediction,
+    PredictionMetrics,
     Signal,
     SignalAction,
     SignalDailySnapshot,
     SignalOutcomeRecord,
+    TradingMetrics,
 )
 from python.config.settings import settings
 
@@ -750,4 +756,90 @@ def test_signal_daily_snapshot_validation():
             mfe_so_far=0.0,
             mae_so_far=0.0,
         )
+
+
+def test_evaluation_report_validation():
+    t_m = TradingMetrics(
+        win_rate=0.60,
+        profit_factor=1.85,
+        expectancy=0.025,
+        max_drawdown=0.08,
+        sharpe=1.65,
+        avg_win=0.05,
+        avg_loss=-0.02,
+        total_trades=100,
+        tp_rate=0.55,
+        sl_rate=0.35,
+        expiry_rate=0.10,
+    )
+    p_m = PredictionMetrics(
+        brier_score=0.175,
+        log_loss=0.512,
+        roc_auc=0.68,
+        ece=0.032,
+        accuracy=0.62,
+    )
+    c_bin = CalibrationBin(
+        bin_index=1,
+        lower_bound=0.0,
+        upper_bound=0.1,
+        sample_count=10,
+        mean_predicted=0.05,
+        observed_frequency=0.04,
+        gap=0.01,
+    )
+
+    report = EvaluationReport(
+        model_version="challenger_v2",
+        sample_size=100,
+        trading_metrics=t_m,
+        prediction_metrics=p_m,
+        calibration_bins=[c_bin],
+        status="evaluated",
+    )
+    assert report.model_version == "challenger_v2"
+    assert report.trading_metrics.profit_factor == 1.85
+    assert report.prediction_metrics.brier_score == 0.175
+    assert len(report.calibration_bins) == 1
+
+    d = report.to_dict()
+    assert d["model_version"] == "challenger_v2"
+    assert d["trading_metrics"]["profit_factor"] == 1.85
+
+
+def test_comparison_report_validation():
+    champ = EvaluationReport(
+        model_version="champ_v1",
+        sample_size=100,
+        trading_metrics=TradingMetrics(win_rate=0.55, profit_factor=1.50, max_drawdown=0.10),
+        prediction_metrics=PredictionMetrics(brier_score=0.20, roc_auc=0.62),
+    )
+    chall = EvaluationReport(
+        model_version="chall_v2",
+        sample_size=100,
+        trading_metrics=TradingMetrics(win_rate=0.60, profit_factor=1.75, max_drawdown=0.09),
+        prediction_metrics=PredictionMetrics(brier_score=0.18, roc_auc=0.66),
+    )
+
+    comp = ComparisonReport(
+        champion_version="champ_v1",
+        challenger_version="chall_v2",
+        champion_metrics=champ,
+        challenger_metrics=chall,
+        delta_metrics={"profit_factor_delta": 0.25, "brier_score_delta": -0.02},
+        recommendation=ComparisonRecommendation.PROMOTE.value,
+        rationale=["Challenger outperforms champion across all gates."],
+    )
+    assert comp.recommendation == "PROMOTE"
+    assert comp.delta_metrics["profit_factor_delta"] == 0.25
+
+    with pytest.raises(ValueError, match="recommendation must be"):
+        ComparisonReport(
+            champion_version="champ_v1",
+            challenger_version="chall_v2",
+            champion_metrics=champ,
+            challenger_metrics=chall,
+            recommendation="INVALID_DECISION",
+        )
+
 

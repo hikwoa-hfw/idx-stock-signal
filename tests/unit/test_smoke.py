@@ -56,4 +56,8 @@ def test_project_root_exists():
     assert (root / "python" / "outcomes" / "engine.py").is_file()
     assert (root / "python" / "outcomes" / "dataset.py").is_file()
     assert (root / "scripts" / "resolve_outcomes.py").is_file()
+    assert (root / "python" / "models" / "evaluation.py").is_file()
+    assert (root / "python" / "models" / "comparator.py").is_file()
+    assert (root / "scripts" / "evaluate_models.py").is_file()
+
 

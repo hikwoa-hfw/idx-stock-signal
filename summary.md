@@ -525,3 +525,19 @@ Log Perubahan Tambahan (14 Oktober 2026)
    3. Memperbaiki `event_run_1` pada `tests/integration/test_cloud_pipeline.py` dengan tanggal eksplisit `"2026-10-13"` agar simulasi hari berikutnya (`"2026-10-14"`) berjalan deterministik kapanpun dijalankan.
    4. Menambahkan unit test `test_lambda_telegram_webhook_handler_callback_query` di `tests/unit/test_aws.py` (total 67 unit tests AWS & Telegram lulus 100%, 358 keseluruhan repo tests passed 100%, ruff 100% clean).
    5. Melakukan live deployment ulang ke AWS Lambda staging dan memvalidasi respons live API Gateway `/help`, `/model`, `/boost` serta CloudWatch logs.
+34. Ingestion Data Historis BEI 3+ Tahun, Fitur & Triple-Barrier Labels, Pelatihan Model Champion Dual-Mode, Sinkronisasi Cloud S3, dan Verifikasi Live Webhook
+   Masalah:
+   1. Database lokal dan cloud sebelumnya hanya memiliki 5 ticker sampel (145 bar) tanpa data historis riil yang memadai untuk pelatihan model machine learning production.
+   2. Belum ada model Champion dual-mode terkalibrasi untuk regime `LOW_PRICE` (Rp 50–300) dan `HIGHER_PRICE` (> Rp 300) yang dilatih menggunakan data pasar riil BEI.
+   3. Unggahan database SQLite ukuran besar (178 MB) ke S3 rentan mengalami connection drops / timeout pada upload part multipart bawaan botocore di jaringan korporat.
+   4. Model registry Lambda di lingkungan serverless berisiko membaca model lama jika folder bersarang (`models/registry`) tidak terdeteksi otomatis atau `sync_models` tidak aktif secara default.
+   Solusi:
+   1. Melakukan bulk backfill ingestion data harian riil via Yahoo Finance (`scripts/ingest_daily.py`) untuk 208 ticker aktif BEI dari `configs/universe/seed_universe.csv` sejak `2023-01-02` hingga `2026-10-14` (total 186.436 bar harian terverifikasi).
+   2. Menghasilkan 186.291 baris fitur teknikal & rezim pasar (`scripts/build_features.py`) dan 185.515 label triple-barrier (`scripts/build_labels.py`) dengan target TP +5%, SL -2%, max holding 10 hari (45.763 sampel `LOW_PRICE` dan 137.426 sampel `HIGHER_PRICE`).
+   3. Melatih dan mendaftarkan 2 model Champion LightGBM terkalibrasi (`scripts/train_model.py`):
+      - `LOW_PRICE`: versi `lightgbm_classification_20261014_093522` (Brier: 0.1910, LogLoss: 0.5674, ROC-AUC: 0.5539, Accuracy: 0.7405, CalibError: 0.0334).
+      - `HIGHER_PRICE`: versi `lightgbm_classification_20261014_093607` (Brier: 0.1884, LogLoss: 0.5643, ROC-AUC: 0.5135, Accuracy: 0.7515, CalibError: 0.0337).
+   4. Mengoptimalkan `python/cloud/s3_sync.py` dengan adaptive retry policy dan `TransferConfig` yang stabil (single-stream / resilient non-threaded threshold), berhasil mengunggah database 178 MB (`datasets/stock_signals.db`) beserta backup timestamp ke S3 bucket `idx-stock-signal-436095651956-data`.
+   5. Menyinkronkan seluruh artefak model ke S3 prefix `models/` dan `models/registry/`, serta memperbarui `ModelRegistry.__init__` dan handler Lambda agar mengenali folder `registry/` bersarang dan mengaktifkan auto-sync model dari S3.
+   6. Melakukan deployment ulang kode ke AWS Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) dan memverifikasi balasan `/model` secara live pada endpoint API Gateway (`https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`) dengan respons HTTP 200 OK yang melaporkan metrik riil kedua Champion.
+   7. Menghasilkan sinyal harian trading riil dual-mode menggunakan `scripts/generate_signals.py` dengan probabilitas terkalibrasi dan ranking score.

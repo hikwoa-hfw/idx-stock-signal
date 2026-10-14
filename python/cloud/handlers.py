@@ -754,7 +754,7 @@ def lambda_telegram_webhook_handler(
                     download_database(s3_bucket, local_db_path, s3_client=s3_client)
                 except Exception as s3_err:
                     logger.warning("Could not sync DB from S3: %s", s3_err)
-            if not local_models_dir.is_dir() or event.get("sync_models", False):
+            if not local_models_dir.is_dir() or event.get("sync_models", True):
                 try:
                     sync_models_from_s3(s3_bucket, local_models_dir, s3_client=s3_client)
                 except Exception as s3_err:

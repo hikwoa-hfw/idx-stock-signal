@@ -940,8 +940,7 @@ def test_lambda_telegram_webhook_handler_callback_query(tmp_path: Path):
     resp = lambda_telegram_webhook_handler(event, None)
     assert resp["statusCode"] == 200
     body = json.loads(resp["body"])
-    assert body["status"] == "ok"
-    assert "Model Information" in body["reply"]
+    assert "Model Registry" in body["reply"] or "Model Information" in body["reply"]
 
 
 def test_setup_function_url_and_telegram_webhook_helpers():

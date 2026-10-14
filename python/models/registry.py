@@ -90,9 +90,14 @@ class ModelRegistry:
     """Manages serialization, versioning, and status (champion/challenger) of model artifacts."""
 
     def __init__(self, registry_dir: Optional[Union[str, Path]] = None) -> None:
-        self.registry_dir = (
+        raw_path = (
             Path(registry_dir) if registry_dir is not None else settings.model_registry_path
         )
+        sub_reg = raw_path / "registry"
+        if raw_path.is_dir() and sub_reg.is_dir() and any(sub_reg.glob("*.json")):
+            self.registry_dir = sub_reg
+        else:
+            self.registry_dir = raw_path
         self.registry_dir.mkdir(parents=True, exist_ok=True)
 
     def _artifact_path(self, model_version: str) -> Path:

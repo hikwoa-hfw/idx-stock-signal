@@ -39,7 +39,17 @@ def _get_s3_client(client: Optional[Any] = None) -> Any:
     if client is not None:
         return client
     region = os.getenv("AWS_REGION") or settings.aws_region or "ap-southeast-3"
-    return boto3.client("s3", region_name=region)
+    try:
+        from botocore.config import Config
+
+        cfg = Config(
+            retries={"max_attempts": 10, "mode": "adaptive"},
+            connect_timeout=60,
+            read_timeout=120,
+        )
+        return boto3.client("s3", region_name=region, config=cfg)
+    except Exception:
+        return boto3.client("s3", region_name=region)
 
 
 def bootstrap_database(local_path: Union[str, Path]) -> str:
@@ -118,11 +128,30 @@ def upload_database(
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    extra_upload_args: dict[str, Any] = {}
+    try:
+        import inspect
+
+        from boto3.s3.transfer import TransferConfig
+
+        sig = inspect.signature(client.upload_file)
+        if "Config" in sig.parameters or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        ):
+            extra_upload_args["Config"] = TransferConfig(
+                multipart_threshold=250 * 1024 * 1024,
+                max_concurrency=2,
+                use_threads=False,
+            )
+    except Exception:
+        pass
+
     client.upload_file(
         str(source_path),
         s3_bucket,
         s3_key,
         ExtraArgs={"Metadata": metadata},
+        **extra_upload_args,
     )
 
     try:

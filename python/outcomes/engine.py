@@ -1,4 +1,5 @@
 import math
+import uuid
 from datetime import date, datetime, timezone
 from typing import Optional, Union
 
@@ -133,6 +134,7 @@ class OutcomeEngine:
 
             snapshots.append(
                 SignalDailySnapshot(
+                    snapshot_id=str(uuid.uuid4()),
                     signal_id=signal.signal_id,
                     snapshot_date=bar.date,
                     holding_day=k,
@@ -144,6 +146,7 @@ class OutcomeEngine:
                     mae_so_far=float(mae_so_far),
                 )
             )
+
 
             tp_hit = bar.high >= tp_price
             sl_hit = bar.low <= sl_price
@@ -216,11 +219,11 @@ class OutcomeEngine:
             "mfe": mfe,
             "mae": mae,
             "mode": mode_val,
+            "outcome_id": outcome_id or str(uuid.uuid4()),
         }
-        if outcome_id:
-            kwargs["outcome_id"] = outcome_id
         if notes is not None:
             kwargs["notes"] = notes
+
 
         if outcome_status is not None and exit_price_val is not None and exit_date_val is not None:
             realized_return = (exit_price_val - ep) / ep

@@ -18,9 +18,13 @@ from python.cloud.s3_sync import (
 from python.common.types import SignalConfig
 from python.config.settings import settings
 from python.data.repository import DailyBarRepository
+from python.features.repository import FeatureRepository
 from python.journal.repository import PositionJournalRepository
 from python.journal.service import PositionJournalService
+from python.labels.repository import LabelRepository
 from python.models.registry import ModelRegistry
+from python.outcomes.engine import OutcomeEngine
+from python.outcomes.repository import OutcomeRepository
 from python.signals.repository import SignalRepository
 from services.telegram.bot import TelegramBotDispatcher
 from services.telegram.client import TelegramClient
@@ -29,10 +33,6 @@ from services.telegram.formatter import format_daily_signals
 try:
     from python.data.provider import DEFAULT_UNIVERSE, load_universe
     from python.features.engine import FeatureEngine
-    from python.features.repository import FeatureRepository
-    from python.labels.repository import LabelRepository
-    from python.outcomes.engine import OutcomeEngine
-    from python.outcomes.repository import OutcomeRepository
     from python.retraining.dataset import RetrainingDatasetAssembler
     from python.retraining.gate import PromotionGateManager
     from python.retraining.pipeline import RetrainingPipeline, RetrainingPipelineConfig
@@ -40,13 +40,9 @@ try:
     from python.signals.engine import SignalEngine
     from scripts.ingest_daily import run_ingest
 except ImportError as _import_err:
-    DEFAULT_UNIVERSE = []  # type: ignore[assignment]
+    DEFAULT_UNIVERSE = ["BBCA", "BBRI", "BMRI", "TLKM", "ASII"]  # type: ignore[assignment]
     load_universe = None  # type: ignore[assignment]
     FeatureEngine = None  # type: ignore[assignment]
-    FeatureRepository = None  # type: ignore[assignment]
-    LabelRepository = None  # type: ignore[assignment]
-    OutcomeEngine = None  # type: ignore[assignment]
-    OutcomeRepository = None  # type: ignore[assignment]
     RetrainingDatasetAssembler = None  # type: ignore[assignment]
     PromotionGateManager = None  # type: ignore[assignment]
     RetrainingPipeline = None  # type: ignore[assignment]
@@ -273,60 +269,67 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
         max_backoff = float(event.get("max_backoff", 10.0))
         ingest_error: Optional[Exception] = None
 
-        for attempt in range(1, max_retries + 1):
-            try:
-                ingested_count = run_ingest(
-                    provider_name=provider_name,
-                    tickers=tickers_list,
-                    db_url=db_url,
-                    mode=event.get("ingest_mode", "incremental"),
-                    start_date=start_date_val,
-                    end_date=target_date,
-                )
-                ingest_error = None
-                break
-            except Exception as err:
-                ingest_error = err
-                logger.warning(
-                    "Market ingestion attempt %d/%d failed: %s",
-                    attempt,
-                    max_retries,
-                    err,
-                )
-                if attempt < max_retries:
-                    sleep_s = min(backoff_base * (backoff_factor ** (attempt - 1)), max_backoff)
-                    time.sleep(sleep_s)
+        if run_ingest is not None:
+            for attempt in range(1, max_retries + 1):
+                try:
+                    ingested_count = run_ingest(
+                        provider_name=provider_name,
+                        tickers=tickers_list,
+                        db_url=db_url,
+                        mode=event.get("ingest_mode", "incremental"),
+                        start_date=start_date_val,
+                        end_date=target_date,
+                    )
+                    ingest_error = None
+                    break
+                except Exception as err:
+                    ingest_error = err
+                    logger.warning(
+                        "Market ingestion attempt %d/%d failed: %s",
+                        attempt,
+                        max_retries,
+                        err,
+                    )
+                    if attempt < max_retries:
+                        sleep_s = min(backoff_base * (backoff_factor ** (attempt - 1)), max_backoff)
+                        time.sleep(sleep_s)
 
-        if ingest_error is not None:
-            logger.error(
-                "Market data provider failed after %d retries: %s",
-                max_retries,
-                ingest_error,
+            if ingest_error is not None:
+                logger.error(
+                    "Market data provider failed after %d retries: %s",
+                    max_retries,
+                    ingest_error,
+                )
+                dispatch_failure_alert(
+                    error_msg=(
+                        f"Market data ingestion failed after {max_retries} attempts: {ingest_error}"
+                    ),
+                    stage="market_ingestion",
+                    target_date=target_date,
+                    event=event,
+                )
+                raise ingest_error
+        else:
+            logger.info(
+                "Market data ingestion skipped: run_ingest not loaded in serverless package."
             )
-            dispatch_failure_alert(
-                error_msg=(
-                    f"Market data ingestion failed after {max_retries} attempts: {ingest_error}"
-                ),
-                stage="market_ingestion",
-                target_date=target_date,
-                event=event,
-            )
-            raise ingest_error
 
         # Step 3: Resolve open outcomes
         ambiguity_policy = event.get("ambiguity_policy", "conservative")
-        outcome_engine = OutcomeEngine(
-            bar_repo=bar_repo,
-            signal_repo=sig_repo,
-            outcome_repo=out_repo,
-            ambiguity_policy=ambiguity_policy,
-        )
-        resolved_results = outcome_engine.resolve_all_signals(
-            as_of_date=target_date,
-            save=True,
-            ambiguity_policy=ambiguity_policy,
-        )
-        outcomes_count = len(resolved_results)
+        outcomes_count = 0
+        if OutcomeEngine is not None and out_repo is not None:
+            outcome_engine = OutcomeEngine(
+                bar_repo=bar_repo,
+                signal_repo=sig_repo,
+                outcome_repo=out_repo,
+                ambiguity_policy=ambiguity_policy,
+            )
+            resolved_results = outcome_engine.resolve_all_signals(
+                as_of_date=target_date,
+                save=True,
+                ambiguity_policy=ambiguity_policy,
+            )
+            outcomes_count = len(resolved_results)
 
         # Step 4: Extract features and generate daily signals
         model_reg = ModelRegistry(registry_dir=local_models_dir)
@@ -340,15 +343,21 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             top_n=top_n,
             min_probability=float(min_prob_val) if min_prob_val is not None else 0.25,
         )
-        sig_engine = SignalEngine(config=sig_cfg, bar_repo=bar_repo, model_registry=model_reg)
 
-        universe = tickers_list or bar_repo.get_universe() or load_universe() or DEFAULT_UNIVERSE
+        sig_engine = None
+        if SignalEngine is not None:
+            sig_engine = SignalEngine(config=sig_cfg, bar_repo=bar_repo, model_registry=model_reg)
+        else:
+            logger.info("SignalEngine skipped: ML dependencies not present in serverless package.")
+
+        fallback_univ = load_universe() if load_universe else []
+        universe = tickers_list or bar_repo.get_universe() or fallback_univ or DEFAULT_UNIVERSE
         bars_by_ticker = {t: bar_repo.get_daily_bars(t) for t in universe}
         bars_by_ticker = {k: v for k, v in bars_by_ticker.items() if v}
 
-        feature_engine = FeatureEngine()
         computed_features = {}
-        if bars_by_ticker:
+        if bars_by_ticker and FeatureEngine is not None:
+            feature_engine = FeatureEngine()
             try:
                 computed_features = feature_engine.compute_universe_features(bars_by_ticker)
                 feat_records = [rec for f_list in computed_features.values() for rec in f_list]
@@ -366,7 +375,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
 
         generated_signals = []
         signals_payload = []
-        if bars_by_ticker:
+        if bars_by_ticker and sig_engine is not None:
             try:
                 if dual_mode:
                     dual_res = sig_engine.generate_dual_mode_signals(
@@ -394,6 +403,24 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                     sig_repo.save_signals(generated_signals, ignore_existing=True)
             except Exception as sig_err:
                 logger.warning("Signal generation skipped or error: %s", sig_err)
+        elif not generated_signals:
+            # Fallback to pre-computed signals in SQLite database for target/today's date
+            lookup_date = target_date or check_date
+            latest_db_signals = sig_repo.get_signals_by_date(lookup_date)
+            if not latest_db_signals:
+                # If no signals on exact date, fetch latest available signals
+                distinct_dates = sig_repo.get_distinct_dates()
+                if distinct_dates:
+                    lookup_date = distinct_dates[-1]
+                    latest_db_signals = sig_repo.get_signals_by_date(lookup_date)
+            if latest_db_signals:
+                generated_signals = latest_db_signals
+                signals_payload = latest_db_signals
+                logger.info(
+                    "Loaded %d pre-computed signals from DB for %s",
+                    len(generated_signals),
+                    lookup_date,
+                )
 
         effective_date = (
             generated_signals[0].signal_date

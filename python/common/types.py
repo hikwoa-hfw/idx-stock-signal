@@ -8,21 +8,36 @@ from typing import Any, Optional, Union
 try:
     from pydantic import BaseModel, Field, field_validator, model_validator
 except ImportError:
+    class _FieldInfo:
+        def __init__(self, default=None, default_factory=None):
+            self.default = default
+            self.default_factory = default_factory
+
+    def Field(default=None, default_factory=None, **kwargs):  # type: ignore[no-redef]
+        return _FieldInfo(default=default, default_factory=default_factory)
+
     class BaseModel:  # type: ignore[no-redef]
         def __init__(self, **kwargs):
+            for cls in reversed(self.__class__.__mro__):
+                for name, val in getattr(cls, "__dict__", {}).items():
+                    if isinstance(val, _FieldInfo):
+                        if val.default_factory is not None:
+                            setattr(self, name, val.default_factory())
+                        else:
+                            setattr(self, name, val.default)
             for k, v in kwargs.items():
                 setattr(self, k, v)
 
         def model_dump(self, **kwargs):
-            return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
+            return {
+                k: v
+                for k, v in self.__dict__.items()
+                if not k.startswith("_") and not isinstance(v, _FieldInfo)
+            }
 
         def dict(self, **kwargs):
             return self.model_dump(**kwargs)
 
-    def Field(default=None, default_factory=None, **kwargs):  # type: ignore[no-redef]
-        if default_factory is not None:
-            return default_factory()
-        return default
 
     def field_validator(*args, **kwargs):  # type: ignore[no-redef]
         def dec(fn):

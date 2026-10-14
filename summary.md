@@ -574,3 +574,16 @@ Log Perubahan Tambahan (14 Oktober 2026)
    10. Melengkapi format Telegram single-mode dan antarmuka bot dengan tampilan Status dan Ref Close.
    11. Menambahkan seluruh kolom audit integritas harga pada keluaran CSV scripts/generate_signals.py.
    12. Menambahkan 23 pengujian unit dan regresi komprehensif pada tests/unit/test_price_integrity.py (382 repo tests passed 100%, ruff 100% clean).
+37. Resolusi Alert Kegagalan Pipeline CloudWatch/Telegram (16:30 WIB) dan Pencegahan Kolisi Outcome/Snapshot ID di Lingkungan Serverless
+   Masalah:
+   1. EventBridge schedule `idx-daily-pipeline-schedule-staging` memicu fungsi Lambda `idx-daily-pipeline-staging` pada pukul 16:30 WIB (09:30:07 UTC) tanggal 14 Oktober 2026 dan memancarkan pesan Telegram failure alert: `'NoneType' object is not callable`.
+   2. Pada `python/cloud/handlers.py`, kelas repositori murni SQLite (`OutcomeRepository`, `OutcomeEngine`, `FeatureRepository`, `LabelRepository`) sebelumnya dibungkus di dalam blok `try...except ImportError` bersama pustaka berat (`SignalEngine`, `FeatureEngine`, `run_ingest` / `pandas`, `lightgbm`). Di dalam environment serverless (paket zip 161 KB tanpa numpy/pandas), `ImportError` menyebabkan `OutcomeRepository` menjadi `None`, memicu TypeError sebelum pengecekan duplicate-run protection di baris berikutnya.
+   3. Fallback `BaseModel` dan helper `Field` di `python/common/types.py` (yang aktif saat runtime Lambda tidak memiliki library `pydantic`) sebelumnya mengevaluasi `default_factory` hanya satu kali saat pemuatan modul (class attribute level). Akibatnya, setiap instansiasi `SignalOutcomeRecord` dan `SignalDailySnapshot` berbagi `outcome_id` dan `snapshot_id` statis yang sama persis, memicu `sqlite3.IntegrityError: UNIQUE constraint failed: outcomes_daily.outcome_id` saat evaluasi multi-sinyal.
+   4. Pengujian unit `test_lambda_daily_pipeline_handler_error_handling` pada `tests/unit/test_aws.py` tidak menyertakan flag `force_rerun=True` sehingga diintersepsi oleh duplicate-run protection saat database lokal telah memiliki sinyal pada tanggal pengujian.
+   Solusi:
+   1. Memisahkan impor repositori murni SQLite (`DailyBarRepository`, `SignalRepository`, `OutcomeRepository`, `OutcomeEngine`, `FeatureRepository`, `LabelRepository`) keluar dari blok `try...except` agar selalu terdefinisi di modul root level tanpa dependensi ML eksternal.
+   2. Menambahkan `_FieldInfo` class dan evaluasi instansiasi dinamis `default_factory` pada fallback `BaseModel.__init__` di `python/common/types.py`, serta menetapkan `outcome_id` dan `snapshot_id` secara eksplisit menggunakan `uuid.uuid4()` pada `python/outcomes/engine.py`.
+   3. Memperbaiki `test_lambda_daily_pipeline_handler_error_handling` di `tests/unit/test_aws.py` dengan menambahkan `force_rerun=True, max_retries=1`.
+   4. Melakukan live deployment ulang paket serverless ke AWS Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) dan memverifikasi eksekusi live via AWS Boto3:
+      - Eksekusi normal: berhasil mengembalikan status HTTP 200 `SKIPPED_DUPLICATE` (sinyal 14 Oktober 2026 terlindungi tanpa duplikasi).
+      - Eksekusi forced: berhasil menyelesaikan siklus pipeline HTTP 200 `SUCCESS` (`outcomes_resolved: 2`, `signals_generated: 10`, `db_uploaded: true`, `log_uploaded: true`).

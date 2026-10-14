@@ -299,7 +299,10 @@ def test_lambda_daily_pipeline_handler_error_handling():
         "s3_bucket": None,
         "market_provider": "invalid_unknown_provider_xyz",
         "skip_telegram": True,
+        "force_rerun": True,
+        "max_retries": 1,
     }
+
     resp = lambda_daily_pipeline_handler(event, None)
     assert resp["statusCode"] == 500
     assert resp["body"]["status"] == "FAILED"

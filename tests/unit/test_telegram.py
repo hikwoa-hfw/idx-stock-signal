@@ -517,3 +517,22 @@ def test_bot_dispatcher_compare_positions_performance(tmp_path):
 
     perf_out = dispatcher.dispatch("/performance")
     assert "Phase 9" in perf_out
+
+
+def test_telegram_client_ssl_cert_verification_fallback():
+    client = TelegramClient(bot_token="test_token", chat_id="123")
+
+    cert_error = urllib.error.URLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
+    mock_success = MagicMock()
+    success_data = json.dumps({"ok": True, "result": {"message_id": 200}}).encode("utf-8")
+    mock_success.read.return_value = success_data
+    mock_success.__enter__.return_value = mock_success
+
+    with patch("urllib.request.urlopen", side_effect=[cert_error, mock_success]) as mock_urlopen:
+        res = client.send_message("Test SSL fallback")
+        assert res["ok"] is True
+        assert mock_urlopen.call_count == 2
+        # Verify second call passed an unverified SSL context
+        _, kwargs = mock_urlopen.call_args_list[1]
+        assert "context" in kwargs
+

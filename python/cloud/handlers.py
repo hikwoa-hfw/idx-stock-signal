@@ -616,6 +616,7 @@ def lambda_telegram_webhook_handler(
     and maintains database sync with S3.
     """
     # ponytail: synchronous webhook handler; offload to SQS worker if query latency exceeds 10s.
+    logging.getLogger().setLevel(logging.INFO)
     try:
         # Step 1: Parse payload from event (direct payload or API Gateway proxy body)
         payload: dict[str, Any] = {}
@@ -636,11 +637,14 @@ def lambda_telegram_webhook_handler(
             else:
                 payload = event
 
+        print(f"[WEBHOOK_EVENT] Received payload: {json.dumps(payload)[:1000]}")
+
         # Step 2: Extract message details
         msg = (
             payload.get("message")
             or payload.get("edited_message")
             or payload.get("channel_post")
+            or payload.get("callback_query", {}).get("message")
             or payload
         )
         chat = msg.get("chat") if isinstance(msg, dict) else {}
@@ -649,16 +653,35 @@ def lambda_telegram_webhook_handler(
             if isinstance(chat, dict)
             else (msg.get("chat_id") if isinstance(msg, dict) else None)
         )
+        cb_from = (
+            payload.get("callback_query", {}).get("from")
+            if isinstance(payload, dict)
+            else None
+        )
+        from_user = (
+            (msg.get("from") if isinstance(msg, dict) else None)
+            or cb_from
+            or {}
+        )
+        from_user_id = (
+            str(from_user.get("id"))
+            if isinstance(from_user, dict) and from_user.get("id") is not None
+            else str(msg.get("from_user_id") or "").strip()
+        )
+        sender_chat_id = str(chat_id or "").strip()
+        if not sender_chat_id and from_user_id:
+            sender_chat_id = from_user_id
+
         text = str(msg.get("text", "")).strip() if isinstance(msg, dict) else ""
 
-        # Step 3: Security verification (chat_id and secret header)
+        # Step 3: Security verification (chat_id, user_id, and secret header)
         allowed_chat_id = str(
             event.get("allowed_chat_id")
             or os.getenv("TELEGRAM_CHAT_ID")
             or settings.telegram_chat_id
             or ""
         ).strip()
-        sender_chat_id = str(chat_id or "").strip()
+        allowed_ids = {i.strip() for i in allowed_chat_id.split(",") if i.strip()}
 
         webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
         if webhook_secret:
@@ -669,17 +692,32 @@ def lambda_telegram_webhook_handler(
             )
             if token_header != webhook_secret:
                 logger.warning("Telegram webhook secret mismatch")
+                print("[WEBHOOK_REJECTED] Secret token mismatch")
                 return {
                     "statusCode": 200,
                     "headers": {"Content-Type": "application/json"},
                     "body": json.dumps({"status": "ignored", "reason": "invalid_secret"}),
                 }
 
-        if allowed_chat_id and sender_chat_id != allowed_chat_id:
+        is_authorized = True
+        if allowed_ids:
+            is_authorized = (sender_chat_id in allowed_ids) or (from_user_id in allowed_ids)
+
+        print(
+            f"[WEBHOOK_AUTH] sender_chat_id='{sender_chat_id}', from_user_id='{from_user_id}', "
+            f"allowed='{allowed_chat_id}', authorized={is_authorized}"
+        )
+
+        if not is_authorized:
             logger.warning(
-                "Unauthorized Telegram webhook request from chat_id: %s (expected %s)",
+                "Unauthorized Telegram webhook: sender_chat_id=%s, from_user_id=%s (allowed: %s)",
                 sender_chat_id,
+                from_user_id,
                 allowed_chat_id,
+            )
+            print(
+                f"[WEBHOOK_REJECTED] Unauthorized: chat_id={sender_chat_id}, "
+                f"from_user_id={from_user_id}"
             )
             return {
                 "statusCode": 200,
@@ -688,11 +726,14 @@ def lambda_telegram_webhook_handler(
             }
 
         if not text:
+            print(f"[WEBHOOK_NO_TEXT] Message contains no command/text for chat {sender_chat_id}")
             return {
                 "statusCode": 200,
                 "headers": {"Content-Type": "application/json"},
                 "body": json.dumps({"status": "ok", "message": "no_text"}),
             }
+
+        print(f"[WEBHOOK_CMD] Dispatching command: '{text}' from chat {sender_chat_id}")
 
         # Step 4: Sync DB and models from S3
         s3_bucket = (
@@ -734,6 +775,8 @@ def lambda_telegram_webhook_handler(
             bar_repo=bar_repo,
         )
         reply_text = dispatcher.dispatch(text)
+        preview_rep = reply_text[:60].replace("\n", " ")
+        print(f"[WEBHOOK_REPLY] Reply for {sender_chat_id} ({len(reply_text)}c): {preview_rep}...")
 
         # Step 6: Persist modified DB to S3 if state mutated
         if s3_bucket and text.lower().startswith(("/enter", "/exit", "/cancel")):
@@ -747,19 +790,42 @@ def lambda_telegram_webhook_handler(
             except Exception as up_err:
                 logger.warning("Could not persist modified DB to S3: %s", up_err)
 
-        # Step 7: Reply to user via TelegramClient
+        # Step 7: Reply to user via TelegramClient or webhook fallback
         token = (
             event.get("telegram_token")
             or os.getenv("TELEGRAM_BOT_TOKEN")
             or settings.telegram_bot_token
         )
         skip_tg = bool(event.get("skip_telegram", False))
+
+        sent_via_client = False
         if not skip_tg and token and sender_chat_id:
             try:
                 client = TelegramClient(bot_token=token, chat_id=sender_chat_id)
                 client.send_message(text=reply_text)
+                sent_via_client = True
+                print(f"[WEBHOOK_SENT] Sent reply via TelegramClient to chat {sender_chat_id}")
             except Exception as send_err:
-                logger.warning("Failed to deliver Telegram reply: %s", send_err)
+                logger.warning("Failed to deliver Telegram reply via client: %s", send_err)
+                print(f"[WEBHOOK_FALLBACK] Client failed ({send_err}); using webhook response")
+
+        if not skip_tg and not sent_via_client and sender_chat_id:
+            target_chat_val: Any = (
+                int(sender_chat_id)
+                if sender_chat_id.lstrip("-").isdigit()
+                else sender_chat_id
+            )
+            print(f"[WEBHOOK_METHOD_REPLY] Returning sendMessage for chat {target_chat_val}")
+            return {
+                "statusCode": 200,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({
+                    "method": "sendMessage",
+                    "chat_id": target_chat_val,
+                    "text": reply_text,
+                    "disable_web_page_preview": True,
+                }),
+            }
 
         return {
             "statusCode": 200,
@@ -769,6 +835,7 @@ def lambda_telegram_webhook_handler(
 
     except Exception as exc:
         logger.exception("Error in lambda_telegram_webhook_handler: %s", exc)
+        print(f"[WEBHOOK_ERROR] Exception in lambda_telegram_webhook_handler: {exc}")
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},

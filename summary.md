@@ -498,3 +498,18 @@ Log Perubahan Tambahan (13 Oktober 2026)
    2. Menjalankan deployment ulang (`scripts/deploy_aws.py --stage staging --deploy-lambda --set-webhook`) yang memaketkan seluruh kode pembaruan dual-mode ke ketiga fungsi Lambda staging AWS (`ap-southeast-3`).
    3. Memverifikasi status pendaftaran webhook Telegram secara live: endpoint aktif `https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook` terhubung sukses dengan HTTP 200 OK dan 0 pending updates.
    4. Seluruh pengujian unit dan linting lulus 100% (63 unit tests AWS & Telegram passed, ruff clean).
+
+Log Perubahan Tambahan (14 Oktober 2026)
+32. Hardening Webhook Telegram AWS Lambda, Structured CloudWatch Logging, Otorisasi Group Chat, dan Resilient Delivery Fallback
+   Masalah:
+   1. Log eksekusi incoming webhook di CloudWatch tidak menampilkan detail update payload, sender chat ID, dan dispatch command karena level logging root Lambda belum diset ke INFO secara eksplisit.
+   2. Verifikasi otorisasi hanya memeriksa `sender_chat_id`, sehingga pesan perintah dari user yang berhak (`allowed_chat_id`) yang dikirim di dalam grup chat tertolak karena ID grup berbeda dengan ID user.
+   3. Jika pengiriman balasan sinkron via `TelegramClient.send_message` mengalami kegagalan jaringan atau upstream 503 dari Telegram API, pesan balasan berisiko hilang dan tidak terkirim kembali ke pengguna.
+   4. Pustaka `services/telegram/client.py` perlu penanganan SSL fallback menyeluruh untuk menangkap variasi error sertifikasi di lingkungan Windows corporate dan Linux runtime Lambda.
+   Solusi:
+   1. Menambahkan inisialisasi level root logger `logging.getLogger().setLevel(logging.INFO)` dan structured `print()` logs (`[WEBHOOK_EVENT]`, `[WEBHOOK_AUTH]`, `[WEBHOOK_CMD]`, `[WEBHOOK_REPLY]`, `[WEBHOOK_SENT]`) pada `python/cloud/handlers.py` untuk pemantauan real-time yang jelas di AWS CloudWatch.
+   2. Memperbarui logika otorisasi pada `lambda_telegram_webhook_handler` untuk mengekstrak dan memvalidasi baik `sender_chat_id` maupun `from_user_id` terhadap `allowed_chat_id`, mengizinkan interaksi dari private chat maupun grup.
+   3. Mengimplementasikan dual delivery fallback: respons dikirim via `TelegramClient.send_message`; jika gagal atau token tidak tersedia, handler secara otomatis mengembalikan payload method webhook Telegram `{"method": "sendMessage", "chat_id": ..., "text": ...}` tanpa menduplikasi pesan jika pengiriman langsung berhasil.
+   4. Memperluas penanganan SSL fallback pada `_urlopen` di `services/telegram/client.py` untuk menangkap variasi error sertifikat SSL pada Windows corporate.
+   5. Menambahkan unit test baru di `tests/unit/test_aws.py` dan `tests/unit/test_telegram.py` (total 66 unit tests lulus 100%, ruff 100% clean).
+   6. Menerapkan live deployment ulang ke AWS Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) dan memvalidasi webhook endpoint aktif serta bebas pending updates (`pending_update_count: 0`).

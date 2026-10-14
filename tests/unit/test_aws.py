@@ -869,6 +869,57 @@ def test_lambda_telegram_webhook_handler_position_mutation_uploads_db(tmp_path: 
     assert (bucket, "database/stock_signals.db") in s3.storage
 
 
+def test_lambda_telegram_webhook_handler_group_user_authorization(tmp_path: Path):
+    import json
+
+    event = {
+        "body": json.dumps({
+            "update_id": 104,
+            "message": {
+                "chat": {"id": -100987654321, "type": "group"},
+                "from": {"id": 12345, "first_name": "Admin"},
+                "text": "/help",
+            },
+        }),
+        "allowed_chat_id": "12345",
+        "skip_telegram": True,
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "webhook_test.db"),
+    }
+    resp = lambda_telegram_webhook_handler(event, None)
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["status"] == "ok"
+    assert "BEI Daily Stock Signal Bot" in body["reply"]
+
+
+def test_lambda_telegram_webhook_handler_fallback_to_webhook_response(tmp_path: Path):
+    import json
+
+    event = {
+        "body": {
+            "update_id": 105,
+            "message": {"chat": {"id": 12345}, "text": "/help"},
+        },
+        "allowed_chat_id": "12345",
+        "telegram_token": "mock_token_123",
+        "skip_telegram": False,
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "webhook_test.db"),
+    }
+    with patch("python.cloud.handlers.TelegramClient") as MockTG:
+        mock_instance = MagicMock()
+        mock_instance.send_message.side_effect = RuntimeError("Upstream 503 Service Unavailable")
+        MockTG.return_value = mock_instance
+
+        resp = lambda_telegram_webhook_handler(event, None)
+        assert resp["statusCode"] == 200
+        body = json.loads(resp["body"])
+        assert body["method"] == "sendMessage"
+        assert body["chat_id"] == 12345
+        assert "BEI Daily Stock Signal Bot" in body["text"]
+
+
 def test_setup_function_url_and_telegram_webhook_helpers():
     mock_lambda = MagicMock()
     mock_lambda.create_function_url_config.return_value = {

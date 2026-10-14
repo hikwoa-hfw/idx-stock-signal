@@ -139,8 +139,9 @@ class TelegramClient:
     def _urlopen(self, req: Any) -> Any:
         try:
             return urllib.request.urlopen(req, timeout=self.timeout)
-        except urllib.error.URLError as e:
-            if "CERTIFICATE_VERIFY_FAILED" in str(e):
+        except Exception as e:
+            err_str = str(e).lower()
+            if "certificate_verify_failed" in err_str or "certificate verify failed" in err_str:
                 import ssl
 
                 ctx = ssl._create_unverified_context()

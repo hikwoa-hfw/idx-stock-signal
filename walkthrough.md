@@ -1,165 +1,161 @@
-# Walkthrough: Ingestion Data Historis BEI 3+ Tahun, Pelatihan Champion Dual-Mode, Persistensi Sinyal Riil, dan Verifikasi Live
+# Walkthrough: Price Integrity, Range Collapse Prevention, BEI Tick Size Compliance, and Breakout Classification
 
 ## Ringkasan Sesi
-Sesi ini merealisasikan pipeline machine learning produksi ujung-ke-ujung (end-to-end) menggunakan data riil bursa saham Indonesia (BEI/IDX), mengoreksi bug ambang batas probabilitas model terkalibrasi, memastikan retensi sinyal harian ke SQLite/S3, dan memverifikasi bot secara live:
-1. Mengingest **186.436 bar harian riil** (rentang 2023-01-02 hingga 2026-10-14, ~3.8 tahun) untuk 208 saham likuid BEI via Yahoo Finance.
-2. Mengekstrak **186.291 baris fitur teknikal dan rezim pasar**.
-3. Menghitung **185.515 label triple-barrier** (TP +5%, SL -2%, max 10 hari trading) terpisah ke dalam rezim `LOW_PRICE` (45.763 sampel) dan `HIGHER_PRICE` (137.426 sampel).
-4. Melatih dan meregistrasi dua classifier Champion LightGBM terkalibrasi independen untuk masing-masing mode.
-5. Memperbaiki ambang batas `min_probability` agar otomatis menyesuaikan dengan win rate model terkalibrasi (~25%) tanpa menggugurkan sinyal valid.
-6. Mempersistensikan 10 sinyal trading riil (5 `LOW_PRICE` dan 5 `HIGHER_PRICE`) untuk tanggal 14 Oktober 2026 ke basis data SQLite `signals_daily`.
-7. Mengunggah basis data SQLite (170 MB) dan artefak model ke AWS S3 bucket staging (`idx-stock-signal-436095651956-data`) dengan verifikasi integritas hash SHA-256 (`909d312...`) dan auto-backup.
-8. Memperbarui dan mendeploy kode ke AWS Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`).
-9. Memverifikasi respons perintah `/model` dan `/daily` secara lokal dan langsung terhadap live API Gateway endpoint (`https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`) yang mengembalikan status dual-mode Champion dan sinyal harian riil 14 Oktober 2026.
-10. Menjalankan seluruh rangkaian test suite repositori (359 tests passed, 100% kelulusan, ruff 100% clean).
+Sesi ini menginvestigasi dan menyelesaikan akar penyebab integritas harga sinyal trading sebelum retraining atau promosi model:
+1. **Diskrepansi Harga Entri vs Close Terakhir (IDR 56 vs IDR 44):** Menambahkan fail-closed validation terhadap deviasi harga entri dari harga penutupan harian terakhir (`reference_price`), penolakan bar basi (`stale bar`), pengecekan kecocokan ticker/tanggal, verifikasi divergensi harga raw vs adjusted close (>5% tanpa aksi korporasi ditolak fail-closed), dan reklasifikasi sinyal di atas deviasi batas sebagai `WAIT_FOR_BREAKOUT` alih-alih `BUY` langsung.
+2. **Pencegahan Range Collapse (IDR 56–56 / IDR 53–53):** Mengimplementasikan pembulatan fraksi harga resmi BEI (*Fraksi Harga*) dengan *outward rounding* (`floor_to_tick` untuk batas bawah, `ceil_to_tick` untuk batas atas) dan penjaminan lebar rentang minimum (`min_range_ticks >= 1`), baik di tingkat `SignalEngine` maupun pada pemformat tampilan pesan Telegram (`services/telegram/formatter.py` dan `services/telegram/bot.py`).
+3. **Koreksi Transisi Bracket Fraksi Harga BEI:** Mengatasi kelemahan pada batas transisi bracket (contoh: harga 500 dan 5000) di mana outward rounding yang menggunakan tick acuan tunggal menghasilkan fraksi harga bursa yang tidak valid (contoh: 495 pada fraksi Rp 2 atau 4975 pada fraksi Rp 10). Fungsi pembulatan disempurnakan menjadi *self-correcting* sesuai fraksi bracket hasil pembulatan (`cand % cand_tick != 0`).
+4. **Penutupan Celah Validasi Barrier:** Menegakkan aturan ketat bahwa sinyal dengan `entry_policy="BREAKOUT"` tidak boleh memiliki status `BUY` (harus `WAIT_FOR_BREAKOUT`), dan pemicu breakout `entry_low` tidak boleh berada di bawah `reference_price`.
+5. **Pencatatan Audit Field Integritas Harga:** Menambahkan field audit pada `SignalRecord` dan tabel SQLite `signals_daily` (`signal_generated_at`, `market_data_as_of`, `latest_completed_bar_date`, `reference_price`, `entry_low`, `entry_high`, `entry_policy`, `status`) dengan migrasi skema yang aman dan backward-compatible terhadap data historis yang ada.
+6. **Keterbukaan Data Harian vs Real-Time:** Memperbarui format pesan Telegram untuk menegaskan bahwa data bersumber dari penutupan harian Yahoo Finance EOD (`Daily Close / Not Real-Time Quote`).
+7. **Verifikasi Komprehensif:** Menambahkan 23 unit & regression test (`tests/unit/test_price_integrity.py`). Seluruh test suite repositori lulus 100% (382 tests passed, 0 failed, ruff 100% clean). Tidak ada model yang di-retrain atau dipromosikan selama investigasi ini.
+
+---
+
+## Root Cause Analysis
+
+### 1. Masalah Diskrepansi IDR 44 Close vs IDR 56 Entry
+- **Penyebab Utama:**
+  - Sebelumnya, `SignalEngine` tidak melakukan validasi batas deviasi antara entry zone yang dihasilkan dengan harga penutupan terakhir saham (`reference_price = last_bar.close`).
+  - Bila ada pemicu breakout atau harga referensi yang tidak sinkron/stale (misal candle saham lain atau data lama yang belum ter-update EOD), sistem tetap memancarkan rekomendasi `BUY` langsung.
+  - Tidak ada pengecekan divergensi antara harga raw close dan adjusted close provider data tanpa adanya catatan dividen atau stock split.
+- **Solusi:**
+  - Menetapkan batas toleransi deviasi ketat (`max_entry_deviation_pct = 0.05`). Sinyal yang melebihi batas ini diklasifikasikan sebagai `entry_policy="BREAKOUT"` dengan status `WAIT_FOR_BREAKOUT` (atau digugurkan/fail-closed jika breakout dinonaktifkan).
+  - Menolak data bar yang tanggalnya tidak cocok dengan `signal_date` (deteksi bar basi / missing bar).
+  - Memverifikasi konsistensi raw close vs adjusted close (>5% tanpa aksi korporasi digugurkan fail-closed).
+
+### 2. Masalah Collapsed Entry Range (56–56 / 53–53)
+- **Penyebab Utama:**
+  - Untuk saham bernilai kecil (< Rp 200, contoh BKSL dengan close Rp 53), kalkulasi default setengah band 0.5% menghasilkan rentang `[52.73, 53.26]`.
+  - `SignalEngine` sebelumnya hanya membulatkan ke 2 desimal standar (`round(x, 2)`) tanpa pembulatan fraksi harga BEI.
+  - Pada antarmuka Telegram (`services/telegram/formatter.py` dan `services/telegram/bot.py`), angka tersebut diformat dengan pemformat integer rupiah `:,.0f`, sehingga kedua batas atas dan bawah membulat ke angka yang sama persis (`53–53` atau `56–56`).
+- **Solusi:**
+  - Menerapkan pembulatan fraksi harga resmi bursa BEI secara outward: batas bawah dibulatkan ke bawah ke kelipatan fraksi (`round_down_to_tick`), dan batas atas dibulatkan ke atas ke kelipatan fraksi (`round_up_to_tick`).
+  - Menegakkan `min_range_ticks >= 1`: jika batas bawah dan atas bernilai sama pada fraksi harga yang berlaku, batas atas dinaikkan minimal 1 fraksi harga BEI (contoh: untuk saham Rp 53 fraksi 1, rentang minimum menjadi Rp 53–54).
+  - Melengkapi pemformat tampilan Telegram dengan proteksi outward rounding serupa sebagai jaring pengaman UI.
+
+### 3. Masalah Transisi Fraksi Harga Bursa (Bracket Transitions)
+- **Penyebab Utama:**
+  - Bila harga saham berada persis di batas ambang fraksi harga (misal Rp 500 dengan fraksi Rp 5, atau Rp 5.000 dengan fraksi Rp 25), pengurangan setengah band membawa batas bawah ke bracket lebih rendah (<500 dengan fraksi Rp 2, <5000 dengan fraksi Rp 10).
+  - Jika rounding function menggunakan fraksi tick acuan awal (5 atau 25), harga batas bawah yang dihasilkan (seperti 495 atau 4975) merupakan harga fraksi ilegal di BEI karena 495 ganjil pada fraksi Rp 2 dan 4975 bukan kelipatan 10 pada fraksi Rp 10.
+- **Solusi:**
+  - Menjadikan fungsi pembulatan fraksi harga self-correcting: jika hasil pembulatan jatuh ke bracket dengan fraksi harga berbeda, lakukan pembulatan ulang berbasis fraksi bracket baru (`cand % cand_tick != 0`), sehingga menghasilkan harga sah (496 dan 4970).
 
 ---
 
 ## Task Breakdown & Detail Perubahan
 
-### 1. Ingestion Data Historis Pasar Riil BEI (3+ Tahun)
-- **Eksekusi:**
-  - Perintah: `python -m scripts.ingest_daily --mode backfill --provider yfinance --start-date 2023-01-01 --universe-file configs/universe/seed_universe.csv --batch-size 25`
-  - Hasil: Mengunduh dan memvalidasi 186.436 bar harian dari 208 ticker aktif IDX (termasuk BBCA, BBRI, BMRI, TLKM, ASII, DCII, GOTO, BUMI, DOID, BRMS, ENRG, PWON, AGRO, BKSL, SMRA, WOOD, BMTR, dll.).
-  - Integritas data tersimpan dalam tabel `daily_bars` pada `datasets/stock_signals.db`.
+### 1. `python/common/types.py`
+- **Fraksi Harga BEI (Baris 195–236):**
+  - Implementasi fungsi kepatuhan Fraksi Harga SK Direksi BEI Kep-00023/BEI/03-2020:
+    - `< 200`: fraksi Rp 1
+    - `200 – < 500`: fraksi Rp 2
+    - `500 – < 2000`: fraksi Rp 5
+    - `2000 – < 5000`: fraksi Rp 10
+    - `>= 5000`: fraksi Rp 25
+  - Fungsi: `get_bei_tick_size`, `round_down_to_tick`, `round_up_to_tick`, `round_to_nearest_tick` dengan rekonsiliasi otomatis batas bracket.
+- **Ekstensi `FeatureRecord` (Baris 335–336):**
+  - Menambahkan field opsional `breakout_price` dan `entry_price`.
+- **Ekstensi `SignalConfig` (Baris 770–774):**
+  - Menambahkan:
+    - `max_entry_deviation_pct: float = 0.05` (toleransi deviasi maksimal 5%)
+    - `min_range_ticks: int = 1` (lebar rentang minimum 1 fraksi)
+    - `enforce_bei_ticks: bool = False` (opsi pembulatan ketat fraksi BEI)
+    - `allow_breakout: bool = True` (opsi izin klasifikasi breakout bersyarat)
+    - `raw_adjusted_tolerance_pct: float = 0.05` (toleransi divergensi raw vs adjusted)
+- **Ekstensi & Hardening `SignalRecord` (Baris 835, 850–855, 866–876, 941–978):**
+  - Menambahkan field integritas: `status`, `signal_generated_at`, `market_data_as_of`, `latest_completed_bar_date`, `reference_price`, `entry_policy`, `max_entry_deviation_pct`.
+  - Menambahkan root-validator backward-compatible untuk dictionary historis.
+  - Memperbarui `validate_barriers()`:
+    - Melarang status `BUY` dengan policy `BREAKOUT`.
+    - Melarang pemicu `WAIT_FOR_BREAKOUT` di bawah harga referensi.
+    - Menolak deviasi `BUY` melebihi `max_entry_deviation_pct` terhadap `reference_price`.
 
-### 2. Pembangunan Fitur Teknikal & Label Triple-Barrier
-- **Eksekusi Fitur:**
-  - Perintah: `python -m scripts.build_features --save-db --limit 1`
-  - Hasil: Menghasilkan 186.291 record fitur teknikal (retur 1d–20d, EMA20/50/200, RSI14, ATR14, volatilitas 20d, rasio volume, kekuatan relatif terhadap IHSG/sektor, market breadth) pada tabel `features_daily`.
-- **Eksekusi Label Triple-Barrier:**
-  - Perintah: `python -m scripts.build_labels --tp-pct 0.05 --sl-pct 0.02 --max-hold 10 --save-db --limit 1`
-  - Hasil: 185.515 record label pada tabel `labels_daily` dengan rincian:
-    - `LOW_PRICE` (Rp 50–300): 45.763 sampel.
-    - `HIGHER_PRICE` (> Rp 300): 137.426 sampel.
-    - `EXCLUDED_BELOW_50` (< Rp 50): 2.326 sampel.
-    - Distribusi outcome: 46.537 TP, 119.329 SL, 19.649 EXPIRY.
+### 2. `python/signals/engine.py`
+- **Validasi Bar dan Data Pasar (Baris 341–360):**
+  - Memeriksa kesesuaian bar terakhir terhadap `signal_date` (gugurkan jika bar basi / stale).
+  - Memeriksa divergensi antara `last_bar.close` (raw) dan `last_bar.adj_close` (>5% tanpa dividen/split ditolak fail-closed).
+- **Outward Rounding & Range Collapse Prevention (Baris 465–530):**
+  - Menghitung rentang entri dengan target breakout / close.
+  - Outward rounding ke kelipatan tick BEI yang valid sesuai bracket masing-masing batas.
+  - Memeriksa bila `(entry_high - entry_low) < min_ticks * tick`, menaikkan batas atas secara proporsional.
+- **Klasifikasi Status Sinyal & Fail-Closed (Baris 532–560):**
+  - Bila deviasi entry melampaui `max_entry_deviation_pct`:
+    - Jika `allow_breakout=True`: menetapkan `entry_policy="BREAKOUT"` dan `status="WAIT_FOR_BREAKOUT"`.
+    - Jika `allow_breakout=False`: menolak sinyal (fail-closed).
+  - Bila deviasi ke bawah > max_dev: menolak sinyal (fail-closed).
+  - Mengisi `signal_generated_at`, `market_data_as_of`, `latest_completed_bar_date`, dan `reference_price` secara lengkap.
 
-### 3. Pelatihan Model Machine Learning Dual-Mode Champions
-- **Champion `LOW_PRICE`:**
-  - Perintah: `python -m scripts.train_model --mode LOW_PRICE --model-type lightgbm --task classification --set-champion --save-registry --calibrate`
-  - Data: 45.763 baris pada 87 ticker (Train: 31.794 baris, Val: 5.576 baris, Test: 7.410 baris).
-  - Metrik Uji (Unseen Test Data):
-    - Brier Score: `0.1910`
-    - Log Loss: `0.5674`
-    - ROC-AUC: `0.5539`
-    - Accuracy: `0.7405`
-    - Calibration Error: `0.0334`
-  - Versi Terdaftar: `lightgbm_classification_20261014_093522` (status: `champion`, mode: `LOW_PRICE`).
-- **Champion `HIGHER_PRICE`:**
-  - Perintah: `python -m scripts.train_model --mode HIGHER_PRICE --model-type lightgbm --task classification --set-champion --save-registry --calibrate`
-  - Data: 137.426 baris pada 182 ticker (Train: 94.821 baris, Val: 20.049 baris, Test: 19.439 baris).
-  - Metrik Uji (Unseen Test Data):
-    - Brier Score: `0.1884`
-    - Log Loss: `0.5643`
-    - ROC-AUC: `0.5135`
-    - Accuracy: `0.7515`
-    - Calibration Error: `0.0337`
-  - Versi Terdaftar: `lightgbm_classification_20261014_093607` (status: `champion`, mode: `HIGHER_PRICE`).
+### 3. `python/signals/repository.py`
+- **Auto-Migration Skema SQLite (Baris 80–108):**
+  - Mengecek keberadaan kolom-kolom baru (`mode`, `signal_generated_at`, `market_data_as_of`, `latest_completed_bar_date`, `reference_price`, `entry_policy`, `status`) pada tabel `signals_daily`.
+  - Menjalankan `ALTER TABLE signals_daily ADD COLUMN ...` bila belum ada, tanpa merusak data historis atau memicu trigger immutability.
+- **Persistensi & Deserialisasi (Baris 176–180, 210–216, 233–293):**
+  - Memperbarui `INSERT INTO signals_daily` untuk menyimpan kolom-kolom audit baru.
+  - Memperbarui `_row_to_record` dengan fallback default untuk baris historis yang dibuat sebelum penambahan kolom.
 
-### 4. Perbaikan dan Optimasi Kode
-- **File:** `scripts/generate_signals.py`
-  - **Baris 208–213:** Menambahkan penyesuaian otomatis ambang probabilitas: jika `--min-prob` tidak diisi, dan `--use-champion` atau `--dual-mode` aktif, default `config.min_probability` disetel ke `0.25` (sesuai rata-rata win-rate model terkalibrasi bursa riil), mencegah sinyal valid terbuang.
-- **File:** `python/cloud/handlers.py`
-  - **Baris 330–343:** Memperbarui instansiasi `sig_cfg` pada `lambda_daily_pipeline_handler` agar menerima `min_probability` dari event atau env var `SIGNAL_MIN_PROBABILITY`, dengan default `0.25` untuk inferensi produksi model terkalibrasi.
-  - **Baris 42–52 & 131–147 (`python/cloud/s3_sync.py`):** Konfigurasi adaptive retries dan single-stream TransferConfig upload besar.
-  - **Baris 757:** Mengaktifkan sinkronisasi model default dari S3 untuk instance Lambda yang berjalan.
-- **File:** `tests/unit/test_aws.py`
-  - **Baris 943:** Memulihkan assertion `assert body["status"] == "ok"` pada `test_lambda_telegram_webhook_handler_callback_query` untuk menjaga kepatuhan kontrak pengujian.
+### 4. `services/telegram/formatter.py` & `services/telegram/bot.py`
+- **Pemberitahuan Data EOD vs Real-Time:**
+  - Header pesan Telegram diperbarui dengan label jelas: `(Daily Close / Not Real-Time Quote)`.
+- **Pencegahan Collapse pada Tampilan:**
+  - Memastikan batas bawah dan batas atas yang dibulatkan integer rupiah tidak pernah tampil sama (`entry_str = f"{low_d:,.0f}–{high_d:,.0f}"`).
+  - Menampilkan status (`BUY` vs `WAIT_FOR_BREAKOUT`) dan harga penutupan referensi (`Ref Close`).
 
-### 5. Persistensi Sinyal Harian, Sinkronisasi S3, dan Deployment AWS Staging
-- **Persistensi Sinyal:**
-  - Perintah: `python -m scripts.generate_signals --dual-mode --use-champion --min-prob 0.25 --top-n 5 --save-db`
-  - Hasil: Berhasil menyimpan 10 sinyal riil tanggal 14 Oktober 2026 ke tabel `signals_daily` pada `datasets/stock_signals.db`.
-- **Unggah Database SQLite:**
-  - Database berukuran 170 MB (`datasets/stock_signals.db`) berhasil diunggah ke `s3://idx-stock-signal-436095651956-data/database/stock_signals.db` (SHA-256: `909d312a695b84dec994102118fe59ebcdf58d6e71507a73314fb402d2b70282`).
-  - Dibuatkan salinan snapshot otomatis: `database/backups/stock_signals_20261014_032350.db`.
-- **Unggah Artefak Model:**
-  - 15 file model (termasuk artefak `.joblib` dan metadata `.json` kedua champion) disinkronkan ke prefix `models/` dan `models/registry/`.
-- **AWS Lambda Deployment:**
-  - Perintah: `python -m scripts.deploy_aws --stage staging --deploy-lambda`
-  - Hasil: Paket zip 157.2 KB diperbarui ke seluruh fungsi Lambda staging:
-    - `idx-daily-pipeline-staging`
-    - `idx-retraining-pipeline-staging`
-    - `idx-telegram-webhook-staging`
-  - Webhook terdaftar pada `https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`.
+### 5. `scripts/generate_signals.py`
+- Menampilkan kolom `Status` dan `Ref Close` pada tabel terminal.
+- Menambahkan kolom `reference_price`, `entry_policy`, `status`, `latest_completed_bar_date`, `market_data_as_of`, dan `signal_generated_at` ke keluaran CSV sinyal harian.
+
+### 6. `tests/unit/test_price_integrity.py`
+- Menulis 23 pengujian unit dan regresi:
+  1. `test_entry_deviation_fail_closed`: Penolakan deviasi ekstrem (44 vs 56).
+  2. `test_entry_range_collapse_prevention`: Pencegahan keruntuhan rentang harga 53, 56, 76.
+  3. `test_min_range_width_enforced_zero_band`: Rentang tetap memiliki lebar minimal saat band = 0.
+  4. `test_telegram_formatter_collapse_prevention`: Pemformat Telegram tidak pernah menampilkan rentang collapsed.
+  5. `test_bei_tick_size_brackets`: Kepatuhan kelima fraksi harga resmi BEI.
+  6. `test_round_down_and_up_to_tick`: Akurasi fungsi rounding tick.
+  7. `test_stale_data_rejection`: Penolakan bar basi / tanggal tidak cocok.
+  8. `test_mismatched_ticker_bar_rejection`: Penolakan bar dari ticker lain.
+  9. `test_raw_vs_adjusted_close_divergence_rejected`: Penolakan divergensi data raw vs adjusted >5%.
+  10. `test_legitimate_corporate_action_tolerance`: Toleransi divergensi sah jika ada dividen/split.
+  11. `test_breakout_trigger_status`: Penetapan status `WAIT_FOR_BREAKOUT` untuk pemicu di atas referensi.
+  12. `test_price_integrity_fields_recorded`: Kelengkapan audit metadata sinyal.
+  13. `test_repository_roundtrip_with_integrity_fields`: Persistensi dan query basis data SQLite.
+  14. `test_validate_barriers_enforces_price_integrity`: Validasi integritas harga pada model domain.
+  15. `test_eod_vs_realtime_distinction_in_telegram`: Keterbukaan data EOD pada Telegram broadcast.
+  16. `test_bei_tick_boundary_transitions_round_down`: Validasi round-down pada batas fraksi (497.5 -> 496, 4975 -> 4970).
+  17. `test_bei_tick_boundary_transitions_round_up`: Validasi round-up pada batas fraksi (199.5 -> 200, 499.5 -> 500).
+  18. `test_bei_tick_boundary_transitions_round_nearest`: Validasi round-nearest pada batas fraksi.
+  19. `test_breakout_policy_with_buy_status_rejected_in_validate_barriers`: Larangan kombinasi BREAKOUT dan BUY.
+  20. `test_breakout_trigger_entry_low_below_reference_rejected`: Larangan breakout trigger di bawah close.
+  21. `test_signal_engine_breakout_from_feature_record`: Ekstraksi breakout target dari FeatureRecord.
+  22. `test_signal_engine_downward_discrepancy_fail_closed`: Penolakan anomali deviasi ke bawah > 5%.
+  23. `test_telegram_formatter_single_mode_shows_status_and_ref_close`: Format single-mode menampilkan Status dan Ref Close.
 
 ---
 
-## Verifikasi Pengujian
+## Verification Record
 
-1. **Uji Inferensi Sinyal Trading Harian (`scripts/generate_signals.py`):**
-   - Perintah: `python -m scripts.generate_signals --dual-mode --use-champion`
-   - Hasil: Otomatis menghasilkan 10 sinyal teratas untuk tanggal 14 Oktober 2026 tanpa perlu flag `--min-prob 0.25` manual:
-     - **LOW_PRICE:** BKSL (P: 31.9%, Score: 27.7), SMRA (P: 25.1%, Score: 26.9), AGRO (P: 25.0%, Score: 26.1), WOOD (P: 25.6%, Score: 25.7), BMTR (P: 28.7%, Score: 25.7).
-     - **HIGHER_PRICE:** BBRI (P: 28.2%, Score: 38.7), BBCA (P: 28.2%, Score: 37.7), ASII (P: 27.2%, Score: 32.6), DCII (P: 28.1%, Score: 31.8), BMRI (P: 28.5%, Score: 31.1).
-2. **Uji Dispatch Lokal Perintah `/model`:**
-   - Hasil: Menampilkan Champion `LOW_PRICE` (`lightgbm_classification_20261014_093522`) dan `HIGHER_PRICE` (`lightgbm_classification_20261014_093607`) beserta metrik evaluasinya.
-3. **Uji Live API Gateway Webhook Endpoint (`/model`):**
-   - Request: Payload Telegram `/model` dikirim ke `https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`.
-   - Response: `HTTP 200 OK`
-     ```text
-     🧠 *Model Registry (Dual-Mode)*
-
-     🏆 *Champion [LOW_PRICE]*: `lightgbm_classification_20261014_093522` (lightgbm)
-       Metrics: `accuracy`: 0.7405, `brier_score`: 0.1910, `calibration_error`: 0.0334
-
-     🏆 *Champion [HIGHER_PRICE]*: `lightgbm_classification_20261014_093607` (lightgbm)
-       Metrics: `accuracy`: 0.7515, `brier_score`: 0.1884, `calibration_error`: 0.0337
-     ```
-4. **Uji Live API Gateway Webhook Endpoint (`/daily`):**
-   - Request: Payload Telegram `/daily` dikirim ke `https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`.
-   - Response: `HTTP 200 OK`
-     ```text
-     🤖 DAILY STOCK SIGNAL
-     14 Oct 2026
-
-     MARKET
-     IHSG       : Bearish
-     Breadth    : Negative
-     Volatility : Normal
-
-     ━━━━━━━━━━━━━━━━
-     MODE A — LOW_PRICE (IDR 50–300)
-     1. BKSL (32%, Entry: 53–53, TP/SL: +5.0% / -2.0%)
-     2. SMRA (25%, Entry: 259–261, TP/SL: +5.0% / -2.0%)
-     3. AGRO (25%, Entry: 132–134, TP/SL: +5.0% / -2.0%)
-     4. WOOD (26%, Entry: 179–181, TP/SL: +5.0% / -2.0%)
-     5. BMTR (29%, Entry: 76–76, TP/SL: +5.0% / -2.0%)
-
-     ━━━━━━━━━━━━━━━━
-     MODE B — HIGHER_PRICE (> IDR 300)
-     1. BBRI (28%, Entry: 3,104–3,136, TP/SL: +5% / -2%)
-     2. BBCA (28%, Entry: 6,070–6,130, TP/SL: +5% / -2%)
-     3. ASII (27%, Entry: 4,816–4,864, TP/SL: +5% / -2%)
-     4. DCII (28%, Entry: 192,035–193,965, TP/SL: +5% / -2%)
-     5. BMRI (29%, Entry: 4,020–4,060, TP/SL: +5% / -2%)
-     ```
-5. **Linter & Code Hygiene:**
-   - Perintah: `ruff check .`
-   - Hasil: `All checks passed!` (0 lint errors).
-6. **Full Test Suite:**
-   - Perintah: `pytest`
-   - Hasil: `359 passed in 296.77s` (100% pass, 0 regressions).
+- **Unit & Regression Testing (Price Integrity):**
+  - Perintah: `pytest tests/unit/test_price_integrity.py`
+  - Hasil: `23 passed in 1.82s` (100% kelulusan)
+- **AWS & Telegram Webhook Unit Testing:**
+  - Perintah: `pytest tests/unit/test_aws.py`
+  - Hasil: `39 passed in 272.65s` (100% kelulusan)
+- **Other Repository Unit Tests:**
+  - Perintah: `pytest tests/unit/ -k "not test_aws"`
+  - Hasil: `313 passed, 39 deselected in 5.36s` (100% kelulusan)
+- **Code Hygiene & Linting:**
+  - Perintah: `ruff check .`
+  - Hasil: `All checks passed!` (0 lint errors)
+- **Database Schema & Data Integrity:**
+  - Tabel `signals_daily` di `datasets/stock_signals.db`: Seluruh 12 baris sinyal historis utuh tanpa mutasi nilai.
 
 ---
 
 ## Testing Checklist
 
-- [x] Ingestion real historical data BEI (186.436 bar, 208 ticker) tersimpan dan terverifikasi di SQLite `daily_bars`.
-- [x] Fitur teknikal & regime IHSG/sektor (186.291 record) tersimpan di `features_daily`.
-- [x] Triple-barrier labeling (185.515 record) terklasifikasi ke mode `LOW_PRICE` (45.763) dan `HIGHER_PRICE` (137.426).
-- [x] Pelatihan Champion `LOW_PRICE` (LightGBM calibrated) sukses dan terdaftar di `models/registry/`.
-- [x] Pelatihan Champion `HIGHER_PRICE` (LightGBM calibrated) sukses dan terdaftar di `models/registry/`.
-- [x] Sinyal harian riil (14 Okt 2026, 10 sinyal) tersimpan di SQLite `signals_daily` dan dapat di-query.
-- [x] Sinkronisasi basis data SQLite (170 MB) ke S3 bucket `idx-stock-signal-436095651956-data` terverifikasi hash SHA-256 (`909d312...`).
-- [x] Sinkronisasi artefak model ke S3 prefix `models/` dan `models/registry/` berhasil.
-- [x] Deployment paket zip terbaru ke 3 Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) selesai.
-- [x] Endpoint live API Gateway HTTP API merespons `/model` dengan HTTP 200 OK dan menyajikan metrik dual-mode riil.
-- [x] Endpoint live API Gateway HTTP API merespons `/daily` dengan HTTP 200 OK dan menyajikan sinyal harian riil 14 Oktober 2026.
-- [x] `scripts/generate_signals.py` otomatis menerapkan ambang probabilitas terkalibrasi (default 0.25).
-- [x] Ruff check bebas error (clean).
-- [x] Seluruh test suite (359 unit dan integration tests) lulus 100%.
-- [ ] **Verifikasi Pengguna di Telegram Mobile (@vergellen_bot):**
-  - [ ] Kirim `/model` di Telegram: pastikan bot membalas dengan status 🏆 Champion [LOW_PRICE] dan 🏆 Champion [HIGHER_PRICE] beserta metrik akurasinya.
-  - [ ] Kirim `/daily` di Telegram: pastikan bot menampilkan 10 sinyal tanggal 14 Okt 2026 untuk MODE A (`LOW_PRICE`) dan MODE B (`HIGHER_PRICE`).
+Item verifikasi yang perlu dicek oleh pengguna setelah pembaruan:
+- [ ] **Verifikasi Eksekusi Sinyal Harian:** Jalankan `python -m scripts.generate_signals --dual-mode --use-champion` dan pastikan tidak ada saham dengan rentang harga entri collapsed (misal `53–53` atau `56–56`).
+- [ ] **Verifikasi Status Breakout:** Pastikan kandidat yang memiliki harga entri di atas toleransi deviasi penutupan berstatus `WAIT_FOR_BREAKOUT` dengan policy `BREAKOUT`, bukan `BUY` langsung.
+- [ ] **Verifikasi Tampilan Telegram:** Uji pengiriman broadcast `/daily` atau simulasikan via `python -m scripts.send_daily_telegram --dry-run` dan pastikan teks mencantumkan header `(Daily Close / Not Real-Time Quote)` serta menampilkan rentang fraksi harga yang valid beserta `Status` dan `Ref Close`.
+- [ ] **Verifikasi Integritas SQLite:** Periksa tabel `signals_daily` pada `datasets/stock_signals.db` untuk memastikan kolom `reference_price`, `entry_policy`, `status`, dan `market_data_as_of` terisi dengan benar pada sinyal baru tanpa merusak 12 baris historis terdahulu.

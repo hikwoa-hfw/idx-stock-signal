@@ -77,6 +77,12 @@ class SignalRepository:
                         feature_snapshot TEXT NOT NULL,
                         mode TEXT,
                         created_at TEXT NOT NULL,
+                        signal_generated_at TEXT,
+                        market_data_as_of TEXT,
+                        latest_completed_bar_date TEXT,
+                        reference_price REAL,
+                        entry_policy TEXT,
+                        status TEXT,
                         UNIQUE (ticker, signal_date, model_version)
                     );
                     """
@@ -85,8 +91,20 @@ class SignalRepository:
                     row[1]
                     for row in conn.execute("PRAGMA table_info(signals_daily);").fetchall()
                 ]
-                if "mode" not in cols:
-                    conn.execute("ALTER TABLE signals_daily ADD COLUMN mode TEXT;")
+                new_columns = [
+                    ("mode", "TEXT"),
+                    ("signal_generated_at", "TEXT"),
+                    ("market_data_as_of", "TEXT"),
+                    ("latest_completed_bar_date", "TEXT"),
+                    ("reference_price", "REAL"),
+                    ("entry_policy", "TEXT"),
+                    ("status", "TEXT"),
+                ]
+                for col_name, col_type in new_columns:
+                    if col_name not in cols:
+                        conn.execute(
+                            f"ALTER TABLE signals_daily ADD COLUMN {col_name} {col_type};"
+                        )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_signals_mode "
                     "ON signals_daily(mode);"
@@ -155,12 +173,16 @@ class SignalRepository:
                 entry_low, entry_high, tp_price, sl_price,
                 max_holding_days, predicted_probability, expected_return,
                 score, model_version, feature_version, signal_config_version,
-                feature_snapshot, mode, created_at
+                feature_snapshot, mode, created_at,
+                signal_generated_at, market_data_as_of, latest_completed_bar_date,
+                reference_price, entry_policy, status
             ) VALUES (
                 ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
                 ?, ?, ?
             );
         """
@@ -185,6 +207,12 @@ class SignalRepository:
                 json.dumps(r.feature_snapshot),
                 r.mode_id,
                 r.created_at.isoformat(),
+                (r.signal_generated_at or r.created_at).isoformat(),
+                r.market_data_as_of.isoformat() if r.market_data_as_of else None,
+                str(r.latest_completed_bar_date or r.signal_date),
+                r.reference_price,
+                r.entry_policy or "IMMEDIATE",
+                r.status or r.signal,
             )
             for r in records
         ]
@@ -202,12 +230,45 @@ class SignalRepository:
     def _row_to_record(self, r: sqlite3.Row) -> SignalRecord:
         snapshot_raw = r["feature_snapshot"]
         snapshot = json.loads(snapshot_raw) if snapshot_raw else {}
-        mode_val = r["mode"] if "mode" in r.keys() else None
+        keys = set(r.keys())
+        mode_val = r["mode"] if "mode" in keys else None
+        created_dt = datetime.fromisoformat(r["created_at"])
+        sig_gen_at = (
+            datetime.fromisoformat(r["signal_generated_at"])
+            if "signal_generated_at" in keys and r["signal_generated_at"]
+            else created_dt
+        )
+        mkt_as_of = (
+            datetime.fromisoformat(r["market_data_as_of"])
+            if "market_data_as_of" in keys and r["market_data_as_of"]
+            else None
+        )
+        bar_date = (
+            datetime.strptime(r["latest_completed_bar_date"], "%Y-%m-%d").date()
+            if "latest_completed_bar_date" in keys and r["latest_completed_bar_date"]
+            else datetime.strptime(r["signal_date"], "%Y-%m-%d").date()
+        )
+        ref_price = (
+            float(r["reference_price"])
+            if "reference_price" in keys and r["reference_price"] is not None
+            else None
+        )
+        policy = (
+            r["entry_policy"]
+            if "entry_policy" in keys and r["entry_policy"]
+            else "IMMEDIATE"
+        )
+        stat = (
+            r["status"]
+            if "status" in keys and r["status"]
+            else r["signal"]
+        )
         return SignalRecord(
             signal_id=r["signal_id"],
             ticker=r["ticker"],
             signal_date=datetime.strptime(r["signal_date"], "%Y-%m-%d").date(),
             signal=r["signal"],
+            status=stat,
             entry_low=float(r["entry_low"]),
             entry_high=float(r["entry_high"]),
             tp_price=float(r["tp_price"]),
@@ -223,7 +284,12 @@ class SignalRepository:
             signal_config_version=r["signal_config_version"],
             feature_snapshot=snapshot,
             mode=mode_val,
-            created_at=datetime.fromisoformat(r["created_at"]),
+            created_at=created_dt,
+            signal_generated_at=sig_gen_at,
+            market_data_as_of=mkt_as_of,
+            latest_completed_bar_date=bar_date,
+            reference_price=ref_price,
+            entry_policy=policy,
         )
 
     def get_signal_by_id(self, signal_id: str) -> Optional[SignalRecord]:

@@ -192,6 +192,60 @@ def classify_price_mode(price: Optional[float]) -> str:
     return PriceMode.HIGHER_PRICE.value
 
 
+def get_bei_tick_size(price: float) -> int:
+    """Returns official IDX / BEI tick size (fraksi harga) for a given price.
+
+    Price range (IDR):
+    < 200          : Rp 1
+    200 to < 500   : Rp 2
+    500 to < 2000  : Rp 5
+    2000 to < 5000 : Rp 10
+    >= 5000        : Rp 25
+    """
+    p = float(price)
+    if p < 200.0:
+        return 1
+    elif p < 500.0:
+        return 2
+    elif p < 2000.0:
+        return 5
+    elif p < 5000.0:
+        return 10
+    else:
+        return 25
+
+
+def round_down_to_tick(price: float, tick: Optional[int] = None) -> float:
+    """Rounds down to nearest valid BEI tick boundary."""
+    t = float(tick if tick is not None else get_bei_tick_size(price))
+    cand = float(math.floor(price / t) * t)
+    cand_tick = float(get_bei_tick_size(cand))
+    if cand % cand_tick != 0:
+        cand = float(math.floor(cand / cand_tick) * cand_tick)
+    return cand
+
+
+def round_up_to_tick(price: float, tick: Optional[int] = None) -> float:
+    """Rounds up to nearest valid BEI tick boundary."""
+    t = float(tick if tick is not None else get_bei_tick_size(price))
+    cand = float(math.ceil(price / t) * t)
+    cand_tick = float(get_bei_tick_size(cand))
+    if cand % cand_tick != 0:
+        cand = float(math.ceil(cand / cand_tick) * cand_tick)
+    return cand
+
+
+def round_to_nearest_tick(price: float, tick: Optional[int] = None) -> float:
+    """Rounds to nearest valid BEI tick boundary."""
+    t = float(tick if tick is not None else get_bei_tick_size(price))
+    cand = float(round(price / t) * t)
+    cand_tick = float(get_bei_tick_size(cand))
+    if cand % cand_tick != 0:
+        cand = float(round(cand / cand_tick) * cand_tick)
+    return cand
+
+
+
 class SignalAction(str, Enum):
     BUY = "BUY"
     HOLD = "HOLD"
@@ -278,6 +332,8 @@ class FeatureRecord(BaseModel):
     ticker: str
     date: date
     feature_version: str = "v1.0.0"
+    breakout_price: Optional[float] = None
+    entry_price: Optional[float] = None
 
     @field_validator("ticker")
     @classmethod
@@ -711,6 +767,11 @@ class SignalConfig(BaseModel):
     signal_config_version: str = "v1.0.0"
     mode: Optional[str] = None
     require_expected_return: bool = False
+    max_entry_deviation_pct: float = 0.05
+    min_range_ticks: int = 1
+    enforce_bei_ticks: bool = False
+    allow_breakout: bool = True
+    raw_adjusted_tolerance_pct: float = 0.05
     weights: dict[str, float] = Field(
         default_factory=lambda: {
             "probability": 0.40,
@@ -739,14 +800,14 @@ class SignalConfig(BaseModel):
             raise ValueError(f"Percentage parameter must be a positive finite float, got {v}")
         return v
 
-    @field_validator("entry_band_pct")
+    @field_validator("entry_band_pct", "max_entry_deviation_pct", "raw_adjusted_tolerance_pct")
     @classmethod
-    def validate_entry_band(cls, v: float) -> float:
+    def validate_non_negative_percentages(cls, v: float) -> float:
         if not math.isfinite(v) or v < 0.0:
-            raise ValueError(f"entry_band_pct must be a non-negative finite float, got {v}")
+            raise ValueError(f"Percentage parameter must be a non-negative finite float, got {v}")
         return v
 
-    @field_validator("max_holding_days", "top_n")
+    @field_validator("max_holding_days", "top_n", "min_range_ticks")
     @classmethod
     def validate_positive_integers(cls, v: int) -> int:
         if v < 1:
@@ -771,6 +832,7 @@ class SignalRecord(BaseModel):
     ticker: str
     signal_date: date
     signal: str = "BUY"
+    status: str = "BUY"
     entry_low: float
     entry_high: float
     tp_price: float
@@ -785,6 +847,12 @@ class SignalRecord(BaseModel):
     feature_snapshot: dict[str, Any] = Field(default_factory=dict)
     mode: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    signal_generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    market_data_as_of: Optional[datetime] = None
+    latest_completed_bar_date: Optional[date] = None
+    reference_price: Optional[float] = None
+    entry_policy: str = "IMMEDIATE"
+    max_entry_deviation_pct: float = 0.05
 
     @property
     def mode_id(self) -> Optional[str]:
@@ -796,6 +864,16 @@ class SignalRecord(BaseModel):
         if isinstance(data, dict):
             if "mode_id" in data and "mode" not in data:
                 data["mode"] = data["mode_id"]
+            if "signal_generated_at" not in data and "created_at" in data:
+                data["signal_generated_at"] = data["created_at"]
+            if "latest_completed_bar_date" not in data and "signal_date" in data:
+                data["latest_completed_bar_date"] = data["signal_date"]
+            if "status" in data and "signal" not in data:
+                data["signal"] = data["status"]
+            elif "signal" in data and "status" not in data:
+                data["status"] = data["signal"]
+            if "entry_policy" not in data:
+                data["entry_policy"] = "IMMEDIATE"
         return data
 
     @field_validator("ticker")
@@ -803,7 +881,7 @@ class SignalRecord(BaseModel):
     def normalize_ticker(cls, v: str) -> str:
         return v.strip().upper().removesuffix(".JK")
 
-    @field_validator("signal")
+    @field_validator("signal", "status")
     @classmethod
     def validate_signal(cls, v: str) -> str:
         s = v.strip().upper()
@@ -816,6 +894,14 @@ class SignalRecord(BaseModel):
     def validate_prices(cls, v: float) -> float:
         if not math.isfinite(v) or v <= 0:
             raise ValueError(f"Price must be a positive finite float, got {v}")
+        return v
+
+    @field_validator("reference_price")
+    @classmethod
+    def validate_reference_price(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None:
+            if not math.isfinite(v) or v <= 0:
+                raise ValueError(f"reference_price must be a positive finite float, got {v}")
         return v
 
     @field_validator("predicted_probability")
@@ -851,6 +937,44 @@ class SignalRecord(BaseModel):
             )
         if self.sl_price > self.entry_low:
             raise ValueError(f"sl_price ({self.sl_price}) must be <= entry_low ({self.entry_low})")
+
+        # Price integrity validation against reference_price if provided
+        if self.reference_price is not None:
+            eff_status = (self.status or self.signal or "").strip().upper()
+            max_dev = getattr(self, "max_entry_deviation_pct", 0.05) or 0.05
+            dev_high = (self.entry_high - self.reference_price) / self.reference_price
+            dev_low = (self.reference_price - self.entry_low) / self.reference_price
+
+            if self.entry_policy == "BREAKOUT":
+                if eff_status == "BUY":
+                    raise ValueError(
+                        "Signal with BREAKOUT policy cannot have BUY status; "
+                        "must use conditional status such as WAIT_FOR_BREAKOUT."
+                    )
+                if eff_status == "WAIT_FOR_BREAKOUT" and self.entry_low < self.reference_price:
+                    raise ValueError(
+                        f"Breakout trigger entry_low ({self.entry_low}) cannot be below "
+                        f"reference price ({self.reference_price})."
+                    )
+
+            if eff_status == "BUY":
+                if self.entry_policy != "IMMEDIATE":
+                    raise ValueError(
+                        f"BUY status requires IMMEDIATE entry policy, got '{self.entry_policy}'."
+                    )
+                if dev_high > max_dev or dev_low > max_dev:
+                    raise ValueError(
+                        f"Immediate BUY entry price [{self.entry_low}, {self.entry_high}] deviates "
+                        f"excessively from reference price {self.reference_price} (max deviation: "
+                        f"{max_dev * 100:.1f}%). Must fail closed or use WAIT_FOR_BREAKOUT status."
+                    )
+            elif eff_status == "WAIT_FOR_BREAKOUT":
+                if self.entry_low < self.reference_price:
+                    raise ValueError(
+                        f"Breakout trigger entry_low ({self.entry_low}) cannot be below "
+                        f"reference price ({self.reference_price})."
+                    )
+
         return self
 
 

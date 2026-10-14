@@ -1,7 +1,8 @@
+import math
 from datetime import date
 from typing import Any, Optional, Sequence, Union
 
-from python.common.types import SignalRecord
+from python.common.types import SignalRecord, get_bei_tick_size
 
 
 def _format_pct(val: float) -> str:
@@ -157,7 +158,7 @@ def format_dual_mode_signals(
     ihsg_val, breadth_val, vol_val = _derive_market_summary(first_snapshot, market_summary)
 
     blocks: list[str] = [
-        f"🤖 DAILY STOCK SIGNAL\n{date_str}",
+        f"🤖 DAILY STOCK SIGNAL\n{date_str} (Daily Close / Not Real-Time Quote)",
         f"MARKET\nIHSG       : {ihsg_val}\nBreadth    : {breadth_val}\nVolatility : {vol_val}",
     ]
 
@@ -174,9 +175,23 @@ def format_dual_mode_signals(
                 else "N/A"
             )
             if s.entry_low < s.entry_high:
-                entry_str = f"{s.entry_low:,.0f}–{s.entry_high:,.0f}"
+                entry_low_str = f"{s.entry_low:,.0f}"
+                entry_high_str = f"{s.entry_high:,.0f}"
+                if entry_low_str == entry_high_str:
+                    tick = get_bei_tick_size(s.entry_low)
+                    low_d = math.floor(s.entry_low / tick) * tick
+                    high_d = math.ceil(s.entry_high / tick) * tick
+                    if low_d >= high_d:
+                        low_d = max(1.0, low_d - tick)
+                        high_d = high_d + tick
+                    entry_str = f"{low_d:,.0f}–{high_d:,.0f}"
+                else:
+                    entry_str = f"{entry_low_str}–{entry_high_str}"
             else:
-                entry_str = f"{s.entry_low:,.0f}"
+                tick = get_bei_tick_size(s.entry_low)
+                low_d = max(1.0, s.entry_low - tick)
+                high_d = s.entry_low + tick
+                entry_str = f"{low_d:,.0f}–{high_d:,.0f}"
 
             tp_pct = ((s.tp_price / s.entry_high) - 1.0) * 100 if s.entry_high > 0 else 5.0
             sl_pct = ((s.sl_price / s.entry_low) - 1.0) * 100 if s.entry_low > 0 else -2.0
@@ -186,9 +201,17 @@ def format_dual_mode_signals(
             bullets = derive_rationale(s.feature_snapshot)
             reasons_str = "\n   ".join(f"• {b}" for b in bullets)
 
+            status_str = getattr(s, "status", None) or s.signal or "BUY"
+            ref_line = (
+                f"   Ref Close: {s.reference_price:,.0f}\n"
+                if getattr(s, "reference_price", None) is not None
+                else ""
+            )
+
             block = (
                 f"{idx}. {s.ticker}\n"
-                f"   Status: {s.signal}\n"
+                f"   Status: {status_str}\n"
+                f"{ref_line}"
                 f"   Probability: {prob_val}%\n"
                 f"   Expected return: {ret_str}\n"
                 f"   Entry / TP / SL: {entry_str} / {tp_str} / {sl_str}\n"
@@ -239,7 +262,7 @@ def format_daily_signals(
     ihsg_val, breadth_val, vol_val = _derive_market_summary(first_snapshot, market_summary)
 
     blocks: list[str] = [
-        f"🤖 DAILY STOCK SIGNAL\n{date_str}",
+        f"🤖 DAILY STOCK SIGNAL\n{date_str} (Daily Close / Not Real-Time Quote)",
         f"MARKET\nIHSG       : {ihsg_val}\nBreadth    : {breadth_val}\nVolatility : {vol_val}",
     ]
 
@@ -257,7 +280,18 @@ def format_daily_signals(
         ret_str = _format_pct(s.expected_return * 100) if s.expected_return is not None else "N/A"
 
         if s.entry_low < s.entry_high:
-            entry_str = f"{s.entry_low:,.0f}–{s.entry_high:,.0f}"
+            entry_low_str = f"{s.entry_low:,.0f}"
+            entry_high_str = f"{s.entry_high:,.0f}"
+            if entry_low_str == entry_high_str:
+                tick = get_bei_tick_size(s.entry_low)
+                low_d = math.floor(s.entry_low / tick) * tick
+                high_d = math.ceil(s.entry_high / tick) * tick
+                if low_d >= high_d:
+                    low_d = max(1.0, low_d - tick)
+                    high_d = high_d + tick
+                entry_str = f"{low_d:,.0f}–{high_d:,.0f}"
+            else:
+                entry_str = f"{entry_low_str}–{entry_high_str}"
         else:
             entry_str = f"{s.entry_low:,.0f}"
 
@@ -270,9 +304,18 @@ def format_daily_signals(
         bullets = derive_rationale(s.feature_snapshot)
         bullets_str = "\n".join(f"• {b}" for b in bullets)
 
+        status_str = getattr(s, "status", None) or s.signal or "BUY"
+        ref_line = (
+            f"Ref Close       : {s.reference_price:,.0f}\n"
+            if getattr(s, "reference_price", None) is not None
+            else ""
+        )
+
         candidate_block = (
             f"━━━━━━━━━━━━━━━━\n\n"
             f"{badge} {s.ticker}\n"
+            f"Status          : {status_str}\n"
+            f"{ref_line}"
             f"Score           : {score_val}/100\n"
             f"P(TP before SL) : {prob_val}%\n"
             f"Expected Return : {ret_str}\n\n"

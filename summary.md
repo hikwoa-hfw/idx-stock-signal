@@ -552,3 +552,25 @@ Log Perubahan Tambahan (14 Oktober 2026)
    2. Menghasilkan dan mempersistensikan 10 sinyal riil 14 Oktober 2026 (5 `LOW_PRICE` dan 5 `HIGHER_PRICE`) ke tabel `signals_daily` pada SQLite, menyinkronkan ulang database berukuran 170 MB ke S3 bucket `idx-stock-signal-436095651956-data` (SHA-256: `909d312...`), dan memvalidasi respons `/daily` live pada API Gateway webhook.
    3. Mengembalikan assertion `assert body["status"] == "ok"` pada `test_lambda_telegram_webhook_handler_callback_query` di `tests/unit/test_aws.py`.
    4. Melakukan live deployment ulang paket kode ke AWS Lambda staging dan memvalidasi seluruh test suite (359 passed, 100% kelulusan, ruff clean).
+36. Integritas Harga Sinyal (Price Integrity), Pencegahan Range Collapse, Pembulatan Fraksi Harga BEI, dan Klasifikasi WAIT_FOR_BREAKOUT
+   Masalah:
+   1. Diskrepansi harga kandidat sinyal beli di mana harga entri (IDR 56) jauh menyimpang di atas harga penutupan terakhir (IDR 44) tanpa pengamanan fail-closed.
+   2. Range harga entri runtuh menjadi satu titik (single-point collapse, contoh: IDR 56–56, IDR 53–53) akibat ketiadaan pembulatan fraksi harga BEI dan pembulatan integer rupiah pada pemformat Telegram.
+   3. Sinyal yang menembus di atas harga referensi dipancarkan sebagai sinyal BUY langsung alih-alih WAIT_FOR_BREAKOUT bersyarat.
+   4. Field audit integritas harga belum tercatat pada SignalRecord dan skema basis data SQLite signals_daily.
+   5. Transisi batas fraksi harga BEI (contoh: saham harga 500 dan 5000) menghasilkan harga fraksi ilegal di bursa (contoh: 495 pada fraksi 2 atau 4975 pada fraksi 10) akibat penggunaan fraksi harga acuan tunggal.
+   6. Celah validasi barrier di mana status BUY dengan policy BREAKOUT dapat lolos tanpa evaluasi deviasi, serta hilangnya informasi Status dan Ref Close pada pemformat telegram single-mode.
+   7. Ekspor CSV sinyal harian belum mencantumkan seluruh field audit timestamp dan tanggal bar.
+   Solusi:
+   1. Menambahkan fungsi pembulatan fraksi harga BEI (get_bei_tick_size, round_down_to_tick, round_up_to_tick, round_to_nearest_tick) pada python/common/types.py sesuai 5 fraksi harga resmi BEI (<200: 1, 200–500: 2, 500–2000: 5, 2000–5000: 10, >=5000: 25).
+   2. Menambahkan field audit integritas harga pada SignalRecord: signal_generated_at, market_data_as_of, latest_completed_bar_date, reference_price, entry_low, entry_high, entry_policy, dan status.
+   3. Mengimplementasikan validasi deviasi harga pada SignalEngine dan SignalRecord.validate_barriers: menolak deviasi > 5% untuk sinyal BUY langsung, menolak bar basi/mismatched ticker-date, serta menolak divergensi close raw vs adjusted > 5% tanpa aksi korporasi (fail-closed).
+   4. Mengimplementasikan outward rounding dan minimum range width (min_range_ticks >= 1) pada SignalEngine serta pengamanan tampilan di services/telegram/formatter.py dan services/telegram/bot.py untuk mencegah keruntuhan rentang harga.
+   5. Mengklasifikasikan pemicu breakout di atas batas deviasi menjadi entry_policy="BREAKOUT" dengan status WAIT_FOR_BREAKOUT.
+   6. Memperbarui SignalRepository dengan migrasi otomatis skema signals_daily tanpa melanggar immutability trigger dan mempertahankan seluruh baris historis.
+   7. Memperbarui pesan Telegram agar secara eksplisit membedakan data harian EOD Yahoo Finance (Daily Close / Not Real-Time Quote) dengan kuotasi real-time bursa.
+   8. Menjamin fungsi pembulatan fraksi harga self-correcting terhadap transisi bracket bursa (menghasilkan 496 bukan 495, dan 4970 bukan 4975).
+   9. Menutup celah validasi: melarang kombinasi policy BREAKOUT dengan status BUY, dan menolak pemicu breakout di bawah harga referensi.
+   10. Melengkapi format Telegram single-mode dan antarmuka bot dengan tampilan Status dan Ref Close.
+   11. Menambahkan seluruh kolom audit integritas harga pada keluaran CSV scripts/generate_signals.py.
+   12. Menambahkan 23 pengujian unit dan regresi komprehensif pada tests/unit/test_price_integrity.py (382 repo tests passed 100%, ruff 100% clean).

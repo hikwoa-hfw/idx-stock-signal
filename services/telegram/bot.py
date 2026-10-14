@@ -1,6 +1,8 @@
+import math
 from datetime import date
 from typing import Optional
 
+from python.common.types import get_bei_tick_size
 from python.data.repository import DailyBarRepository
 from python.journal.service import PositionJournalService
 from python.models.registry import ModelRegistry
@@ -105,10 +107,39 @@ class TelegramBotDispatcher:
         for s in signals:
             ret_str = f"{s.expected_return * 100:+.1f}%" if s.expected_return is not None else "N/A"
             short_id = s.signal_id[:8] if len(s.signal_id) > 8 else s.signal_id
+            if s.entry_low < s.entry_high:
+                low_str = f"{s.entry_low:,.0f}"
+                high_str = f"{s.entry_high:,.0f}"
+                if low_str == high_str:
+                    tick = get_bei_tick_size(s.entry_low)
+                    low_d = math.floor(s.entry_low / tick) * tick
+                    high_d = math.ceil(s.entry_high / tick) * tick
+                    if low_d >= high_d:
+                        low_d = max(1.0, low_d - tick)
+                        high_d = high_d + tick
+                    entry_str = f"{low_d:,.0f}–{high_d:,.0f}"
+                else:
+                    entry_str = f"{low_str}–{high_str}"
+            else:
+                tick = get_bei_tick_size(s.entry_low)
+                low_d = max(1.0, s.entry_low - tick)
+                high_d = s.entry_low + tick
+                entry_str = f"{low_d:,.0f}–{high_d:,.0f}"
+
+            status_str = getattr(s, "status", None) or s.signal or "BUY"
+            ref_str = (
+                f" | Ref: {s.reference_price:,.0f}"
+                if getattr(s, "reference_price", None) is not None
+                else ""
+            )
+            hdr = f"• *{s.ticker}* ({s.signal_date}) [{status_str}]"
+            meta = (
+                f"ID: `{short_id}` | Score: {s.score:.0f} | "
+                f"P: {s.predicted_probability * 100:.0f}% | Exp: {ret_str}{ref_str}"
+            )
             lines.append(
-                f"• *{s.ticker}* ({s.signal_date}) | ID: `{short_id}` | Score: {s.score:.0f} | "
-                f"P: {s.predicted_probability * 100:.0f}% | Exp: {ret_str}\n"
-                f"  Entry: {s.entry_low:,.0f}–{s.entry_high:,.0f} | "
+                f"{hdr} | {meta}\n"
+                f"  Entry: {entry_str} | "
                 f"TP: {s.tp_price:,.0f} | SL: {s.sl_price:,.0f}"
             )
         return "\n".join(lines)

@@ -1,6 +1,6 @@
 import math
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Optional, Sequence
 
 import numpy as np
@@ -11,6 +11,10 @@ from python.common.types import (
     SignalConfig,
     SignalRecord,
     classify_price_mode,
+    get_bei_tick_size,
+    round_down_to_tick,
+    round_to_nearest_tick,
+    round_up_to_tick,
 )
 from python.config.settings import settings
 from python.data.provider import load_universe
@@ -335,6 +339,27 @@ class SignalEngine:
             cand_price = float(last_bar.close)
             cand_mode = classify_price_mode(cand_price)
 
+            # Strict price integrity & ticker/date matching validation
+            clean_t = ticker.strip().upper().removesuffix(".JK")
+            bar_t = last_bar.ticker.strip().upper().removesuffix(".JK")
+            feat_t = feat_rec.ticker.strip().upper().removesuffix(".JK")
+            if bar_t != clean_t or feat_t != clean_t:
+                continue
+
+            # Stale data check: bar and feature must match target trading date
+            if last_bar.date != target_date or feat_rec.date != target_date:
+                continue
+
+            # Raw-versus-adjusted price inconsistency check (fail-closed)
+            adj_close = getattr(last_bar, "adj_close", None)
+            if adj_close is not None and math.isfinite(adj_close) and adj_close > 0:
+                divs = getattr(last_bar, "dividends", 0.0) or 0.0
+                splits = getattr(last_bar, "stock_splits", 0.0) or 0.0
+                if divs == 0.0 and splits == 0.0:
+                    raw_adj_dev = abs(cand_price - adj_close) / cand_price
+                    if raw_adj_dev > getattr(cfg, "raw_adjusted_tolerance_pct", 0.05):
+                        continue
+
             # Strict exclusion: Sub-50 IDR or invalid prices excluded from signals
             if cand_mode in ("EXCLUDED_BELOW_50", "INVALID"):
                 continue
@@ -437,25 +462,96 @@ class SignalEngine:
             last_bar: DailyBar = cand["last_bar"]
 
             c_close = float(last_bar.close)
-
-            # Entry band around close
+            ref_price = c_close
             half_band = cfg.entry_band_pct / 2.0
-            entry_low = round(c_close * (1.0 - half_band), 2)
-            entry_high = round(c_close * (1.0 + half_band), 2)
 
-            if entry_low > entry_high:
-                entry_low = entry_high
+            target_entry = float(
+                cand.get("breakout_price")
+                or cand.get("entry_price")
+                or getattr(feat_rec, "breakout_price", None)
+                or getattr(feat_rec, "entry_price", None)
+                or ref_price
+            )
+            raw_low = target_entry * (1.0 - half_band)
+            raw_high = target_entry * (1.0 + half_band)
 
-            # TP and SL prices
-            tp_price = round(entry_high * (1.0 + cfg.tp_pct), 2)
-            sl_price = round(entry_low * (1.0 - cfg.sl_pct), 2)
+            enforce_ticks = getattr(cfg, "enforce_bei_ticks", False)
+            min_ticks = max(1, getattr(cfg, "min_range_ticks", 1))
 
-            # Safety guards for barrier relationships
-            if tp_price <= entry_high:
-                tp_price = round(entry_high + 1.0, 2)
-            if sl_price >= entry_low:
-                sl_price = round(max(1.0, entry_low - 1.0), 2)
+            if enforce_ticks:
+                entry_low = round_down_to_tick(raw_low)
+                entry_high = round_up_to_tick(raw_high)
+                tick_low = get_bei_tick_size(entry_low)
+                tick_high = get_bei_tick_size(entry_high)
+                if (entry_high - entry_low) < min_ticks * min(tick_low, tick_high):
+                    entry_low = max(1.0, round_down_to_tick(entry_low - tick_low))
+                    entry_high = round_up_to_tick(entry_high + tick_high)
+                tp_price = round_up_to_tick(entry_high * (1.0 + cfg.tp_pct))
+                sl_price = round_down_to_tick(entry_low * (1.0 - cfg.sl_pct))
+                if tp_price <= entry_high:
+                    tp_price = round_up_to_tick(entry_high + get_bei_tick_size(entry_high))
+                if sl_price >= entry_low:
+                    tick_down = get_bei_tick_size(entry_low)
+                    sl_price = max(1.0, round_down_to_tick(entry_low - tick_down))
+            else:
+                cand_low = round(raw_low, 2)
+                cand_high = round(raw_high, 2)
+                rounded_low_tick = round_to_nearest_tick(cand_low)
+                rounded_high_tick = round_to_nearest_tick(cand_high)
+                # Check whether entry zone collapses when rounded to nearest tick
+                if rounded_low_tick >= rounded_high_tick or cand_low >= cand_high:
+                    entry_low = round_down_to_tick(raw_low)
+                    entry_high = round_up_to_tick(raw_high)
+                    tick_low = get_bei_tick_size(entry_low)
+                    tick_high = get_bei_tick_size(entry_high)
+                    if (entry_high - entry_low) < min_ticks * min(tick_low, tick_high):
+                        entry_low = max(
+                            1.0, round_down_to_tick(target_entry - tick_low * min_ticks)
+                        )
+                        entry_high = round_up_to_tick(target_entry + tick_high * min_ticks)
+                    tp_price = round_up_to_tick(entry_high * (1.0 + cfg.tp_pct))
+                    sl_price = round_down_to_tick(entry_low * (1.0 - cfg.sl_pct))
+                    if tp_price <= entry_high:
+                        tp_price = round_up_to_tick(entry_high + get_bei_tick_size(entry_high))
+                    if sl_price >= entry_low:
+                        tick_down = get_bei_tick_size(entry_low)
+                        sl_price = max(1.0, round_down_to_tick(entry_low - tick_down))
+                else:
+                    entry_low = cand_low
+                    entry_high = cand_high
+                    tp_price = round(entry_high * (1.0 + cfg.tp_pct), 2)
+                    sl_price = round(entry_low * (1.0 - cfg.sl_pct), 2)
+                    if tp_price <= entry_high:
+                        tp_price = round(entry_high + 1.0, 2)
+                    if sl_price >= entry_low:
+                        sl_price = round(max(1.0, entry_low - 1.0), 2)
             sl_price = max(1.0, sl_price)
+
+            # 11. Entry policy and reference price consistency checks
+            max_dev = getattr(cfg, "max_entry_deviation_pct", 0.05)
+            dev_above = (entry_low - ref_price) / ref_price
+            dev_below = (ref_price - entry_high) / ref_price
+
+            if dev_above > max_dev:
+                # Entry zone is above reference price beyond max_dev -> breakout trigger
+                if getattr(cfg, "allow_breakout", True):
+                    entry_policy = "BREAKOUT"
+                    sig_status = "WAIT_FOR_BREAKOUT"
+                else:
+                    # Breakout not allowed: fail-closed
+                    continue
+            elif dev_below > max_dev:
+                # Downward entry zone beyond max_dev fails closed
+                continue
+            elif (
+                abs(entry_high - ref_price) / ref_price > max_dev
+                or abs(ref_price - entry_low) / ref_price > max_dev
+            ):
+                # Entry zone straddles beyond allowable deviation (fail-closed)
+                continue
+            else:
+                entry_policy = "IMMEDIATE"
+                sig_status = "BUY"
 
             # Feature snapshot (all default columns + model feature names)
             cols_to_capture = list(
@@ -476,11 +572,19 @@ class SignalEngine:
             canonical_key = f"{ticker}_{target_date.isoformat()}_{model_version_str}"
             signal_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, canonical_key))
 
+            now_utc = datetime.now(timezone.utc)
+            market_as_of = datetime.combine(
+                last_bar.date,
+                datetime.min.time(),
+                tzinfo=timezone.utc,
+            )
+
             record = SignalRecord(
                 signal_id=signal_id,
                 ticker=ticker,
                 signal_date=target_date,
-                signal="BUY",
+                signal=sig_status,
+                status=sig_status,
                 entry_low=entry_low,
                 entry_high=entry_high,
                 tp_price=tp_price,
@@ -494,6 +598,12 @@ class SignalEngine:
                 signal_config_version=cfg.signal_config_version,
                 feature_snapshot=snapshot,
                 mode=cand.get("mode"),
+                signal_generated_at=now_utc,
+                market_data_as_of=market_as_of,
+                latest_completed_bar_date=last_bar.date,
+                reference_price=ref_price,
+                entry_policy=entry_policy,
+                max_entry_deviation_pct=max_dev,
             )
             results.append(record)
 

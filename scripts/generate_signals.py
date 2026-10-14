@@ -97,23 +97,26 @@ def print_table_signals(signals: list[SignalRecord], target_date: Optional[str])
     print(f"Total Ranked   : {len(signals)}")
     print("-" * 96)
     print(
-        f"{'Rank':<5} {'Ticker':<8} {'Mode':<13} {'Signal':<6} "
+        f"{'Rank':<5} {'Ticker':<8} {'Mode':<13} {'Status':<18} {'Ref Close':<10} "
         f"{'Entry Low':<11} {'Entry High':<11} "
         f"{'TP Price':<11} {'SL Price':<11} {'P(Win)':<8} {'Exp Ret':<9} {'Score':<6}"
     )
-    print("-" * 110)
+    print("-" * 125)
 
     for rank, sig in enumerate(signals, 1):
         ret_str = f"{sig.expected_return * 100:+.2f}%" if sig.expected_return is not None else "N/A"
         prob_str = f"{sig.predicted_probability * 100:.1f}%"
         mode_str = sig.mode_id or "-"
+        stat_str = sig.status or sig.signal
+        ref_str = f"{sig.reference_price:,.2f}" if sig.reference_price is not None else "-"
         print(
-            f"{rank:<5} {sig.ticker:<8} {mode_str:<13} {sig.signal:<6} {sig.entry_low:<11,.2f} "
-            f"{sig.entry_high:<11,.2f} {sig.tp_price:<11,.2f} {sig.sl_price:<11,.2f} "
+            f"{rank:<5} {sig.ticker:<8} {mode_str:<13} {stat_str:<18} {ref_str:<10} "
+            f"{sig.entry_low:<11,.2f} {sig.entry_high:<11,.2f} "
+            f"{sig.tp_price:<11,.2f} {sig.sl_price:<11,.2f} "
             f"{prob_str:<8} {ret_str:<9} {sig.score:<6.1f}"
         )
 
-    print("=" * 96 + "\n")
+    print("=" * 125 + "\n")
 
 
 def print_csv_signals(signals: list[SignalRecord]) -> None:
@@ -128,6 +131,9 @@ def print_csv_signals(signals: list[SignalRecord]) -> None:
             "signal_date",
             "mode",
             "signal",
+            "status",
+            "entry_policy",
+            "reference_price",
             "entry_low",
             "entry_high",
             "tp_price",
@@ -139,6 +145,9 @@ def print_csv_signals(signals: list[SignalRecord]) -> None:
             "model_version",
             "feature_version",
             "signal_config_version",
+            "latest_completed_bar_date",
+            "market_data_as_of",
+            "signal_generated_at",
         ]
     )
     for rank, s in enumerate(signals, 1):
@@ -150,6 +159,9 @@ def print_csv_signals(signals: list[SignalRecord]) -> None:
                 str(s.signal_date),
                 s.mode_id or "",
                 s.signal,
+                s.status or s.signal,
+                s.entry_policy or "IMMEDIATE",
+                s.reference_price if s.reference_price is not None else "",
                 s.entry_low,
                 s.entry_high,
                 s.tp_price,
@@ -161,6 +173,9 @@ def print_csv_signals(signals: list[SignalRecord]) -> None:
                 s.model_version,
                 s.feature_version,
                 s.signal_config_version,
+                s.latest_completed_bar_date.isoformat() if s.latest_completed_bar_date else "",
+                s.market_data_as_of.isoformat() if s.market_data_as_of else "",
+                s.signal_generated_at.isoformat() if s.signal_generated_at else "",
             ]
         )
 

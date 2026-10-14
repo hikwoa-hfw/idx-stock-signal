@@ -920,6 +920,30 @@ def test_lambda_telegram_webhook_handler_fallback_to_webhook_response(tmp_path: 
         assert "BEI Daily Stock Signal Bot" in body["text"]
 
 
+def test_lambda_telegram_webhook_handler_callback_query(tmp_path: Path):
+    import json
+
+    event = {
+        "body": {
+            "update_id": 106,
+            "callback_query": {
+                "id": "cb_999",
+                "from": {"id": 12345, "first_name": "Admin"},
+                "data": "/model",
+            },
+        },
+        "allowed_chat_id": "12345",
+        "skip_telegram": True,
+        "tmp_dir": str(tmp_path),
+        "local_db_path": str(tmp_path / "webhook_test.db"),
+    }
+    resp = lambda_telegram_webhook_handler(event, None)
+    assert resp["statusCode"] == 200
+    body = json.loads(resp["body"])
+    assert body["status"] == "ok"
+    assert "Model Information" in body["reply"]
+
+
 def test_setup_function_url_and_telegram_webhook_helpers():
     mock_lambda = MagicMock()
     mock_lambda.create_function_url_config.return_value = {

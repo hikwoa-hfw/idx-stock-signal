@@ -513,3 +513,15 @@ Log Perubahan Tambahan (14 Oktober 2026)
    4. Memperluas penanganan SSL fallback pada `_urlopen` di `services/telegram/client.py` untuk menangkap variasi error sertifikat SSL pada Windows corporate.
    5. Menambahkan unit test baru di `tests/unit/test_aws.py` dan `tests/unit/test_telegram.py` (total 66 unit tests lulus 100%, ruff 100% clean).
    6. Menerapkan live deployment ulang ke AWS Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) dan memvalidasi webhook endpoint aktif serta bebas pending updates (`pending_update_count: 0`).
+33. Penyempurnaan Webhook Telegram, Callback Query, Timeout Optimization, dan Perbaikan Regresi Integration Test
+   Masalah:
+   1. Handler `lambda_telegram_webhook_handler` belum mengekstrak data dari `callback_query` (tombol interaktif inline keyboard Telegram), sehingga interaksi tombol menghasilkan respons `no_text`.
+   2. Pemanggilan langsung `TelegramClient` di dalam webhook handler belum membatasi timeout dan retry secara optimal (`timeout=5.0, max_retries=1`), berisiko memakan waktu hingga 33 detik saat Telegram API 503/timeout dan melewati batas timeout Lambda 30 detik sebelum fallback respons method webhook dapat dijalankan.
+   3. Fallback method webhook `sendMessage` belum membatasi panjang teks `reply_text` ke batas maksimal Telegram (4096 karakter).
+   4. Pengujian integrasi `test_end_to_end_cloud_pipeline_cycle` pada `tests/integration/test_cloud_pipeline.py` mengalami kegagalan pada tanggal 14 Oktober 2026 karena `event_run_1` tidak menyematkan tanggal eksplisit sehingga default ke `date.today()`, memicu deteksi duplikat run saat `event_run_2` berjalan pada tanggal yang sama.
+   Solusi:
+   1. Menambahkan ekstraksi payload `callback_query` data pada `python/cloud/handlers.py` agar interaksi tombol inline diteruskan ke dispatcher dengan sempurna.
+   2. Mengonfigurasi `TelegramClient` di dalam webhook handler dengan `timeout=5.0, max_retries=1` dan pembatasan panjang teks fallback `reply_text[:4096]`, menjamin pengalihan instan ke method respons webhook tanpa risiko timeout Lambda.
+   3. Memperbaiki `event_run_1` pada `tests/integration/test_cloud_pipeline.py` dengan tanggal eksplisit `"2026-10-13"` agar simulasi hari berikutnya (`"2026-10-14"`) berjalan deterministik kapanpun dijalankan.
+   4. Menambahkan unit test `test_lambda_telegram_webhook_handler_callback_query` di `tests/unit/test_aws.py` (total 67 unit tests AWS & Telegram lulus 100%, 358 keseluruhan repo tests passed 100%, ruff 100% clean).
+   5. Melakukan live deployment ulang ke AWS Lambda staging dan memvalidasi respons live API Gateway `/help`, `/model`, `/boost` serta CloudWatch logs.

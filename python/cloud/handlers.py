@@ -673,6 +673,8 @@ def lambda_telegram_webhook_handler(
             sender_chat_id = from_user_id
 
         text = str(msg.get("text", "")).strip() if isinstance(msg, dict) else ""
+        if not text and isinstance(payload.get("callback_query"), dict):
+            text = str(payload["callback_query"].get("data") or "").strip()
 
         # Step 3: Security verification (chat_id, user_id, and secret header)
         allowed_chat_id = str(
@@ -801,7 +803,12 @@ def lambda_telegram_webhook_handler(
         sent_via_client = False
         if not skip_tg and token and sender_chat_id:
             try:
-                client = TelegramClient(bot_token=token, chat_id=sender_chat_id)
+                client = TelegramClient(
+                    bot_token=token,
+                    chat_id=sender_chat_id,
+                    timeout=5.0,
+                    max_retries=1,
+                )
                 client.send_message(text=reply_text)
                 sent_via_client = True
                 print(f"[WEBHOOK_SENT] Sent reply via TelegramClient to chat {sender_chat_id}")
@@ -822,7 +829,7 @@ def lambda_telegram_webhook_handler(
                 "body": json.dumps({
                     "method": "sendMessage",
                     "chat_id": target_chat_val,
-                    "text": reply_text,
+                    "text": reply_text[:4096],
                     "disable_web_page_preview": True,
                 }),
             }

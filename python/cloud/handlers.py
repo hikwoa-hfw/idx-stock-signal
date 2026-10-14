@@ -330,7 +330,16 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
 
         # Step 4: Extract features and generate daily signals
         model_reg = ModelRegistry(registry_dir=local_models_dir)
-        sig_cfg = SignalConfig(top_n=top_n)
+        min_prob_val = event.get("min_probability", event.get("min_prob"))
+        if min_prob_val is None and "SIGNAL_MIN_PROBABILITY" in os.environ:
+            try:
+                min_prob_val = float(os.environ["SIGNAL_MIN_PROBABILITY"])
+            except ValueError:
+                pass
+        sig_cfg = SignalConfig(
+            top_n=top_n,
+            min_probability=float(min_prob_val) if min_prob_val is not None else 0.25,
+        )
         sig_engine = SignalEngine(config=sig_cfg, bar_repo=bar_repo, model_registry=model_reg)
 
         universe = tickers_list or bar_repo.get_universe() or load_universe() or DEFAULT_UNIVERSE

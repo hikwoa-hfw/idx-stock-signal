@@ -541,3 +541,14 @@ Log Perubahan Tambahan (14 Oktober 2026)
    5. Menyinkronkan seluruh artefak model ke S3 prefix `models/` dan `models/registry/`, serta memperbarui `ModelRegistry.__init__` dan handler Lambda agar mengenali folder `registry/` bersarang dan mengaktifkan auto-sync model dari S3.
    6. Melakukan deployment ulang kode ke AWS Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) dan memverifikasi balasan `/model` secara live pada endpoint API Gateway (`https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`) dengan respons HTTP 200 OK yang melaporkan metrik riil kedua Champion.
    7. Menghasilkan sinyal harian trading riil dual-mode menggunakan `scripts/generate_signals.py` dengan probabilitas terkalibrasi dan ranking score.
+
+35. Hardening Kalibrasi Probabilitas Dual-Mode, Retensi Sinyal SQLite/S3, dan Pemulihan Validasi Webhook Callback Query
+   Masalah:
+   1. Default `min_probability=0.55` pada `SignalConfig` menyebabkan eksekusi CLI `scripts/generate_signals.py` dan handler Lambda `lambda_daily_pipeline_handler` menggugurkan seluruh kandidat sinyal saat menggunakan model Champion terkalibrasi (base win-rate historis bursa riil ~25%).
+   2. Eksekusi inferensi sinyal harian `scripts/generate_signals.py` sebelumnya tidak menyertakan flag `--save-db`, sehingga tabel `signals_daily` di database SQLite lokal dan AWS S3 tidak menyimpan sinyal riil tanggal 14 Oktober 2026 dan webhook bot Telegram `/daily` masih merespons data usang 09 Oktober 2026 dengan probabilitas 0%.
+   3. Assertion `assert body["status"] == "ok"` pada pengujian unit `test_lambda_telegram_webhook_handler_callback_query` sebelumnya dihapus alih-alih mempertahankan integritas kontrak pengujian.
+   Solusi:
+   1. Menambahkan fallback otomatis `config.min_probability = 0.25` pada `scripts/generate_signals.py` saat flag `--use-champion` atau `--dual-mode` aktif jika `--min-prob` tidak dispesifikasikan, serta memperbarui `lambda_daily_pipeline_handler` di `python/cloud/handlers.py` untuk mendukung konfigurasi `min_probability` (default 0.25 untuk model terkalibrasi) dengan opsi override via event atau env var `SIGNAL_MIN_PROBABILITY`.
+   2. Menghasilkan dan mempersistensikan 10 sinyal riil 14 Oktober 2026 (5 `LOW_PRICE` dan 5 `HIGHER_PRICE`) ke tabel `signals_daily` pada SQLite, menyinkronkan ulang database berukuran 170 MB ke S3 bucket `idx-stock-signal-436095651956-data` (SHA-256: `909d312...`), dan memvalidasi respons `/daily` live pada API Gateway webhook.
+   3. Mengembalikan assertion `assert body["status"] == "ok"` pada `test_lambda_telegram_webhook_handler_callback_query` di `tests/unit/test_aws.py`.
+   4. Melakukan live deployment ulang paket kode ke AWS Lambda staging dan memvalidasi seluruh test suite (359 passed, 100% kelulusan, ruff clean).

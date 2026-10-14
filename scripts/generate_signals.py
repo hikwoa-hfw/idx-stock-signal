@@ -208,6 +208,8 @@ def main() -> None:
     config = SignalConfig(top_n=args.top_n)
     if args.min_prob is not None:
         config.min_probability = args.min_prob
+    elif args.use_champion or args.dual_mode:
+        config.min_probability = 0.25
 
     # Parse target date if specified
     s_date = None

@@ -42,7 +42,7 @@ def build_matured_outcomes_dataset(
     for out in matured_outcomes:
         if exclude_ambiguous and out.outcome_status == "AMBIGUOUS":
             continue
-        if exclude_unfilled and out.outcome_status == "UNFILLED_EXPIRED":
+        if exclude_unfilled and out.outcome_status in ("UNFILLED_EXPIRED", "INVALIDATED_GAP"):
             continue
 
         row: dict = {

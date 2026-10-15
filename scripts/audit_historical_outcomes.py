@@ -21,41 +21,54 @@ def run_audit() -> None:
     sample_for_report: list[dict] = []
 
     for _idx, out in enumerate(outcomes):
-        # 1. Check unfilled breakout invariants
-        if out.outcome_status == "UNFILLED_EXPIRED":
+        # 1. Check unfilled breakout and invalidated gap invariants
+        if out.outcome_status in ("UNFILLED_EXPIRED", "INVALIDATED_GAP"):
             if out.entry_status != "UNFILLED":
                 violations.append(
-                    f"{out.signal_id}: UNFILLED_EXPIRED entry_status != 'UNFILLED' "
+                    f"{out.signal_id}: {out.outcome_status} entry_status != 'UNFILLED' "
                     f"({out.entry_status})"
                 )
             if out.entry_date is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED entry_date is not None")
+                violations.append(f"{out.signal_id}: {out.outcome_status} entry_date is not None")
             if out.entry_price is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED entry_price is not None")
+                violations.append(f"{out.signal_id}: {out.outcome_status} entry_price is not None")
             if out.exit_date is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED exit_date is not None")
+                violations.append(f"{out.signal_id}: {out.outcome_status} exit_date is not None")
             if out.exit_price is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED exit_price is not None")
+                violations.append(f"{out.signal_id}: {out.outcome_status} exit_price is not None")
             if out.realized_return is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED has realized_return")
+                violations.append(f"{out.signal_id}: {out.outcome_status} has realized_return")
             if out.gross_return is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED has gross_return")
+                violations.append(f"{out.signal_id}: {out.outcome_status} has gross_return")
             if out.return_after_fees is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED has return_after_fees")
+                violations.append(f"{out.signal_id}: {out.outcome_status} has return_after_fees")
             if out.return_after_fees_and_slippage is not None:
                 violations.append(
-                    f"{out.signal_id}: UNFILLED_EXPIRED has return_after_fees_and_slippage"
+                    f"{out.signal_id}: {out.outcome_status} has return_after_fees_and_slippage"
                 )
             if out.holding_days != 0:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED holding_days != 0")
+                violations.append(f"{out.signal_id}: {out.outcome_status} holding_days != 0")
             if out.net_return is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED net_return is not None")
+                violations.append(f"{out.signal_id}: {out.outcome_status} net_return is not None")
             if out.mfe is not None or out.mae is not None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED trade MFE/MAE is not None")
+                violations.append(
+                    f"{out.signal_id}: {out.outcome_status} trade MFE/MAE is not None"
+                )
             if out.trigger_price is None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED trigger_price is None")
+                violations.append(f"{out.signal_id}: {out.outcome_status} trigger_price is None")
             if out.observation_end_date is None:
-                violations.append(f"{out.signal_id}: UNFILLED_EXPIRED observation_end_date is None")
+                violations.append(
+                    f"{out.signal_id}: {out.outcome_status} observation_end_date is None"
+                )
+            # Verify 0 snapshots for unfilled/invalidated outcomes
+            snap_count = conn.execute(
+                "SELECT COUNT(*) FROM signal_snapshots_daily WHERE signal_id=?",
+                (out.signal_id,),
+            ).fetchone()[0]
+            if snap_count != 0:
+                violations.append(
+                    f"{out.signal_id}: {out.outcome_status} has {snap_count} snapshots (expected 0)"
+                )
         else:
             # Filled trades
             if out.entry_status != "FILLED":
@@ -68,6 +81,16 @@ def run_audit() -> None:
                 )
             if out.holding_days <= 0:
                 violations.append(f"{out.signal_id}: Filled trade holding_days <= 0")
+            # Verify snapshot count matches holding_days for filled trades
+            snap_count = conn.execute(
+                "SELECT COUNT(*) FROM signal_snapshots_daily WHERE signal_id=?",
+                (out.signal_id,),
+            ).fetchone()[0]
+            if snap_count != out.holding_days:
+                violations.append(
+                    f"{out.signal_id}: Filled trade snap_count {snap_count} != "
+                    f"holding_days {out.holding_days}"
+                )
             if out.exit_price is None:
                 violations.append(f"{out.signal_id}: Filled trade exit_price is None")
             if out.exit_date is None:

@@ -1253,10 +1253,18 @@ class SignalOutcomeRecord(BaseModel):
     @classmethod
     def validate_outcome_status(cls, v: str) -> str:
         clean = v.strip().upper()
-        if clean not in {"OPEN", "TP", "SL", "EXPIRY", "AMBIGUOUS", "UNFILLED_EXPIRED"}:
+        if clean not in {
+            "OPEN",
+            "TP",
+            "SL",
+            "EXPIRY",
+            "AMBIGUOUS",
+            "UNFILLED_EXPIRED",
+            "INVALIDATED_GAP",
+        }:
             raise ValueError(
                 f"outcome_status must be in OPEN, TP, SL, EXPIRY, AMBIGUOUS, "
-                f"UNFILLED_EXPIRED, got '{v}'"
+                f"UNFILLED_EXPIRED, INVALIDATED_GAP, got '{v}'"
             )
         return clean
 
@@ -1343,28 +1351,46 @@ class SignalOutcomeRecord(BaseModel):
                 raise ValueError("Open outcome cannot have realized_return")
             if self.resolved_at is not None:
                 raise ValueError("Open outcome cannot have resolved_at")
-        elif self.outcome_status == "UNFILLED_EXPIRED":
+        elif self.outcome_status in ("UNFILLED_EXPIRED", "INVALIDATED_GAP"):
             self.entry_status = "UNFILLED"
+            if self.outcome_status == "INVALIDATED_GAP":
+                if self.entry_price is not None:
+                    raise ValueError("Invalidated gap signal cannot have entry_price")
+                if self.entry_date is not None:
+                    raise ValueError("Invalidated gap signal cannot have entry_date")
+                if self.exit_date is not None:
+                    raise ValueError("Invalidated gap signal cannot have exit_date")
+                if self.mfe is not None or self.mae is not None:
+                    raise ValueError("Invalidated gap signal cannot have mfe or mae")
+                if self.mfe_price is not None or self.mae_price is not None:
+                    raise ValueError("Invalidated gap signal cannot have mfe_price or mae_price")
+                if (
+                    self.time_to_peak is not None
+                    or self.time_to_tp is not None
+                    or self.time_to_sl is not None
+                ):
+                    raise ValueError("Invalidated gap signal cannot have time_to metrics")
             if self.realized_return is not None:
-                raise ValueError("Unfilled expired signal cannot have realized_return")
+                raise ValueError(f"{self.outcome_status} signal cannot have realized_return")
             if self.gross_return is not None:
-                raise ValueError("Unfilled expired signal cannot have gross_return")
+                raise ValueError(f"{self.outcome_status} signal cannot have gross_return")
             if self.return_after_fees is not None:
-                raise ValueError("Unfilled expired signal cannot have return_after_fees")
+                raise ValueError(f"{self.outcome_status} signal cannot have return_after_fees")
             if self.return_after_fees_and_slippage is not None:
                 raise ValueError(
-                    "Unfilled expired signal cannot have return_after_fees_and_slippage"
+                    f"{self.outcome_status} signal cannot have return_after_fees_and_slippage"
                 )
             if self.holding_days != 0:
                 raise ValueError(
-                    f"Unfilled expired signal must have holding_days == 0, got {self.holding_days}"
+                    f"{self.outcome_status} signal must have holding_days == 0, "
+                    f"got {self.holding_days}"
                 )
             if self.net_return is not None:
-                raise ValueError("Unfilled expired signal cannot have net_return")
+                raise ValueError(f"{self.outcome_status} signal cannot have net_return")
             if self.exit_price is not None:
-                raise ValueError("Unfilled expired signal cannot have exit_price")
+                raise ValueError(f"{self.outcome_status} signal cannot have exit_price")
             if self.exit_reason is None:
-                self.exit_reason = "UNFILLED_EXPIRED"
+                self.exit_reason = self.outcome_status
             if self.resolved_at is None:
                 self.resolved_at = datetime.now(timezone.utc)
         else:

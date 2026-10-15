@@ -110,7 +110,9 @@ def run_resolve_outcomes(
         counts[o.outcome_status] = counts.get(o.outcome_status, 0) + 1
 
     print("[SUMMARY] Resolved Outcomes Distribution:")
-    for status in ("TP", "SL", "EXPIRY", "UNFILLED_EXPIRED", "AMBIGUOUS", "OPEN"):
+    for status in (
+        "TP", "SL", "EXPIRY", "UNFILLED_EXPIRED", "INVALIDATED_GAP", "AMBIGUOUS", "OPEN"
+    ):
         if status in counts:
             print(f"  {status:<18}: {counts[status]}")
     print(f"  TOTAL             : {len(outcomes)}")

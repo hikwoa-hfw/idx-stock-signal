@@ -701,3 +701,17 @@ Log Perubahan Tambahan (15 Oktober 2026)
    7. Menambahkan migrasi otomatis idempotensial skema SQLite pada `python/outcomes/repository.py` yang menangani kendala `NOT NULL` warisan dan mengupdate 38 kolom.
    8. Menjalankan re-komputasi historis pada seluruh 31 record matured di `datasets/stock_signals.db` via `scripts/resolve_outcomes.py --force-recompute --save-db`, memvalidasi 100% melalui `scripts/audit_historical_outcomes.py` (0 pelanggaran), memperbarui laporan audit `docs/09_outcome_tracking_backfill_and_integrity_audit_report.md`, serta memvalidasi 100% kelulusan test suite (420 passed, ruff clean).
 
+46. Remediasi Gap Pre-Entri (Status INVALIDATED_GAP), Klarifikasi Semantik Proksi Ekskursi Exit-Bar, dan Re-komputasi Integritas Historis
+   Masalah:
+   1. Sinyal yang mengalami gap pembukaan Hari ke-1 di luar barrier SL/TP sebelum posisi terbentuk (seperti BYAN pada 2026-08-18 yang gap down -14.9% di bawah SL, ASII pada 2026-10-09, dan BBCA pada 2026-10-09) sebelumnya dianggap sebagai trade terisi (FILLED) yang langsung stop out di harga pembukaan yang sama, memfabrikasi trade fiktif ber-return 0.00% gross dan merusak metrik performa trading dengan kerugian biaya transaksi semu (-0.50% net).
+   2. Status siklus hidup outcome belum memiliki status eksplisit untuk membedakan pre-entry gap (order batal sebelum terisi) dengan post-entry gap exit (posisi terbuka yang ter-gap di hari berikutnya).
+   3. Perlu klarifikasi semantik proksi konservatif daily-bar pada candle exit: pada TP intraday, MFE dibatasi pada TP sementara MAE secara konservatif merefleksikan harga low candle sebelum mencapai TP; sebaliknya pada SL intraday, MAE dibatasi pada SL sementara MFE merefleksikan harga high candle sebelum menyentuh SL.
+   Solusi:
+   1. Menambahkan status outcome baru `INVALIDATED_GAP` pada enum siklus hidup (`python/common/types.py`) dengan validasi ketat: `entry_status = 'UNFILLED'`, `holding_days = 0`, serta seluruh field perdagangan riil (`entry_price`, `entry_date`, `exit_price`, `exit_date`, `realized_return`, `net_return`, `mfe`, `mae`) wajib bernilai `NULL`.
+   2. Mengimplementasikan deteksi pre-entry gap pada `python/outcomes/engine.py` untuk order immediate entry (`open <= sl_price` atau `open >= tp_price`) dan order breakout (`open >= tp_price` pada candle penembusan). Trajektori Scope B peluang tetap diobservasi relatif terhadap planned reference anchor.
+   3. Memperbarui `python/models/evaluation.py` dan `python/outcomes/dataset.py` untuk secara ketat mengecualikan status `INVALIDATED_GAP` dari perhitungan sample size, win rate, dan expectancy perdagangan riil.
+   4. Memperbarui `python/outcomes/repository.py` untuk mendukung `INVALIDATED_GAP` pada migrasi database dan secara otomatis membersihkan snapshot harian untuk sinyal unfilled (`UNFILLED_EXPIRED` dan `INVALIDATED_GAP`).
+   5. Menjalankan re-komputasi historis penuh dengan `--force-recompute --save-db` pada `datasets/stock_signals.db`: mengoreksi status ASII, BBCA, dan BYAN menjadi `INVALIDATED_GAP`, menurunkan total trade terisi dari 30 menjadi 27, dan memperbarui win rate menjadi 37.04% (0 pelanggaran pada `scripts/audit_historical_outcomes.py`).
+   6. Menambahkan suite pengujian komprehensif pada `tests/unit/test_outcomes.py` (termasuk gap pasca-entri Hari ke-2 dan proteksi note pre-entry gap) serta verifikasi jumlah snapshot (0 untuk unfilled, holding_days untuk filled) pada `scripts/audit_historical_outcomes.py`, memvalidasi seluruh test suite (431 passing tests, 100% success rate, ruff clean).
+
+

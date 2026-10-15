@@ -225,7 +225,7 @@ class OutcomeRepository:
 
                 conn.execute(
                     "UPDATE outcomes_daily SET entry_status = 'UNFILLED' "
-                    "WHERE outcome_status = 'UNFILLED_EXPIRED' "
+                    "WHERE outcome_status IN ('UNFILLED_EXPIRED', 'INVALIDATED_GAP') "
                     "AND (entry_status IS NULL OR entry_status != 'UNFILLED');"
                 )
                 conn.execute(
@@ -303,7 +303,11 @@ class OutcomeRepository:
         entry_status_val = (
             row["entry_status"]
             if "entry_status" in keys and row["entry_status"] is not None
-            else ("UNFILLED" if row["outcome_status"] == "UNFILLED_EXPIRED" else "FILLED")
+            else (
+                "UNFILLED"
+                if row["outcome_status"] in ("UNFILLED_EXPIRED", "INVALIDATED_GAP")
+                else "FILLED"
+            )
         )
 
         return SignalOutcomeRecord(
@@ -459,6 +463,19 @@ class OutcomeRepository:
             mae_so_far=float(row["mae_so_far"]),
         )
 
+    def delete_snapshots_by_signal_id(self, signal_id: str) -> None:
+        """Delete all daily snapshots associated with a signal ID."""
+        conn = self._get_connection()
+        try:
+            with conn:
+                conn.execute(
+                    "DELETE FROM signal_snapshots_daily WHERE signal_id = ?;",
+                    (signal_id.strip(),),
+                )
+        finally:
+            if not self._is_memory:
+                conn.close()
+
     def save_outcome(self, outcome: Union[SignalOutcomeRecord, dict]) -> None:
         rec = (
             outcome
@@ -469,6 +486,14 @@ class OutcomeRepository:
         try:
             with conn:
                 conn.execute(self._UPSERT_OUTCOME_SQL, self._outcome_to_db_params(rec))
+                if (
+                    rec.outcome_status in ("UNFILLED_EXPIRED", "INVALIDATED_GAP")
+                    or rec.entry_status == "UNFILLED"
+                ):
+                    conn.execute(
+                        "DELETE FROM signal_snapshots_daily WHERE signal_id = ?;",
+                        (rec.signal_id,),
+                    )
         finally:
             if not self._is_memory:
                 conn.close()
@@ -485,6 +510,14 @@ class OutcomeRepository:
             with conn:
                 for rec in records:
                     conn.execute(self._UPSERT_OUTCOME_SQL, self._outcome_to_db_params(rec))
+                    if (
+                        rec.outcome_status in ("UNFILLED_EXPIRED", "INVALIDATED_GAP")
+                        or rec.entry_status == "UNFILLED"
+                    ):
+                        conn.execute(
+                            "DELETE FROM signal_snapshots_daily WHERE signal_id = ?;",
+                            (rec.signal_id,),
+                        )
         finally:
             if not self._is_memory:
                 conn.close()

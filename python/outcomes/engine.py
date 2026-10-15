@@ -30,6 +30,102 @@ def _normalize_policy(policy: Union[str, AmbiguityPolicy]) -> str:
     )
 
 
+def _create_invalidated_gap_outcome(
+    signal: SignalRecord,
+    clean_ticker: str,
+    deduped_bars: list[DailyBar],
+    gap_reason: str,
+    outcome_id: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> tuple[SignalOutcomeRecord, list[SignalDailySnapshot]]:
+    """Construct an INVALIDATED_GAP outcome record for pre-entry barrier violations.
+
+    Actual trade metrics (Scope A) are NULL with holding_days=0.
+    Full horizon opportunity metrics (Scope B) are evaluated relative to the planned
+    anchor price (reference_price or entry range midpoint).
+    """
+    ref_p = getattr(signal, "reference_price", None)
+    if ref_p is not None and math.isfinite(ref_p) and ref_p > 0:
+        anchor_px = float(ref_p)
+    elif (
+        signal.entry_low is not None
+        and signal.entry_high is not None
+        and math.isfinite(signal.entry_low)
+        and math.isfinite(signal.entry_high)
+    ):
+        anchor_px = float((signal.entry_low + signal.entry_high) / 2.0)
+    elif signal.entry_low is not None and math.isfinite(signal.entry_low):
+        anchor_px = float(signal.entry_low)
+    else:
+        anchor_px = float(deduped_bars[0].open)
+
+    validity_bars = deduped_bars[: signal.max_holding_days]
+    last_bar = validity_bars[-1]
+    max_observed_high = max(b.high for b in validity_bars)
+    min_observed_low = min(b.low for b in validity_bars)
+    full_h_mfe = max(0.0, (max_observed_high - anchor_px) / anchor_px)
+    full_h_mae = min(0.0, (min_observed_low - anchor_px) / anchor_px)
+    full_h_mfe_p = max(0.0, max_observed_high - anchor_px)
+    full_h_mae_p = min(0.0, min_observed_low - anchor_px)
+    full_h_ttp = next(
+        i for i, b in enumerate(validity_bars, start=1) if b.high == max_observed_high
+    )
+    end_px = float(last_bar.close)
+    end_ret = (end_px - anchor_px) / anchor_px
+    is_fhc = len(validity_bars) >= signal.max_holding_days
+
+    signal_mode = getattr(signal, "mode_id", None) or getattr(signal, "mode", None)
+    mode_val = signal_mode or classify_price_mode(anchor_px)
+
+    return (
+        SignalOutcomeRecord(
+            outcome_id=outcome_id or str(uuid.uuid4()),
+            signal_id=signal.signal_id,
+            ticker=clean_ticker,
+            signal_date=signal.signal_date,
+            entry_date=None,
+            entry_price=None,
+            entry_status="UNFILLED",
+            outcome_status="INVALIDATED_GAP",
+            realized_return=None,
+            gross_return=None,
+            return_after_fees=None,
+            return_after_fees_and_slippage=None,
+            net_return=None,
+            holding_days=0,
+            mfe=None,
+            mae=None,
+            mfe_price=None,
+            mae_price=None,
+            time_to_peak=None,
+            time_to_tp=None,
+            time_to_sl=None,
+            exit_date=None,
+            exit_price=None,
+            exit_reason="INVALIDATED_GAP",
+            resolved_at=datetime.now(timezone.utc),
+            notes=(
+                f"{gap_reason} | {notes}"
+                if notes and notes != gap_reason
+                else (notes or gap_reason)
+            ),
+            mode=mode_val,
+            trigger_price=anchor_px,
+            observation_end_date=last_bar.date,
+            full_horizon_mfe=full_h_mfe,
+            full_horizon_mae=full_h_mae,
+            full_horizon_mfe_price=full_h_mfe_p,
+            full_horizon_mae_price=full_h_mae_p,
+            full_horizon_time_to_peak=full_h_ttp,
+            horizon_end_date=last_bar.date,
+            horizon_end_price=end_px,
+            horizon_end_return=end_ret,
+            is_full_horizon_complete=is_fhc,
+        ),
+        [],
+    )
+
+
 class OutcomeEngine:
     """Triple-barrier outcome engine reconciling daily signals with price data."""
 
@@ -209,12 +305,74 @@ class OutcomeEngine:
             eval_bars = deduped_bars[trigger_idx : trigger_idx + signal.max_holding_days]
             first_bar = eval_bars[0]
             entry_date = first_bar.date
+            tp_price = float(signal.tp_price)
+            if first_bar.open >= tp_price:
+                gap_note = (
+                    f"Pre-entry gap-through above TP barrier on trigger day: "
+                    f"open {first_bar.open:,.1f} >= tp_price {tp_price:,.1f}. "
+                    f"Order invalidated before execution."
+                )
+                return _create_invalidated_gap_outcome(
+                    signal=signal,
+                    clean_ticker=clean_ticker,
+                    deduped_bars=deduped_bars,
+                    gap_reason=gap_note,
+                    outcome_id=outcome_id,
+                    notes=notes,
+                )
             ep = float(first_bar.open) if first_bar.open >= trigger_level else trigger_level
         else:
             eval_bars = deduped_bars[: signal.max_holding_days]
             first_bar = eval_bars[0]
             entry_date = first_bar.date
-            ep = float(entry_price if entry_price is not None else first_bar.open)
+            tp_price = float(signal.tp_price)
+            sl_price = float(signal.sl_price)
+            if entry_price is None:
+                if first_bar.open <= sl_price:
+                    gap_note = (
+                        f"Pre-entry gap-through below SL barrier: "
+                        f"Day 1 open {first_bar.open:,.1f} <= sl_price {sl_price:,.1f}. "
+                        f"Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
+                elif first_bar.open >= tp_price:
+                    gap_note = (
+                        f"Pre-entry gap-through above TP barrier: "
+                        f"Day 1 open {first_bar.open:,.1f} >= tp_price {tp_price:,.1f}. "
+                        f"Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
+                ep = float(first_bar.open)
+            else:
+                ep = float(entry_price)
+                if ep <= sl_price or ep >= tp_price:
+                    gap_note = (
+                        f"Pre-entry price beyond barrier: "
+                        f"entry_price {ep:,.1f} outside [{sl_price:,.1f}, {tp_price:,.1f}]. "
+                        f"Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
 
         if not math.isfinite(ep) or ep <= 0:
             return None, []
@@ -588,7 +746,10 @@ class OutcomeEngine:
             return existing_outcome, snapshots
 
         outcome_id = existing_outcome.outcome_id if existing_outcome else None
-        existing_notes = existing_outcome.notes if existing_outcome else None
+        existing_notes = (
+            None if force_recompute
+            else (existing_outcome.notes if existing_outcome else None)
+        )
 
         bars = bar_repo.get_daily_bars(
             ticker=signal.ticker,
@@ -606,7 +767,10 @@ class OutcomeEngine:
 
         if outcome is not None and save:
             out_repo.save_outcome(outcome)
-            out_repo.save_snapshots(snapshots)
+            if snapshots:
+                out_repo.save_snapshots(snapshots)
+            elif outcome.outcome_status in ("UNFILLED_EXPIRED", "INVALIDATED_GAP"):
+                out_repo.delete_snapshots_by_signal_id(outcome.signal_id)
 
         return outcome, snapshots
 
@@ -648,7 +812,7 @@ class OutcomeEngine:
                 continue
 
             outcome_id = entry[0] if entry else None
-            existing_notes = entry[2] if entry else None
+            existing_notes = None if force_recompute else (entry[2] if entry else None)
 
             bars = bar_repo.get_daily_bars(
                 ticker=sig.ticker,

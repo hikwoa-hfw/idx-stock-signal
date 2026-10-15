@@ -195,22 +195,25 @@ def test_same_candle_ambiguity_ambiguous():
 
 
 def test_gap_up_and_down_on_open():
+    """Pre-entry gap-through on Day 1 open invalidates entry before execution."""
     signal = _make_signal(tp_price=105.0, sl_price=95.0)
 
-    # Gap up open >= TP
+    # Gap up open >= TP on Day 1 (pre-entry gap)
     gap_up_bar = _make_bar(date(2026, 1, 2), open_=107.0, high=108.0, low=94.0, close=106.0)
     engine = OutcomeEngine(ambiguity_policy="conservative")
     outcome_up, _ = engine.evaluate_signal(signal, [gap_up_bar])
     assert outcome_up is not None
-    assert outcome_up.outcome_status == "TP"
-    assert outcome_up.exit_price == 107.0
+    assert outcome_up.outcome_status == "INVALIDATED_GAP"
+    assert outcome_up.entry_status == "UNFILLED"
+    assert outcome_up.entry_price is None
 
-    # Gap down open <= SL
+    # Gap down open <= SL on Day 1 (pre-entry gap)
     gap_down_bar = _make_bar(date(2026, 1, 2), open_=93.0, high=106.0, low=92.0, close=94.0)
     outcome_down, _ = engine.evaluate_signal(signal, [gap_down_bar])
     assert outcome_down is not None
-    assert outcome_down.outcome_status == "SL"
-    assert outcome_down.exit_price == 93.0
+    assert outcome_down.outcome_status == "INVALIDATED_GAP"
+    assert outcome_down.entry_status == "UNFILLED"
+    assert outcome_down.entry_price is None
 
 
 def test_mfe_and_mae_calculation_multi_day():
@@ -1471,6 +1474,436 @@ def test_unfilled_breakout_expiry_null_metrics_and_repository_persistence():
     assert fetched.trigger_price == 110.0
     assert fetched.observation_end_date == date(2026, 1, 4)
     assert fetched.is_full_horizon_complete is True
+
+
+def test_immediate_entry_open_below_sl_invalidated_gap():
+    """Verify Day 1 open below SL resolves to INVALIDATED_GAP with NULL trade metrics."""
+    signal = _make_signal(
+        entry_low=99.0, entry_high=101.0, tp_price=105.0, sl_price=95.0, max_holding_days=5
+    )
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=93.0, high=98.0, low=92.0, close=96.0),
+        _make_bar(date(2026, 1, 3), open_=96.0, high=102.0, low=95.0, close=101.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "INVALIDATED_GAP"
+    assert outcome.entry_status == "UNFILLED"
+    assert outcome.entry_price is None
+    assert outcome.entry_date is None
+    assert outcome.exit_price is None
+    assert outcome.exit_date is None
+    assert outcome.realized_return is None
+    assert outcome.gross_return is None
+    assert outcome.return_after_fees is None
+    assert outcome.return_after_fees_and_slippage is None
+    assert outcome.net_return is None
+    assert outcome.holding_days == 0
+    assert outcome.mfe is None
+    assert outcome.mae is None
+    assert outcome.mfe_price is None
+    assert outcome.mae_price is None
+    assert outcome.time_to_peak is None
+    assert outcome.time_to_tp is None
+    assert outcome.time_to_sl is None
+    assert outcome.exit_reason == "INVALIDATED_GAP"
+    assert len(snapshots) == 0
+
+    # Scope B opportunity metrics capture counterfactual trajectory relative to anchor (100.0)
+    assert outcome.trigger_price == pytest.approx(100.0)
+    assert outcome.full_horizon_mfe == pytest.approx((102.0 - 100.0) / 100.0)
+    assert outcome.full_horizon_mae == pytest.approx((92.0 - 100.0) / 100.0)
+    assert outcome.observation_end_date == date(2026, 1, 3)
+
+
+def test_immediate_entry_open_above_tp_invalidated_gap():
+    """Verify immediate entry with Day 1 open above TP resolves to INVALIDATED_GAP."""
+    signal = _make_signal(
+        entry_low=99.0, entry_high=101.0, tp_price=105.0, sl_price=95.0, max_holding_days=5
+    )
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=108.0, high=112.0, low=106.0, close=110.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "INVALIDATED_GAP"
+    assert outcome.entry_status == "UNFILLED"
+    assert outcome.entry_price is None
+    assert outcome.realized_return is None
+    assert outcome.net_return is None
+    assert outcome.holding_days == 0
+    assert outcome.mfe is None
+    assert outcome.mae is None
+    assert len(snapshots) == 0
+
+
+def test_valid_immediate_entry_open_between_barriers():
+    """Verify normal immediate entry between barriers fills cleanly at open."""
+    signal = _make_signal(entry_low=99.0, entry_high=101.0, tp_price=105.0, sl_price=95.0)
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=103.0, low=98.0, close=102.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.entry_status == "FILLED"
+    assert outcome.entry_price == 100.0
+    assert outcome.outcome_status == "OPEN"
+    assert len(snapshots) == 1
+
+
+def test_breakout_open_above_trigger_below_tp_fills_at_open():
+    """Verify breakout order opening above trigger but below TP fills at open (gap up fill)."""
+    signal = SignalRecord(
+        signal_id="sig-bo-gap-fill",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=115.0,
+        sl_price=95.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+    bars = [
+        # Gaps open at 108.0 (above trigger 106.0, below TP 115.0), high reaches 112.0
+        _make_bar(date(2026, 1, 2), open_=108.0, high=112.0, low=107.0, close=110.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.entry_status == "FILLED"
+    assert outcome.entry_price == 108.0  # filled at open price above trigger
+    assert outcome.outcome_status == "OPEN"
+    assert len(snapshots) == 1
+
+
+def test_breakout_open_exceeds_tp_invalidated_gap():
+    """Verify breakout order opening above TP barrier resolves to INVALIDATED_GAP."""
+    signal = SignalRecord(
+        signal_id="sig-bo-gap-tp",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=115.0,
+        sl_price=95.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+    bars = [
+        # Gaps open at 118.0 (above TP 115.0)
+        _make_bar(date(2026, 1, 2), open_=118.0, high=120.0, low=116.0, close=117.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "INVALIDATED_GAP"
+    assert outcome.entry_status == "UNFILLED"
+    assert outcome.entry_price is None
+    assert outcome.realized_return is None
+    assert outcome.mfe is None
+    assert outcome.mae is None
+    assert outcome.holding_days == 0
+    assert len(snapshots) == 0
+
+
+def test_post_entry_gap_down_on_day_2_remains_sl_fill_at_open():
+    """Verify that an already-open position (Day 1 filled) that gaps down on Day 2
+    below SL exits at open as an executed SL trade, preserving trade metrics."""
+    signal = _make_signal(tp_price=110.0, sl_price=95.0, max_holding_days=5)
+    bars = [
+        # Day 1: normal fill at open 100.0, trades between 98.0 and 102.0
+        _make_bar(date(2026, 1, 2), open_=100.0, high=102.0, low=98.0, close=100.0),
+        # Day 2: gaps down to 91.0 (below SL 95.0), low 90.0, high 93.0, close 92.0
+        _make_bar(date(2026, 1, 3), open_=91.0, high=93.0, low=90.0, close=92.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.entry_status == "FILLED"
+    assert outcome.outcome_status == "SL"
+    assert outcome.entry_date == date(2026, 1, 2)
+    assert outcome.entry_price == pytest.approx(100.0)
+    assert outcome.exit_date == date(2026, 1, 3)
+    assert outcome.exit_price == pytest.approx(91.0)  # filled at open on Day 2
+    assert outcome.realized_return == pytest.approx(-0.09)
+    assert outcome.holding_days == 2
+    # In-trade MAE bounded by gap open at 91.0 (-9%), NOT low of 90.0 (-10%)
+    assert outcome.mae == pytest.approx(-0.09)
+    assert len(snapshots) == 2
+
+
+def test_invalidated_gap_exclusion_from_evaluation_metrics():
+    """Verify INVALIDATED_GAP is excluded from trading metrics, win rate, and expectancy."""
+    from python.models.evaluation import EvaluationEngine
+
+    o_tp = SignalOutcomeRecord(
+        signal_id="s1",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        entry_price=100.0,
+        outcome_status="TP",
+        exit_date=date(2026, 1, 3),
+        exit_price=105.0,
+        realized_return=0.05,
+        holding_days=2,
+    )
+    o_sl = SignalOutcomeRecord(
+        signal_id="s2",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        entry_price=100.0,
+        outcome_status="SL",
+        exit_date=date(2026, 1, 3),
+        exit_price=95.0,
+        realized_return=-0.05,
+        holding_days=2,
+    )
+    o_gap = SignalOutcomeRecord(
+        signal_id="s3",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        entry_status="UNFILLED",
+        outcome_status="INVALIDATED_GAP",
+        holding_days=0,
+    )
+
+    eval_eng = EvaluationEngine()
+    report = eval_eng.evaluate_from_outcomes(
+        outcomes=[o_tp, o_sl, o_gap],
+        model_version="test_model",
+    )
+
+    # Sample size should only count filled trades (2), excluding INVALIDATED_GAP
+    assert report.sample_size == 2
+    assert report.trading_metrics.total_trades == 2
+    assert report.trading_metrics.win_rate == pytest.approx(0.50)
+
+
+def test_invalidated_gap_lifecycle_validation_and_persistence():
+    """Verify lifecycle constraints and SQLite persistence roundtrip for INVALIDATED_GAP."""
+    repo = OutcomeRepository(":memory:")
+
+    # Attempting to assign entry_price to INVALIDATED_GAP should raise ValueError
+    with pytest.raises(ValueError, match="cannot have entry_price"):
+        SignalOutcomeRecord(
+            signal_id="sig-inv-fail",
+            ticker="BBCA",
+            signal_date=date(2026, 1, 1),
+            entry_price=100.0,
+            outcome_status="INVALIDATED_GAP",
+            holding_days=0,
+        )
+
+    # Valid INVALIDATED_GAP record persists and reloads cleanly
+    out_valid = SignalOutcomeRecord(
+        signal_id="sig-inv-pass",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        outcome_status="INVALIDATED_GAP",
+        trigger_price=100.0,
+        observation_end_date=date(2026, 1, 5),
+        full_horizon_mfe=0.10,
+        full_horizon_mae=-0.05,
+        holding_days=0,
+    )
+    repo.save_outcome(out_valid)
+    fetched = repo.get_outcome_by_signal_id("sig-inv-pass")
+    assert fetched is not None
+    assert fetched.outcome_status == "INVALIDATED_GAP"
+    assert fetched.entry_status == "UNFILLED"
+    assert fetched.entry_price is None
+    assert fetched.entry_date is None
+    assert fetched.exit_price is None
+    assert fetched.realized_return is None
+    assert fetched.holding_days == 0
+    assert fetched.trigger_price == 100.0
+
+
+def test_tp_day_low_conservative_proxy_semantics():
+    """Verify exit proxy: TP exit bounds MFE at TP, while MAE reflects candle low."""
+    signal = _make_signal(tp_price=105.0, sl_price=95.0, max_holding_days=5)
+    # Day 1: entries at open 100.0, rallies to 107.0 (hitting TP 105), but also has low 98.0
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=107.0, low=98.0, close=104.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "TP"
+    assert outcome.exit_price == pytest.approx(105.0)
+    assert outcome.realized_return == pytest.approx(0.05)
+    # In-trade MFE bounded at TP barrier (105.0 = +5%)
+    assert outcome.mfe == pytest.approx(0.05)
+    # Conservative daily-bar proxy: MAE includes low of 98.0 (-2%) as potential pre-TP excursion
+    assert outcome.mae == pytest.approx(-0.02)
+    # Full horizon opportunity captures full candle high of 107.0 (+7%)
+    assert outcome.full_horizon_mfe == pytest.approx(0.07)
+    # Daily snapshot matches terminal metrics
+    assert snapshots[0].mfe_so_far == pytest.approx(0.05)
+    assert snapshots[0].mae_so_far == pytest.approx(-0.02)
+
+
+def test_sl_day_high_conservative_proxy_semantics():
+    """Verify exit proxy: SL exit bounds MAE at SL, while MFE reflects candle high."""
+    signal = _make_signal(tp_price=110.0, sl_price=95.0, max_holding_days=5)
+    # Day 1: entries at open 100.0, high 103.0, drops to low 93.0 (hitting SL 95)
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=103.0, low=93.0, close=94.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "SL"
+    assert outcome.exit_price == pytest.approx(95.0)
+    assert outcome.realized_return == pytest.approx(-0.05)
+    # In-trade MAE bounded at SL barrier (95.0 = -5%)
+    assert outcome.mae == pytest.approx(-0.05)
+    # In-trade MFE reflects candle high of 103.0 (+3%) prior to stop-out
+    assert outcome.mfe == pytest.approx(0.03)
+    # Full horizon opportunity captures full candle low of 93.0 (-7%)
+    assert outcome.full_horizon_mae == pytest.approx(-0.07)
+
+
+def test_asii_bbca_byan_historical_recomputation():
+    """Verify exact recomputations for historical signals ASII, BBCA, and BYAN."""
+    engine = OutcomeEngine()
+
+    # 1. BYAN (2026-08-18): Ref=17275, entry=[17188.62, 17361.37], TP=18229.44, SL=16844.85
+    # Next day 2026-08-19: Open 14700.0 (gapped below SL 16844.85)
+    sig_byan = SignalRecord(
+        signal_id="2b7159d5-7987-5494-94ee-5898e6c20c27",
+        ticker="BYAN",
+        signal_date=date(2026, 8, 18),
+        signal="BUY",
+        reference_price=17275.0,
+        entry_low=17188.62,
+        entry_high=17361.37,
+        tp_price=18229.44,
+        sl_price=16844.85,
+        max_holding_days=10,
+        predicted_probability=0.3238,
+        score=50.23,
+        model_version="champion",
+        entry_policy="IMMEDIATE",
+    )
+    byan_bars = [
+        _make_bar(
+            date(2026, 8, 19),
+            open_=14700.0,
+            high=18650.0,
+            low=14700.0,
+            close=15650.0,
+            ticker="BYAN",
+        ),
+    ]
+    out_byan, snap_byan = engine.evaluate_signal(sig_byan, byan_bars)
+    assert out_byan is not None
+    assert out_byan.outcome_status == "INVALIDATED_GAP"
+    assert out_byan.entry_status == "UNFILLED"
+    assert out_byan.entry_price is None
+    assert out_byan.realized_return is None
+    assert out_byan.holding_days == 0
+    assert len(snap_byan) == 0
+    assert out_byan.trigger_price == 17275.0
+    assert out_byan.full_horizon_mfe == pytest.approx((18650.0 - 17275.0) / 17275.0)
+
+    # 2. ASII (2026-10-09): entry_low=5124.25, entry_high=5175.75, TP=5434.54, SL=5021.77
+    # Next day 2026-10-12: Open 4850.0 (gapped below SL 5021.77)
+    sig_asii = SignalRecord(
+        signal_id="d6825f71-84b2-511d-9dc1-b9b5082ba4dd",
+        ticker="ASII",
+        signal_date=date(2026, 10, 9),
+        signal="BUY",
+        entry_low=5124.25,
+        entry_high=5175.75,
+        tp_price=5434.54,
+        sl_price=5021.77,
+        max_holding_days=10,
+        predicted_probability=0.0,
+        score=7.86,
+        model_version="v1",
+    )
+    asii_bars = [
+        _make_bar(
+            date(2026, 10, 12),
+            open_=4850.0,
+            high=4920.0,
+            low=4810.0,
+            close=4810.0,
+            ticker="ASII",
+        ),
+    ]
+    out_asii, snap_asii = engine.evaluate_signal(sig_asii, asii_bars)
+    assert out_asii is not None
+    assert out_asii.outcome_status == "INVALIDATED_GAP"
+    assert out_asii.entry_status == "UNFILLED"
+    assert out_asii.entry_price is None
+    assert out_asii.realized_return is None
+    assert out_asii.holding_days == 0
+    assert len(snap_asii) == 0
+    assert out_asii.trigger_price == pytest.approx(5150.0)
+
+    # 3. BBCA (2026-10-09): entry_low=10149.0, entry_high=10251.0, TP=10763.55, SL=9946.02
+    # Next day 2026-10-12: Open 6050.0 (gapped below SL 9946.02)
+    sig_bbca = SignalRecord(
+        signal_id="29cb7d6c-802f-5a07-8853-06efbc7d62a8",
+        ticker="BBCA",
+        signal_date=date(2026, 10, 9),
+        signal="BUY",
+        entry_low=10149.0,
+        entry_high=10251.0,
+        tp_price=10763.55,
+        sl_price=9946.02,
+        max_holding_days=10,
+        predicted_probability=0.0,
+        score=7.86,
+        model_version="v1",
+    )
+    bbca_bars = [
+        _make_bar(
+            date(2026, 10, 12),
+            open_=6050.0,
+            high=6100.0,
+            low=5950.0,
+            close=5950.0,
+            ticker="BBCA",
+        ),
+    ]
+    out_bbca, snap_bbca = engine.evaluate_signal(sig_bbca, bbca_bars)
+    assert out_bbca is not None
+    assert out_bbca.outcome_status == "INVALIDATED_GAP"
+    assert out_bbca.entry_status == "UNFILLED"
+    assert out_bbca.entry_price is None
+    assert out_bbca.realized_return is None
+    assert out_bbca.holding_days == 0
+    assert len(snap_bbca) == 0
+    assert out_bbca.trigger_price == pytest.approx(10200.0)
 
 
 

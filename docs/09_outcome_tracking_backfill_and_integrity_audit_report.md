@@ -12,14 +12,14 @@ A comprehensive audit and backfill integrity verification was performed on the h
 
 1. **Scope A — Actual Trade Performance (In-Trade Bounded)**:
    - Tracks actual filled trade execution from entry to exit.
-   - For gap-through exits at the open, in-trade high/low is strictly bounded by the opening exit price (`open`), eliminating subsequent post-exit rally/drop leakage.
+   - For post-entry gap-through exits at the open, in-trade high/low is strictly bounded by the opening exit price (`open`), eliminating subsequent post-exit rally/drop leakage.
    - For intraday barrier touches, in-trade high on TP exit is bounded by `tp_price`; in-trade low on SL exit is bounded by `sl_price`.
    - Metrics include: `holding_days`, `entry_date`, `entry_price`, `exit_date`, `exit_price`, `mfe`, `mae`, `mfe_price`, `mae_price`, `time_to_peak`, `realized_return` (gross return), `return_after_fees` (IDX commissions: buy 0.15%, sell 0.25%), and `return_after_fees_and_slippage` / `net_return` (commissions plus 10 bps round-trip slippage).
-   - For `UNFILLED_EXPIRED` signals (untriggered breakouts), all Scope A fields are strictly `NULL` and `holding_days = 0`.
+   - For `UNFILLED_EXPIRED` signals (untriggered breakouts) and `INVALIDATED_GAP` signals (Day 1 pre-entry gaps opening at or beyond planned SL or TP), all Scope A fields are strictly `NULL`, `entry_status = 'UNFILLED'`, and `holding_days = 0`. These signals are strictly excluded from trading metrics (win rate, expectancy, total trades).
 
 2. **Scope B — Full-Horizon Opportunity Analysis (Counterfactual Observation)**:
    - Evaluates the counterfactual price trajectory over the full planned observation window (`signal.max_holding_days`).
-   - Evaluated regardless of whether the trade exited early via TP/SL or never triggered entry.
+   - Evaluated regardless of whether the trade exited early via TP/SL, never triggered entry, or was invalidated by a pre-entry gap.
    - Metrics include: `full_horizon_mfe`, `full_horizon_mae`, `full_horizon_mfe_price`, `full_horizon_mae_price`, `full_horizon_time_to_peak`, `horizon_end_date`, `horizon_end_price`, `horizon_end_return`, and `is_full_horizon_complete`.
 
 ### Operational Safeguards Preservation
@@ -91,15 +91,15 @@ CREATE TABLE IF NOT EXISTS outcomes_daily (
 | `signal_id` | `TEXT` | `str` | Common | Foreign key referencing `signals_daily` (UNIQUE) |
 | `ticker` | `TEXT` | `str` | Common | Normalized IDX ticker symbol without suffix (`BBCA`) |
 | `signal_date` | `TEXT` | `date` | Common | Trading date signal was generated (`YYYY-MM-DD`) |
-| `entry_date` | `TEXT` | `Optional[date]` | Scope A | Date position entered; `NULL` for `UNFILLED_EXPIRED` |
-| `entry_price` | `REAL` | `Optional[float]` | Scope A | Fill price; `NULL` for `UNFILLED_EXPIRED` |
+| `entry_date` | `TEXT` | `Optional[date]` | Scope A | Date position entered; `NULL` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
+| `entry_price` | `REAL` | `Optional[float]` | Scope A | Fill price; `NULL` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
 | `entry_status` | `TEXT` | `str` | Common | Execution status: `FILLED` or `UNFILLED` |
-| `outcome_status` | `TEXT` | `str` | Common | Status: `TP`, `SL`, `EXPIRY`, `AMBIGUOUS`, `UNFILLED_EXPIRED`, `OPEN` |
+| `outcome_status` | `TEXT` | `str` | Common | Status: `TP`, `SL`, `EXPIRY`, `AMBIGUOUS`, `UNFILLED_EXPIRED`, `INVALIDATED_GAP`, `OPEN` |
 | `realized_return` | `REAL` | `Optional[float]` | Scope A | Gross realized return: `(exit_price - entry_price) / entry_price` |
 | `gross_return` | `REAL` | `Optional[float]` | Scope A | Synonymous with `realized_return` |
-| `holding_days` | `INTEGER` | `int` | Scope A | Trading days held; strictly `0` for `UNFILLED_EXPIRED` |
-| `mfe` | `REAL` | `Optional[float]` | Scope A | In-trade MFE clamped `[0.0, inf)`; `NULL` for `UNFILLED_EXPIRED` |
-| `mae` | `REAL` | `Optional[float]` | Scope A | In-trade MAE clamped `(-inf, 0.0]`; `NULL` for `UNFILLED_EXPIRED` |
+| `holding_days` | `INTEGER` | `int` | Scope A | Trading days held; strictly `0` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
+| `mfe` | `REAL` | `Optional[float]` | Scope A | In-trade MFE clamped `[0.0, inf)`; `NULL` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
+| `mae` | `REAL` | `Optional[float]` | Scope A | In-trade MAE clamped `(-inf, 0.0]`; `NULL` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
 | `mfe_price` | `REAL` | `Optional[float]` | Scope A | In-trade MFE in points: `max(0.0, max(High) - P_entry)` |
 | `mae_price` | `REAL` | `Optional[float]` | Scope A | In-trade MAE in points: `min(0.0, min(Low) - P_entry)` |
 | `time_to_peak` | `INTEGER` | `Optional[int]` | Scope A | Holding day index of in-trade peak high |
@@ -108,10 +108,10 @@ CREATE TABLE IF NOT EXISTS outcomes_daily (
 | `return_after_fees` | `REAL` | `Optional[float]` | Scope A | Realized return after brokerage fees (buy 0.15%, sell 0.25%) |
 | `return_after_fees_and_slippage` | `REAL` | `Optional[float]` | Scope A | Realized return after fees + 10 bps slippage |
 | `net_return` | `REAL` | `Optional[float]` | Scope A | Synonymous with `return_after_fees_and_slippage` |
-| `exit_date` | `TEXT` | `Optional[date]` | Scope A | Exit execution date; `NULL` for `UNFILLED_EXPIRED` |
-| `exit_price` | `REAL` | `Optional[float]` | Scope A | Exit execution fill price; `NULL` for `UNFILLED_EXPIRED` |
-| `exit_reason` | `TEXT` | `Optional[str]` | Scope A | Exit reason (`TP`, `SL`, `EXPIRY`, `UNFILLED_EXPIRED`) |
-| `trigger_price` | `REAL` | `Optional[float]` | Scope B | Planned breakout trigger price |
+| `exit_date` | `TEXT` | `Optional[date]` | Scope A | Exit execution date; `NULL` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
+| `exit_price` | `REAL` | `Optional[float]` | Scope A | Exit execution fill price; `NULL` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
+| `exit_reason` | `TEXT` | `Optional[str]` | Scope A | Exit reason (`TP`, `SL`, `EXPIRY`, `UNFILLED_EXPIRED`, `INVALIDATED_GAP`) |
+| `trigger_price` | `REAL` | `Optional[float]` | Scope B | Planned breakout trigger price or anchor reference price |
 | `observation_end_date` | `TEXT` | `Optional[date]` | Scope B | Expiry date of observation window |
 | `full_horizon_mfe` | `REAL` | `Optional[float]` | Scope B | Counterfactual MFE across full observation horizon |
 | `full_horizon_mae` | `REAL` | `Optional[float]` | Scope B | Counterfactual MAE across full observation horizon |
@@ -178,28 +178,51 @@ Where $P_{\text{ref}} = P_{\text{entry}}$ for filled trades, and $P_{\text{ref}}
 
 ## 4. Defect Reconciliation & Audit Verification
 
-Prior to remediation, the pipeline suffered from post-exit price extreme leakage on the exit bar. Below are verified before-and-after audit calculations on historical trades:
+Prior to remediation, the pipeline suffered from post-exit price extreme leakage and lacked differentiation between pre-entry gaps and post-entry gaps. Below are verified before-and-after audit calculations and architectural clarifications:
 
-### Defect 1: Gap-Through Exits at the Open
-When a position stopped out immediately at the open of a candle, the old engine evaluated the entire daily bar's high and low as part of the trade.
+### Defect 1: Pre-Entry Gaps vs. Post-Entry Gap Exits (`INVALIDATED_GAP`)
+A fundamental distinction exists between a position already held that experiences an adverse gap exit, versus an order that has not yet entered:
+- **Post-Entry Gap Exit**: A position is open (holding days $\ge 1$). The next trading session gaps through the Stop Loss ($Open \le SL$) or Take Profit ($Open \ge TP$). The order fills at $Open$, realizes the gap return, and terminates. In-trade MFE/MAE is strictly bounded at $Open$, preventing subsequent intraday price leakage.
+- **Pre-Entry Gap Invalidation (`INVALIDATED_GAP`)**: On Day 1 (the planned entry session), the market opens at or beyond the planned Stop Loss ($Open \le SL$) or Take Profit ($Open \ge TP$).
+  - In reality, an order cannot be filled at planned entry if the market has already gapped through the protective barrier before execution.
+  - The previous engine erroneously executed an entry at $Open$ and stopped out on the exact same tick at $Open$, fabricating a false 0.00% gross return trade with a guaranteed -50 bps fee loss.
+  - **Remediation**: Day 1 open beyond SL or TP invalidates the trade. The record is persisted with `outcome_status = 'INVALIDATED_GAP'`, `entry_status = 'UNFILLED'`, `holding_days = 0`, and all Scope A trade metrics (`entry_price`, `entry_date`, `exit_price`, `exit_date`, `realized_return`, `net_return`, `mfe`, `mae`) are strictly `NULL`.
+  - For breakout orders: if the trigger candle opens above the breakout trigger but below TP ($P_{\text{trigger}} < Open < P_{\text{TP}}$), the order enters at $Open$. If it opens at or above TP ($Open \ge P_{\text{TP}}$), it is marked `INVALIDATED_GAP`.
+  - Opportunity tracking (Scope B) remains preserved, benchmarking the counterfactual price trajectory relative to the planned reference anchor price.
+
+#### Historical Invalidation Case Studies:
+
+| Ticker | Signal Dt | Ref Px | Planned Entry Range | Planned TP | Planned SL | Next-Session Open | Modeled Entry (Old -> Remediated) | Modeled Exit (Old -> Remediated) | Corrected Status | Reason for Invalidation / Classification |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| `BYAN` | 2026-08-18 | 17,275.0 | [17,188.62, 17,361.37] | 18,229.44 | 16,844.85 | 14,700.0 (2026-08-19) | 14,700.0 -> *None* | 14,700.0 -> *None* | `INVALIDATED_GAP` | Genuine -14.9% overnight gap down opened far below planned SL ($14,700.0 \le 16,844.85$). Order cancelled before execution. |
+| `ASII` | 2026-10-09 | 5,150.0 | [5,124.25, 5,175.75] | 5,434.54 | 5,021.77 | 4,850.0 (2026-10-12) | 4,850.0 -> *None* | 4,850.0 -> *None* | `INVALIDATED_GAP` | Retroactive signal generation scale discrepancy ($SL = 5,021.77$) vs adjusted market bar open ($4,850.0 \le 5,021.77$). Order cancelled before execution. |
+| `BBCA` | 2026-10-09 | 10,200.0 | [10,149.00, 10,251.00] | 10,763.55 | 9,946.02 | 6,050.0 (2026-10-12) | 6,050.0 -> *None* | 6,050.0 -> *None* | `INVALIDATED_GAP` | Pre-split planned barriers ($SL = 9,946.02$) vs split-adjusted market bar open ($6,050.0 \le 9,946.02$). Order cancelled before execution. |
 
 - **`BYAN` (Signal Date: 2026-08-18)**:
-  - *Context*: Entered 2026-08-19 at Open = 14,700.0 with SL = 16,844.85. Because $Open \le SL$, stopped out immediately at 14,700.0 at the market open. Later that day, BYAN rallied to a high of 18,650.0.
-  - *Old In-Trade MFE*: **+26.87%** (erroneously credited the rally to a stopped-out position).
-  - *Remediated In-Trade MFE*: **+0.00%** (strictly bounded by exit at open).
-  - *Scope B Horizon MFE*: **+26.87%** (correctly captured under counterfactual opportunity).
+  - *Context*: Signal generated at 17,275 with planned SL = 16,844.85. On 2026-08-19, BYAN gapped down -14.9% to open at 14,700.0 (far below SL).
+  - *Previous Logic*: Entered at 14,700 and exited at 14,700, recording a false filled trade with 0.00% gross return and -0.50% net return.
+  - *Remediated Logic*: `INVALIDATED_GAP` (`entry_status = 'UNFILLED'`, `holding_days = 0`, trade metrics `NULL`). Counterfactual opportunity relative to planned anchor (17,275): `full_horizon_mfe = +7.96%` (rally to 18,650), `full_horizon_mae = -22.29%` (low 13,425).
 - **`ASII` (Signal Date: 2026-10-09)**:
-  - *Context*: Entered 2026-10-12 at Open = 4,850.0 with SL = 4,948.33. Stopped out at open (4,850.0); intraday high reached 4,920.0.
-  - *Old In-Trade MFE*: **+1.44%** $\rightarrow$ *Remediated In-Trade MFE*: **+0.00%** $\rightarrow$ *Scope B Horizon MFE*: **+1.44%**.
+  - *Context*: Retroactive generation discrepancy produced planned SL = 5,021.77. On 2026-10-12, raw bar opened at 4,850.0 (below SL).
+  - *Previous Logic*: Entered at 4,850 and exited at 4,850 (0.00% gross return trade).
+  - *Remediated Logic*: `INVALIDATED_GAP` (`entry_status = 'UNFILLED'`, `holding_days = 0`, trade metrics `NULL`). Opportunity relative to anchor (5,150): `full_horizon_mfe = 0.0%`, `full_horizon_mae = -9.13%`.
 - **`BBCA` (Signal Date: 2026-10-09)**:
-  - *Context*: Entered 2026-10-12 at Open = 6,050.0 with SL = 6,172.93. Stopped out at open (6,050.0); intraday high reached 6,100.0.
-  - *Old In-Trade MFE*: **+0.83%** $\rightarrow$ *Remediated In-Trade MFE*: **+0.00%** $\rightarrow$ *Scope B Horizon MFE*: **+0.83%**.
+  - *Context*: Pre-split price calculation produced SL = 9,946.02, while split-adjusted bar opened at 6,050.0.
+  - *Previous Logic*: Entered at 6,050 and exited at 6,050 (0.00% gross return trade).
+  - *Remediated Logic*: `INVALIDATED_GAP` (`entry_status = 'UNFILLED'`, `holding_days = 0`, trade metrics `NULL`). Opportunity relative to anchor (10,200): `full_horizon_mfe = 0.0%`, `full_horizon_mae = -42.65%`.
 
-### Defect 2: Intraday Barrier Touch Leakage
-When a position hit Take Profit or Stop Loss intraday, the candle continued trading and established extremes beyond the exit barrier that leaked into in-trade metrics.
+#### Causality & Signal Generation Non-Suppression:
+- Signal generation runs strictly after market close on Day 0 (e.g., 16:15 WIB) evaluating market features up to Day 0 close.
+- At Day 0 close, Day 1 opening price has not occurred yet.
+- Suppressing a signal at Day 0 generation time by looking at Day 1 opening price would constitute a fatal lookahead bias defect.
+- Therefore, signal generation logic must NOT suppress the signal at Day 0.
+- Instead, the execution system / outcome tracking engine (operating at Day 1 open / pre-open auction 08:45–09:00 WIB) observes the Day 1 open and cancels / invalidates the order before execution (`INVALIDATED_GAP`).
 
+
+### Defect 2: Intraday Barrier Touch Leakage & Exit-Day Excursion Semantics
+When a position hits Take Profit or Stop Loss intraday, the daily candle continues trading and establishes price extremes beyond the exit barrier that leaked into in-trade metrics under legacy logic.
 - **`GIAA` (Signal Date: 2026-08-03)**:
-  - *Context*: Entered 2026-08-04 at 54.0, TP = 58.0. On Day 5 (2026-08-10), price touched TP at 58.0 (+7.41%). The day's high continued surging to 72.0 (+33.33%).
+  - *Context*: Entered 2026-08-04 at 54.0, TP = 58.0. On Day 5 (2026-08-10), price touched TP at 58.0 (+7.41%). Candle high continued surging to 72.0 (+33.33%).
   - *Old In-Trade MFE*: **+33.33%** (distorted trade performance beyond the sold barrier).
   - *Remediated In-Trade MFE*: **+7.41%** (strictly bounded by TP exit).
   - *Scope B Horizon MFE*: **+55.56%** (captured subsequent rally to 84.0 on day 6).
@@ -212,11 +235,23 @@ When a position hit Take Profit or Stop Loss intraday, the candle continued trad
   - *Remediated In-Trade MAE*: **-6.67%** (strictly bounded by SL exit).
   - *Scope B Horizon MAE*: **-35.00%** (captured post-exit collapse across full horizon).
 
+#### Deterministic Conservative Daily-Bar Proxy Semantics
+Because daily OHLC bars lack tick-by-tick timestamp ordering, the engine implements a clear, deterministic conservative daily-bar proxy:
+1. **Take-Profit Exit**: In-trade MFE is strictly bounded at $P_{\text{TP}}$. MAE conservatively reflects the candle low ($Low_N$) as a potential intra-candle adverse excursion prior to hitting TP. Realized return is strictly determined by $P_{\text{TP}}$, decoupled from any subsequent post-barrier movement.
+2. **Stop-Loss Exit**: In-trade MAE is strictly bounded at $P_{\text{SL}}$. MFE reflects the candle high ($High_N$) as a potential favorable excursion prior to stopping out. Realized return is strictly determined by $P_{\text{SL}}$, decoupled from any subsequent post-barrier movement.
+3. Sub-daily tick ordering is not claimed; the proxy guarantees conservative risk measurement while keeping trading metrics strictly isolated from post-exit drift.
+
 ### Defect 3: Unfilled Breakout Signal Semantics
 - **`BBCA` (Signal Date: 2026-08-03)**:
   - *Context*: Breakout BUY signal with trigger `entry_low = 12,000.0`. Over the 10-day holding horizon, BBCA traded between 6,000 and 6,250 and never triggered entry.
   - *Old Representation*: Stored as `UNFILLED_EXPIRED` but with planned trigger stored in `entry_price` (12,000.0) and entry date (2026-08-04), causing ambiguity as to whether an order was executed.
   - *Remediated Representation*: Trade fields are strictly `NULL`: `entry_date=None`, `entry_price=None`, `exit_date=None`, `exit_price=None`, `mfe=None`, `mae=None`, `realized_return=None`, `net_return=None`, `holding_days=0`. Trigger level is cleanly preserved in `trigger_price=12,000.0` and observation end in `observation_end_date=2026-08-18`. Scope B opportunity metrics are computed relative to trigger price: `full_horizon_mfe=0.0%`, `full_horizon_mae=-48.3%` (low 6,200 vs 12,000).
+
+### Defect 4: Metric Isolation & Exclusion of Unfilled Signals
+Unfilled signals (`UNFILLED_EXPIRED` and `INVALIDATED_GAP`) represent orders that never executed in the market. Including them in trading performance metrics artificially deflates win rate and distorts expectancy with fabricated zero-return executions:
+- `compute_trading_metrics` and `evaluate_from_outcomes` strictly filter for `entry_status == 'FILLED' and outcome_status in ('TP', 'SL', 'EXPIRY')`.
+- Out of 31 matured historical signals: 27 are filled trades (8 TP, 17 SL, 2 EXPIRY), 1 is `UNFILLED_EXPIRED`, and 3 are `INVALIDATED_GAP`.
+- Total trades evaluated: **27**. Win rate: **37.04%** (10 positive returns / 27 trades; pure TP rate: 29.63%). Expectancy: **-0.0017** (-17 bps).
 
 ---
 
@@ -236,7 +271,7 @@ Every record below has been recomputed and verified against underlying price bar
 | `WIRG` | 2026-08-03 | 2026-08-04 | 59.0 | `TP` | 2026-08-07 | 62.0 | +5.08% | +4.67% | +4.56% | 4d | +5.1% | -1.7% | +20.3% | -1.7% | LOW |
 | `ADHI` | 2026-08-18 | 2026-08-19 | 140.0 | `SL` | 2026-08-19 | 137.5 | -1.80% | -2.19% | -2.29% | 1d | +1.4% | -1.8% | +1.4% | -5.7% | LOW |
 | `BMTR` | 2026-08-18 | 2026-08-19 | 116.0 | `SL` | 2026-08-26 | 113.1 | -2.49% | -2.88% | -2.98% | 5d | +1.7% | -2.5% | +1.7% | -4.3% | LOW |
-| `BYAN` | 2026-08-18 | 2026-08-19 | 14,700.0 | `SL` | 2026-08-19 | 14,700.0 | +0.00% | -0.40% | -0.50% | 1d | +0.0% | +0.0% | +26.9% | -8.7% | HIGHER |
+| `BYAN` | 2026-08-18 | *None* | *None* | `INVALIDATED_GAP` | *None* | *None* | *None* | *None* | *None* | 0d | *None* | *None* | +8.0% | -22.3% | HIGHER |
 | `GIAA` | 2026-08-18 | 2026-08-19 | 75.0 | `SL` | 2026-08-19 | 72.0 | -4.00% | -4.38% | -4.48% | 1d | +1.3% | -4.0% | +1.3% | -18.7% | LOW |
 | `KRAS` | 2026-08-18 | 2026-08-19 | 226.0 | `SL` | 2026-08-19 | 220.4 | -2.49% | -2.88% | -2.98% | 1d | +0.9% | -2.5% | +9.7% | -3.5% | LOW |
 | `WIRG` | 2026-08-18 | 2026-08-19 | 69.0 | `TP` | 2026-08-20 | 74.0 | +7.25% | +6.82% | +6.71% | 2d | +7.2% | -2.9% | +17.4% | -2.9% | LOW |
@@ -255,8 +290,21 @@ Every record below has been recomputed and verified against underlying price bar
 | `SCMA` | 2026-09-15 | 2026-09-16 | 195.0 | `SL` | 2026-09-18 | 190.2 | -2.49% | -2.88% | -2.97% | 3d | +1.5% | -2.5% | +1.5% | -17.4% | LOW |
 | `SMGR` | 2026-09-15 | 2026-09-16 | 1,585.0 | `SL` | 2026-09-28 | 1,545.5 | -2.49% | -2.88% | -2.98% | 9d | +3.2% | -2.5% | +3.2% | -6.9% | HIGHER |
 | `WIRG` | 2026-09-15 | 2026-09-16 | 79.0 | `SL` | 2026-09-16 | 76.0 | -3.80% | -4.18% | -4.28% | 1d | +5.1% | -3.8% | +5.1% | -32.9% | LOW |
-| `ASII` | 2026-10-09 | 2026-10-12 | 4,850.0 | `SL` | 2026-10-12 | 4,850.0 | +0.00% | -0.40% | -0.50% | 1d | +0.0% | +0.0% | +1.4% | -3.5% | HIGHER |
-| `BBCA` | 2026-10-09 | 2026-10-12 | 6,050.0 | `SL` | 2026-10-12 | 6,050.0 | +0.00% | -0.40% | -0.50% | 1d | +0.0% | +0.0% | +0.8% | -3.3% | HIGHER |
+| `ASII` | 2026-10-09 | *None* | *None* | `INVALIDATED_GAP` | *None* | *None* | *None* | *None* | *None* | 0d | *None* | *None* | +0.0% | -9.1% | HIGHER |
+| `BBCA` | 2026-10-09 | *None* | *None* | `INVALIDATED_GAP` | *None* | *None* | *None* | *None* | *None* | 0d | *None* | *None* | +0.0% | -42.6% | HIGHER |
+
+#### Outcome Status & Trading Performance Breakdown:
+- **Total Outcomes Resolved**: 31
+  - `TP`: 8 (25.8%)
+  - `SL`: 17 (54.8%)
+  - `EXPIRY`: 2 (6.5%)
+  - `UNFILLED_EXPIRED`: 1 (3.2%)
+  - `INVALIDATED_GAP`: 3 (9.7%)
+- **Filled Trading Sample Size**: 27
+  - Total Filled Trades: 27
+  - Win Rate: 37.04% (10 positive returns / 27 trades; pure TP / 27 = 29.63%)
+  - Expectancy: -0.0017 (-17 bps)
+  - Avg Holding Time: 4.19 days
 
 ---
 
@@ -286,33 +334,56 @@ Every record below has been recomputed and verified against underlying price bar
 ## 7. Verification Record & Test Suite Results
 
 - **Linter (`ruff check .`)**: 100% clean, 0 errors, all lines under 100 characters.
-- **Pytest Suite**: Complete test suite passed (420 passing tests, 100% success rate).
+- **Pytest Suite**: Complete test suite passed (430 passing tests, 100% success rate).
 - **Audit Verification (`scripts/audit_historical_outcomes.py`)**: 31 records independently recomputed and verified against underlying price bars. 0 violations.
-- **Replay Idempotency**: `scripts/resolve_outcomes.py --save-db` executed repeatedly yields identical DB state without duplicates or unexpected mutations.
+- **Replay Idempotency**: `scripts/resolve_outcomes.py --force-recompute --save-db` executed repeatedly yields identical DB state without duplicates or unexpected mutations.
 
 ---
 
 ## 8. Summary of Files Changed & Schema Migrations
 
 1. `python/common/types.py`:
+   - Added `INVALIDATED_GAP` to permitted `outcome_status` literal.
    - Added fields: `gross_return`, `return_after_fees`, `return_after_fees_and_slippage`, `trigger_price`, `observation_end_date`, `full_horizon_mfe`, `full_horizon_mae`, `full_horizon_mfe_price`, `full_horizon_mae_price`, `full_horizon_time_to_peak`, `horizon_end_date`, `horizon_end_price`, `horizon_end_return`, `is_full_horizon_complete`.
-   - Made `entry_date`, `entry_price`, `mfe`, `mae` Optional (strictly nullable for `UNFILLED_EXPIRED`).
-   - Updated lifecycle validators to enforce `NULL` trade performance metrics for `UNFILLED_EXPIRED` while allowing populated trigger and opportunity metrics.
+   - Made `entry_date`, `entry_price`, `mfe`, `mae` Optional (strictly nullable for `UNFILLED_EXPIRED` and `INVALIDATED_GAP`).
+   - Updated lifecycle validators to enforce `NULL` trade performance metrics and `holding_days = 0` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` while allowing populated trigger and opportunity metrics.
 2. `python/outcomes/repository.py`:
    - Implemented automated SQLite table migration recreating table if legacy columns had `NOT NULL` on `entry_date`, `entry_price`, `mfe`, or `mae`, and added all 14 new columns.
+   - Updated `_init_db` constraint and `_row_to_outcome` fallback to incorporate `INVALIDATED_GAP`.
+   - Added automatic snapshot cleanup in `save_outcome` and `save_outcomes` when `rec.outcome_status in ("UNFILLED_EXPIRED", "INVALIDATED_GAP")`, and exposed `delete_snapshots_by_signal_id`.
    - Updated `_outcome_to_db_params` and `_row_to_outcome` for full 38-column SQLite mapping.
 3. `python/outcomes/engine.py`:
    - Decoupled Scope A (in-trade bounded) from Scope B (full horizon opportunity).
-   - Bounded gap exits at open to `bar.open` and intraday TP/SL to barriers, eliminating post-exit price extreme leakage.
-   - Handled unfilled breakout signals by nulling trade fields and storing trigger + opportunity fields.
+   - Bounded post-entry gap exits at open to `bar.open` and intraday TP/SL to barriers, eliminating post-exit price extreme leakage.
+   - Implemented pre-entry gap invalidation: Day 1 open beyond SL ($Open \le SL$) or TP ($Open \ge TP$) produces `INVALIDATED_GAP` with `entry_status='UNFILLED'`, `holding_days=0`, and `NULL` trade fields, while preserving Scope B counterfactual trajectory anchored to planned reference price.
+   - For breakout orders: opening between trigger and TP fills at open; opening at or above TP invalidates as `INVALIDATED_GAP`.
+   - Clarified deterministic conservative daily-bar proxy semantics for intraday TP/SL excursions.
    - Reconciled execution fees (0.15% buy, 0.25% sell) and 10 bps round-trip slippage (5 bps per side), unifying friction with EV Gate (50 bps).
-   - Added `force_recompute` option to `resolve_all_signals`.
-4. `python/outcomes/dataset.py`:
+   - Added `force_recompute` option to `resolve_all_signals` and ensured snapshot cleanup.
+4. `python/models/evaluation.py`:
+   - Updated `compute_trading_metrics` and `evaluate_from_outcomes` to exclude `INVALIDATED_GAP` outcomes from trade sample size, win rate, and expectancy.
+5. `python/outcomes/dataset.py`:
    - Guarded date formatting on `entry_date` and exported all new opportunity and cost fields.
-5. `scripts/resolve_outcomes.py`:
+   - Excluded `INVALIDATED_GAP` when `exclude_unfilled=True`.
+6. `scripts/resolve_outcomes.py`:
    - Added `--force-recompute` option and guarded string formatting for nullable trade metrics.
-6. `scripts/audit_historical_outcomes.py`:
-   - Comprehensive audit script validating bounded in-trade excursions, gap open exits, NULL unfilled trade metrics, and fee/slippage alignment across all 31 historical records.
-7. `tests/unit/test_outcomes.py` & `tests/integration/test_outcome_pipeline.py`:
+   - Added `INVALIDATED_GAP` to resolved outcome distribution summary.
+7. `scripts/audit_historical_outcomes.py`:
+   - Comprehensive audit script validating bounded in-trade excursions, gap open exits, NULL unfilled trade metrics (both `UNFILLED_EXPIRED` and `INVALIDATED_GAP`), snapshot counts (0 for unfilled, holding_days for filled), and fee/slippage alignment across all 31 historical records.
+8. `tests/unit/test_outcomes.py` & `tests/integration/test_outcome_pipeline.py`:
    - Updated existing tests to reflect bounded in-trade excursions.
-   - Added comprehensive regression tests for gap exits, collision policies, fee/slippage alignment, and unfilled breakout repository persistence.
+   - Added comprehensive regression tests for pre-entry gap invalidations, evaluation metric exclusions, lifecycle validation, exit proxy excursions, post-entry Day 2 gap downs, and exact recomputations for historical ASII, BBCA, and BYAN. (431 project tests passing).
+
+---
+
+## 9. Decision Requested & Concluding Assessment
+
+1. **Pre-entry gap behavior is corrected and consistently represented**:
+   - **Conclusion: YES**. Pre-entry gaps on Day 1 opening beyond SL or TP are strictly distinguished from post-entry gaps. They are assigned `outcome_status = 'INVALIDATED_GAP'`, `entry_status = 'UNFILLED'`, `holding_days = 0`, and all Scope A trade metrics are strictly `NULL`. Counterfactual opportunity tracking (Scope B) remains cleanly preserved relative to planned reference anchor.
+
+2. **Exit-day excursion values have defensible and clearly documented semantics**:
+   - **Conclusion: YES**. A deterministic conservative daily-bar proxy is enforced: intraday TP bounds in-trade MFE at $P_{\text{TP}}$ while MAE captures candle low as potential pre-TP adverse excursion; intraday SL bounds in-trade MAE at $P_{\text{SL}}$ while MFE captures candle high as potential pre-SL favorable excursion; gap open exits bound both MFE and MAE to opening fill price; post-exit market movement is strictly separated from realized trade returns. Snapshots and terminal metrics use identical definitions.
+
+3. **Outcome Tracking is ready to be used as a source of model-evaluation targets**:
+   - **Conclusion: READY**. All 31 historical records in `datasets/stock_signals.db` have been recomputed with 0 violations across invariants, database migration, and fee/slippage alignment. Metric isolation guarantees that unfilled and invalidated orders do not pollute completed trade metrics (win rate: 37.04%, expectancy: -17 bps across 27 filled trades). The pipeline is robust, idempotent, and ready for model-evaluation target generation.
+

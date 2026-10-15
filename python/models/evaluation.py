@@ -89,7 +89,11 @@ def compute_trading_metrics(
             pairs = [
                 (r, str(s).strip().upper())
                 for r, s in zip(raw_ret_list, outcome_statuses, strict=False)
-                if s is not None and str(s).strip().upper() not in ("OPEN", "UNFILLED_EXPIRED")
+                if (
+                    s is not None
+                    and str(s).strip().upper()
+                    not in ("OPEN", "UNFILLED_EXPIRED", "INVALIDATED_GAP")
+                )
             ]
             raw_list = [r if r is not None and math.isfinite(r) else 0.0 for r, _ in pairs]
             clean_statuses = [s for _, s in pairs]
@@ -342,7 +346,7 @@ class EvaluationEngine:
         filled_trades = [
             out
             for out in outcomes
-            if out.outcome_status not in ("OPEN", "UNFILLED_EXPIRED")
+            if out.outcome_status not in ("OPEN", "UNFILLED_EXPIRED", "INVALIDATED_GAP")
         ]
         returns = [
             out.realized_return for out in filled_trades if out.realized_return is not None

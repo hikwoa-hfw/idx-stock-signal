@@ -1176,26 +1176,42 @@ class SignalOutcomeRecord(BaseModel):
     signal_id: str
     ticker: str
     signal_date: date
-    entry_date: date
-    entry_price: float
+    entry_date: Optional[date] = None
+    entry_price: Optional[float] = None
     entry_status: str = "FILLED"
     outcome_status: str = "OPEN"
     realized_return: Optional[float] = None
     holding_days: int = 0
-    mfe: float = 0.0
-    mae: float = 0.0
+    mfe: Optional[float] = None
+    mae: Optional[float] = None
     mfe_price: Optional[float] = None
     mae_price: Optional[float] = None
     time_to_peak: Optional[int] = None
     time_to_tp: Optional[int] = None
     time_to_sl: Optional[int] = None
     net_return: Optional[float] = None
+    gross_return: Optional[float] = None
+    return_after_fees: Optional[float] = None
+    return_after_fees_and_slippage: Optional[float] = None
     exit_date: Optional[date] = None
     exit_price: Optional[float] = None
     exit_reason: Optional[str] = None
     resolved_at: Optional[datetime] = None
     notes: Optional[str] = None
     mode: Optional[str] = None
+
+    # Full-horizon opportunity and unexecuted order fields
+    trigger_price: Optional[float] = None
+    observation_end_date: Optional[date] = None
+    full_horizon_mfe: Optional[float] = None
+    full_horizon_mae: Optional[float] = None
+    full_horizon_mfe_price: Optional[float] = None
+    full_horizon_mae_price: Optional[float] = None
+    full_horizon_time_to_peak: Optional[int] = None
+    horizon_end_date: Optional[date] = None
+    horizon_end_price: Optional[float] = None
+    horizon_end_return: Optional[float] = None
+    is_full_horizon_complete: bool = False
 
     @property
     def mode_id(self) -> Optional[str]:
@@ -1246,7 +1262,9 @@ class SignalOutcomeRecord(BaseModel):
 
     @field_validator("entry_price")
     @classmethod
-    def validate_entry_price(cls, v: float) -> float:
+    def validate_entry_price(cls, v: Optional[float]) -> Optional[float]:
+        if v is None:
+            return None
         if not math.isfinite(v) or v <= 0:
             raise ValueError(f"entry_price must be positive and finite, got {v}")
         return v
@@ -1261,7 +1279,22 @@ class SignalOutcomeRecord(BaseModel):
         return v
 
     @field_validator(
-        "realized_return", "mfe", "mae", "mfe_price", "mae_price", "net_return"
+        "realized_return",
+        "mfe",
+        "mae",
+        "mfe_price",
+        "mae_price",
+        "net_return",
+        "gross_return",
+        "return_after_fees",
+        "return_after_fees_and_slippage",
+        "trigger_price",
+        "full_horizon_mfe",
+        "full_horizon_mae",
+        "full_horizon_mfe_price",
+        "full_horizon_mae_price",
+        "horizon_end_price",
+        "horizon_end_return",
     )
     @classmethod
     def validate_finite_return_metrics(cls, v: Optional[float]) -> Optional[float]:
@@ -1276,7 +1309,9 @@ class SignalOutcomeRecord(BaseModel):
             raise ValueError(f"holding_days cannot be negative, got {v}")
         return v
 
-    @field_validator("time_to_peak", "time_to_tp", "time_to_sl")
+    @field_validator(
+        "time_to_peak", "time_to_tp", "time_to_sl", "full_horizon_time_to_peak"
+    )
     @classmethod
     def validate_time_to_metrics(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
@@ -1293,7 +1328,7 @@ class SignalOutcomeRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_outcome_lifecycle(self) -> "SignalOutcomeRecord":
-        if self.entry_date < self.signal_date:
+        if self.entry_date is not None and self.entry_date < self.signal_date:
             raise ValueError(
                 f"entry_date ({self.entry_date}) cannot precede signal_date ({self.signal_date})"
             )
@@ -1312,12 +1347,22 @@ class SignalOutcomeRecord(BaseModel):
             self.entry_status = "UNFILLED"
             if self.realized_return is not None:
                 raise ValueError("Unfilled expired signal cannot have realized_return")
+            if self.gross_return is not None:
+                raise ValueError("Unfilled expired signal cannot have gross_return")
+            if self.return_after_fees is not None:
+                raise ValueError("Unfilled expired signal cannot have return_after_fees")
+            if self.return_after_fees_and_slippage is not None:
+                raise ValueError(
+                    "Unfilled expired signal cannot have return_after_fees_and_slippage"
+                )
             if self.holding_days != 0:
                 raise ValueError(
                     f"Unfilled expired signal must have holding_days == 0, got {self.holding_days}"
                 )
             if self.net_return is not None:
                 raise ValueError("Unfilled expired signal cannot have net_return")
+            if self.exit_price is not None:
+                raise ValueError("Unfilled expired signal cannot have exit_price")
             if self.exit_reason is None:
                 self.exit_reason = "UNFILLED_EXPIRED"
             if self.resolved_at is None:
@@ -1326,6 +1371,14 @@ class SignalOutcomeRecord(BaseModel):
             if self.entry_status == "UNFILLED":
                 raise ValueError(
                     f"Resolved outcome ({self.outcome_status}) cannot have entry_status 'UNFILLED'"
+                )
+            if self.entry_price is None:
+                raise ValueError(
+                    f"Resolved outcome ({self.outcome_status}) must specify entry_price"
+                )
+            if self.entry_date is None:
+                raise ValueError(
+                    f"Resolved outcome ({self.outcome_status}) must specify entry_date"
                 )
             if self.exit_price is None:
                 raise ValueError(
@@ -1341,6 +1394,8 @@ class SignalOutcomeRecord(BaseModel):
                 )
             if self.realized_return is None:
                 self.realized_return = (self.exit_price - self.entry_price) / self.entry_price
+            if self.gross_return is None:
+                self.gross_return = self.realized_return
             if self.exit_reason is None:
                 self.exit_reason = self.outcome_status
             if self.resolved_at is None:

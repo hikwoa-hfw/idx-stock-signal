@@ -89,13 +89,16 @@ def test_tp_hit_before_sl():
     assert outcome.exit_price == pytest.approx(105.0)
     assert outcome.realized_return == pytest.approx(0.05)
     assert outcome.exit_reason == "TP"
-    assert outcome.mfe == pytest.approx(0.06)
+    # In-trade MFE bounded by TP barrier (105.0)
+    assert outcome.mfe == pytest.approx(0.05)
     assert outcome.mae == pytest.approx(-0.01)
+    # Full horizon opportunity captures full candle high (106.0)
+    assert outcome.full_horizon_mfe == pytest.approx(0.06)
 
     assert len(snapshots) == 1
     assert snapshots[0].holding_day == 1
     assert snapshots[0].close_price == 104.0
-    assert snapshots[0].mfe_so_far == pytest.approx(0.06)
+    assert snapshots[0].mfe_so_far == pytest.approx(0.05)
     assert snapshots[0].mae_so_far == pytest.approx(-0.01)
 
 
@@ -118,7 +121,10 @@ def test_sl_hit_before_tp():
     assert outcome.realized_return == pytest.approx(-0.05)
     assert outcome.exit_reason == "SL"
     assert outcome.mfe == pytest.approx(0.02)
-    assert outcome.mae == pytest.approx(-0.06)
+    # In-trade MAE bounded by SL barrier (95.0)
+    assert outcome.mae == pytest.approx(-0.05)
+    # Full horizon opportunity captures full candle low (94.0)
+    assert outcome.full_horizon_mae == pytest.approx(-0.06)
 
 
 def test_max_holding_days_expiry():
@@ -227,8 +233,10 @@ def test_mfe_and_mae_calculation_multi_day():
     assert outcome.exit_date == date(2026, 1, 4)
     assert outcome.exit_price == pytest.approx(110.0)
     assert outcome.realized_return == pytest.approx(0.10)
-    # Highest high across days 1..3 was 111.0 -> MFE = +11%
-    assert outcome.mfe == pytest.approx(0.11)
+    # In-trade MFE bounded by TP barrier (110.0) -> +10%
+    assert outcome.mfe == pytest.approx(0.10)
+    # Full horizon MFE across all 3 days reaches 111.0 (+11%)
+    assert outcome.full_horizon_mfe == pytest.approx(0.11)
     # Lowest low across days 1..3 was 97.0 -> MAE = -3%
     assert outcome.mae == pytest.approx(-0.03)
 
@@ -243,7 +251,7 @@ def test_mfe_and_mae_calculation_multi_day():
     assert snapshots[1].mae_so_far == pytest.approx(-0.03)
 
     assert snapshots[2].holding_day == 3
-    assert snapshots[2].mfe_so_far == pytest.approx(0.11)
+    assert snapshots[2].mfe_so_far == pytest.approx(0.10)
     assert snapshots[2].mae_so_far == pytest.approx(-0.03)
 
 
@@ -849,19 +857,23 @@ def test_breakout_entry_bar_gap_down_then_surge():
     # Open is 101 (< SL 102), low 100, high 115 (>= TP 112), close 114
     bar = _make_bar(date(2026, 1, 2), open_=101.0, high=115.0, low=100.0, close=114.0)
 
-    # Conservative exits at sl_price (102.0), NOT at open (101.0)
+    # Conservative exits at sl_price (102.0), NOT at open (101.0); MFE bounded by entry (106.0)
     engine_cons = OutcomeEngine(ambiguity_policy="conservative")
     out_cons, _ = engine_cons.evaluate_signal(signal, [bar])
     assert out_cons is not None
     assert out_cons.outcome_status == "SL"
     assert out_cons.exit_price == 102.0
+    assert out_cons.mfe == pytest.approx(0.0)
+    assert out_cons.mae == pytest.approx((102.0 - 106.0) / 106.0)
 
-    # Optimistic resolves to TP (112.0)
+    # Optimistic resolves to TP (112.0); MAE bounded by entry (106.0)
     engine_opt = OutcomeEngine(ambiguity_policy="optimistic")
     out_opt, _ = engine_opt.evaluate_signal(signal, [bar])
     assert out_opt is not None
     assert out_opt.outcome_status == "TP"
     assert out_opt.exit_price == pytest.approx(112.0)
+    assert out_opt.mfe == pytest.approx((112.0 - 106.0) / 106.0)
+    assert out_opt.mae == pytest.approx(0.0)
 
     # Ambiguous resolves to AMBIGUOUS at close (114.0)
     engine_ambig = OutcomeEngine(ambiguity_policy="ambiguous")
@@ -869,6 +881,45 @@ def test_breakout_entry_bar_gap_down_then_surge():
     assert out_ambig is not None
     assert out_ambig.outcome_status == "AMBIGUOUS"
     assert out_ambig.exit_price == pytest.approx(114.0)
+    assert out_ambig.mfe == pytest.approx((112.0 - 106.0) / 106.0)
+    assert out_ambig.mae == pytest.approx((102.0 - 106.0) / 106.0)
+
+
+def test_breakout_entry_bar_tp_no_post_exit_mae_leakage():
+    """Verify that when a breakout hits TP, afternoon sell-off does not leak into MAE."""
+    signal = SignalRecord(
+        signal_id="sig-bo-tp-leakage",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=112.0,
+        sl_price=100.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+    # Day 1: Open 104, surges past trigger 106 to TP 112 (high 113).
+    # Then in afternoon closes down at 103 (below entry 106, but > SL 100).
+    bar = _make_bar(date(2026, 1, 2), open_=104.0, high=113.0, low=102.0, close=103.0)
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, [bar])
+
+    assert outcome is not None
+    assert outcome.outcome_status == "TP"
+    assert outcome.exit_price == pytest.approx(112.0)
+    assert outcome.holding_days == 1
+    # In-trade MFE is bounded by TP (112.0 vs entry 106.0)
+    assert outcome.mfe == pytest.approx((112.0 - 106.0) / 106.0)
+    # In-trade MAE is 0.0 because the afternoon drop to close 103 happened AFTER exit at TP
+    assert outcome.mae == pytest.approx(0.0)
+    # Full horizon opportunity captures the afternoon drop
+    assert outcome.full_horizon_mae == pytest.approx((102.0 - 106.0) / 106.0)
 
 
 def test_extended_metrics_mfe_mae_price_and_time_to_events():
@@ -892,20 +943,33 @@ def test_extended_metrics_mfe_mae_price_and_time_to_events():
     assert outcome.exit_price == pytest.approx(110.0)
     assert outcome.holding_days == 3
 
-    # MFE / MAE in price and percentage
-    assert outcome.mfe == pytest.approx(0.11)  # (111 - 100) / 100
-    assert outcome.mae == pytest.approx(-0.03)  # (97 - 100) / 100
-    assert outcome.mfe_price == pytest.approx(11.0)
+    # In-trade MFE / MAE bounded by exit barrier TP (110.0)
+    assert outcome.mfe == pytest.approx(0.10)
+    assert outcome.mae == pytest.approx(-0.03)
+    assert outcome.mfe_price == pytest.approx(10.0)
     assert outcome.mae_price == pytest.approx(-3.0)
 
+    # Full-horizon opportunity metrics capture high 111.0
+    assert outcome.full_horizon_mfe == pytest.approx(0.11)
+    assert outcome.full_horizon_mfe_price == pytest.approx(11.0)
+    assert outcome.full_horizon_time_to_peak == 3
+
     # Time to events
-    assert outcome.time_to_peak == 3  # High 111 occurred on Day 3
+    assert outcome.time_to_peak == 3  # In-trade peak reached on Day 3
     assert outcome.time_to_tp == 3
     assert outcome.time_to_sl is None
 
-    # Net return after transaction costs (buy 0.15%, sell 0.25%)
-    expected_net = ((110.0 * (1.0 - 0.0025)) / (100.0 * (1.0 + 0.0015))) - 1.0
-    assert outcome.net_return == pytest.approx(expected_net)
+    # Return after brokerage commissions only (buy 0.15%, sell 0.25%)
+    expected_fees = ((110.0 * (1.0 - 0.0025)) / (100.0 * (1.0 + 0.0015))) - 1.0
+    assert outcome.return_after_fees == pytest.approx(expected_fees)
+
+    # Net return after all modeled costs (fees + 10 bps slippage)
+    expected_all = (
+        (110.0 * (1.0 - 0.0005) * (1.0 - 0.0025))
+        / (100.0 * (1.0 + 0.0005) * (1.0 + 0.0015))
+    ) - 1.0
+    assert outcome.net_return == pytest.approx(expected_all)
+    assert outcome.return_after_fees_and_slippage == pytest.approx(expected_all)
 
 
 def test_mfe_never_negative_and_mae_never_positive():
@@ -1093,8 +1157,19 @@ def test_breakout_policy_trigger_beyond_max_holding_days_expires_unfilled():
     assert outcome.outcome_status == "UNFILLED_EXPIRED"
     assert outcome.entry_status == "UNFILLED"
     assert outcome.holding_days == 0
+    assert outcome.entry_date is None
+    assert outcome.entry_price is None
+    assert outcome.exit_date is None
+    assert outcome.exit_price is None
     assert outcome.realized_return is None
-    assert outcome.exit_date == date(2026, 1, 4)
+    assert outcome.gross_return is None
+    assert outcome.return_after_fees is None
+    assert outcome.return_after_fees_and_slippage is None
+    assert outcome.net_return is None
+    assert outcome.mfe is None
+    assert outcome.mae is None
+    assert outcome.trigger_price == 106.0
+    assert outcome.observation_end_date == date(2026, 1, 4)
     assert outcome.notes is not None
     assert "105.0" in outcome.notes
 
@@ -1187,22 +1262,216 @@ def test_entry_status_lifecycle_and_persistence():
         signal_id="sig-stat-unfill",
         ticker="TLKM",
         signal_date=date(2026, 1, 1),
-        entry_date=date(2026, 1, 2),
-        entry_price=105.0,
+        entry_date=None,
+        entry_price=None,
         entry_status="UNFILLED",
         outcome_status="UNFILLED_EXPIRED",
         holding_days=0,
-        exit_date=date(2026, 1, 6),
+        trigger_price=105.0,
+        observation_end_date=date(2026, 1, 6),
     )
     repo.save_outcomes([out_fill, out_unfill])
 
     f1 = repo.get_outcome_by_signal_id("sig-stat-fill")
     assert f1 is not None
     assert f1.entry_status == "FILLED"
+    assert f1.entry_price == 100.0
 
     f2 = repo.get_outcome_by_signal_id("sig-stat-unfill")
     assert f2 is not None
     assert f2.entry_status == "UNFILLED"
+    assert f2.entry_price is None
+    assert f2.entry_date is None
+    assert f2.exit_price is None
+    assert f2.exit_date is None
+    assert f2.trigger_price == 105.0
+
+
+def test_gap_through_tp_at_open():
+    """Verify gap-through TP at open bounds excursions to open price."""
+    signal = _make_signal(tp_price=105.0, sl_price=95.0, max_holding_days=5)
+    bars = [
+        # Day 1: normal bar
+        _make_bar(date(2026, 1, 2), open_=100.0, high=102.0, low=99.0, close=101.0),
+        # Day 2: gaps open above TP at 108.0, intraday high 115.0, low 107.0, close 112.0
+        _make_bar(date(2026, 1, 3), open_=108.0, high=115.0, low=107.0, close=112.0),
+        # Day 3: future bar (should not be in trade)
+        _make_bar(date(2026, 1, 4), open_=112.0, high=120.0, low=110.0, close=118.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "TP"
+    assert outcome.exit_price == pytest.approx(108.0)
+    assert outcome.holding_days == 2
+    # In-trade MFE bounded by gap exit at 108.0 (+8%), NOT 115.0 (+15%)
+    assert outcome.mfe == pytest.approx(0.08)
+    assert outcome.mfe_price == pytest.approx(8.0)
+    # Full horizon opportunity captures high 120.0 (+20%)
+    assert outcome.full_horizon_mfe == pytest.approx(0.20)
+    assert outcome.full_horizon_mfe_price == pytest.approx(20.0)
+    # Day 2 snapshot MFE so far is bounded by 108.0
+    assert snapshots[1].mfe_so_far == pytest.approx(0.08)
+
+
+def test_gap_through_sl_at_open():
+    """Verify gap-through SL at open bounds excursions to open price."""
+    signal = _make_signal(tp_price=110.0, sl_price=95.0, max_holding_days=5)
+    bars = [
+        # Day 1: normal bar
+        _make_bar(date(2026, 1, 2), open_=100.0, high=102.0, low=98.0, close=99.0),
+        # Day 2: gaps open below SL at 92.0, then rallies intraday to 99.0, low 90.0, close 98.0
+        _make_bar(date(2026, 1, 3), open_=92.0, high=99.0, low=90.0, close=98.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "SL"
+    assert outcome.exit_price == pytest.approx(92.0)
+    assert outcome.holding_days == 2
+    # In-trade MAE bounded by gap open at 92.0 (-8%), NOT 90.0 (-10%)
+    assert outcome.mae == pytest.approx(-0.08)
+    # In-trade MFE does not include intraday rally to 99.0 occurring after exit
+    assert outcome.mfe == pytest.approx(0.02)  # from Day 1 high 102.0
+    # Full horizon opportunity captures full candle extremes
+    assert outcome.full_horizon_mae == pytest.approx(-0.10)
+
+
+def test_same_candle_collision_ambiguity_policies():
+    """Verify collision behavior under conservative, optimistic, and ambiguous policies."""
+    signal = _make_signal(tp_price=105.0, sl_price=95.0, max_holding_days=5)
+    # Candle touching both TP (105) and SL (95): Open 100, High 106, Low 94, Close 99
+    collision_bar = _make_bar(date(2026, 1, 2), open_=100.0, high=106.0, low=94.0, close=99.0)
+
+    # 1. Conservative (SL first): exits at SL 95 (-5%), MFE bounded by open 100 (0%), MAE -5%
+    eng_cons = OutcomeEngine(ambiguity_policy="conservative")
+    out_cons, _ = eng_cons.evaluate_signal(signal, [collision_bar])
+    assert out_cons is not None
+    assert out_cons.outcome_status == "SL"
+    assert out_cons.exit_price == pytest.approx(95.0)
+    assert out_cons.exit_reason == "SL"
+    assert out_cons.mfe == pytest.approx(0.0)
+    assert out_cons.mae == pytest.approx(-0.05)
+    assert out_cons.full_horizon_mfe == pytest.approx(0.06)
+    assert out_cons.full_horizon_mae == pytest.approx(-0.06)
+
+    # 2. Optimistic (TP first): exits at TP 105 (+5%), MFE +5%, MAE bounded by open 100 (0%)
+    eng_opt = OutcomeEngine(ambiguity_policy="optimistic")
+    out_opt, _ = eng_opt.evaluate_signal(signal, [collision_bar])
+    assert out_opt is not None
+    assert out_opt.outcome_status == "TP"
+    assert out_opt.exit_price == pytest.approx(105.0)
+    assert out_opt.exit_reason == "TP"
+    assert out_opt.mfe == pytest.approx(0.05)
+    assert out_opt.mae == pytest.approx(0.0)
+    assert out_opt.full_horizon_mfe == pytest.approx(0.06)
+    assert out_opt.full_horizon_mae == pytest.approx(-0.06)
+
+    # 3. Ambiguous (closes at market close 99): MFE bounded by TP 105 (+5%), MAE by SL 95 (-5%)
+    eng_amb = OutcomeEngine(ambiguity_policy="ambiguous")
+    out_amb, _ = eng_amb.evaluate_signal(signal, [collision_bar])
+    assert out_amb is not None
+    assert out_amb.outcome_status == "AMBIGUOUS"
+    assert out_amb.exit_price == pytest.approx(99.0)  # Close
+    assert out_amb.exit_reason == "AMBIGUOUS"
+    assert out_amb.mfe == pytest.approx(0.05)
+    assert out_amb.mae == pytest.approx(-0.05)
+    assert out_amb.full_horizon_mfe == pytest.approx(0.06)
+    assert out_amb.full_horizon_mae == pytest.approx(-0.06)
+
+
+def test_fees_and_slippage_accounting_consistency():
+    """Verify separate fee and slippage metrics and alignment with EV Gate friction."""
+    signal = _make_signal(tp_price=105.0, sl_price=95.0, max_holding_days=5)
+    # Trade exiting at break-even (exit_price == entry_price == 100.0)
+    flat_bar = _make_bar(date(2026, 1, 2), open_=100.0, high=100.0, low=100.0, close=100.0)
+    engine = OutcomeEngine(commission_buy=0.0015, commission_sell=0.0025, slippage_bps=10.0)
+
+    # Immediate exit at horizon end with max_holding_days=1
+    signal.max_holding_days = 1
+    outcome, _ = engine.evaluate_signal(signal, [flat_bar])
+
+    assert outcome is not None
+    assert outcome.outcome_status == "EXPIRY"
+    assert outcome.exit_price == pytest.approx(100.0)
+    assert outcome.realized_return == pytest.approx(0.0)
+    assert outcome.gross_return == pytest.approx(0.0)
+
+    # Commissions-only return: ((100 * 0.9975) / (100 * 1.0015)) - 1.0 ~ -0.3994%
+    expected_fees = (0.9975 / 1.0015) - 1.0
+    assert outcome.return_after_fees == pytest.approx(expected_fees, abs=1e-6)
+
+    # Commissions + Slippage return (5 bps each side = 10 bps total round trip):
+    # ((100 * 0.9995 * 0.9975) / (100 * 1.0005 * 1.0015)) - 1.0 ~ -0.49895% (~ 50 bps friction)
+    expected_all = ((0.9995 * 0.9975) / (1.0005 * 1.0015)) - 1.0
+    assert outcome.net_return == pytest.approx(expected_all, abs=1e-6)
+    assert outcome.return_after_fees_and_slippage == pytest.approx(expected_all, abs=1e-6)
+    assert abs(outcome.net_return - (-0.0050)) < 1.5e-5  # Matches EV Gate 50 bps friction
+
+
+def test_unfilled_breakout_expiry_null_metrics_and_repository_persistence():
+    """Verify UNFILLED_EXPIRED stores NULL trade metrics and persists cleanly in repository."""
+    repo = OutcomeRepository(":memory:")
+    signal = SignalRecord(
+        signal_id="sig-unfilled-repo",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=110.0,
+        entry_high=112.0,
+        tp_price=118.0,
+        sl_price=105.0,
+        max_holding_days=3,
+        predicted_probability=0.65,
+        score=75.0,
+        model_version="v1",
+    )
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=104.0, low=98.0, close=102.0),
+        _make_bar(date(2026, 1, 3), open_=102.0, high=106.0, low=100.0, close=104.0),
+        _make_bar(date(2026, 1, 4), open_=104.0, high=107.0, low=101.0, close=105.0),
+    ]
+    engine = OutcomeEngine(outcome_repo=repo)
+    outcome, _ = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "UNFILLED_EXPIRED"
+    assert outcome.entry_status == "UNFILLED"
+    assert outcome.entry_date is None
+    assert outcome.entry_price is None
+    assert outcome.exit_date is None
+    assert outcome.exit_price is None
+    assert outcome.mfe is None
+    assert outcome.mae is None
+    assert outcome.realized_return is None
+    assert outcome.net_return is None
+    assert outcome.trigger_price == 110.0
+    assert outcome.observation_end_date == date(2026, 1, 4)
+    assert outcome.full_horizon_mfe is not None
+    assert outcome.is_full_horizon_complete is True
+
+    # Persist and re-fetch from SQLite
+    repo.save_outcome(outcome)
+    fetched = repo.get_outcome_by_signal_id("sig-unfilled-repo")
+    assert fetched is not None
+    assert fetched.entry_status == "UNFILLED"
+    assert fetched.entry_price is None
+    assert fetched.entry_date is None
+    assert fetched.exit_price is None
+    assert fetched.exit_date is None
+    assert fetched.mfe is None
+    assert fetched.mae is None
+    assert fetched.realized_return is None
+    assert fetched.net_return is None
+    assert fetched.trigger_price == 110.0
+    assert fetched.observation_end_date == date(2026, 1, 4)
+    assert fetched.is_full_horizon_complete is True
+
 
 
 

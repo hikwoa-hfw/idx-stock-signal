@@ -128,7 +128,8 @@ def test_full_outcome_pipeline_lifecycle(tmp_path: Path):
     assert bbca_outcome.entry_price == 10000.0
     assert bbca_outcome.exit_price == pytest.approx(10500.0)
     assert bbca_outcome.realized_return == pytest.approx(0.05)
-    assert bbca_outcome.mfe == pytest.approx(0.06)
+    assert bbca_outcome.mfe == pytest.approx(0.05)
+    assert bbca_outcome.full_horizon_mfe == pytest.approx(0.06)
 
     bbca_snaps = out_repo.get_snapshots_by_signal_id("sig-bbca-001")
     assert len(bbca_snaps) == 2

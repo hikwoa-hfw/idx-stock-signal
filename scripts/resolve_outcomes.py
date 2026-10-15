@@ -52,12 +52,14 @@ def _print_outcomes_table(outcomes: list[SignalOutcomeRecord], limit: int = 20) 
         ret_str = f"{o.realized_return * 100:+.2f}%" if o.realized_return is not None else "-"
         exit_dt_str = str(o.exit_date) if o.exit_date else "-"
         exit_px_str = f"{o.exit_price:,.1f}" if o.exit_price is not None else "-"
-        mfe_str = f"{o.mfe * 100:+.2f}%"
-        mae_str = f"{o.mae * 100:+.2f}%"
+        mfe_str = f"{o.mfe * 100:+.2f}%" if o.mfe is not None else "-"
+        mae_str = f"{o.mae * 100:+.2f}%" if o.mae is not None else "-"
+        entry_dt_str = str(o.entry_date) if o.entry_date else "-"
+        entry_px_str = f"{o.entry_price:,.1f}" if o.entry_price is not None else "-"
 
         print(
-            f"{o.ticker:<8} {str(o.signal_date):<11} {str(o.entry_date):<11} "
-            f"{o.entry_price:<10,.1f} {o.outcome_status:<16} {exit_dt_str:<11} "
+            f"{o.ticker:<8} {str(o.signal_date):<11} {entry_dt_str:<11} "
+            f"{entry_px_str:<10} {o.outcome_status:<16} {exit_dt_str:<11} "
             f"{exit_px_str:<10} {ret_str:<9} {o.holding_days:<5} {mfe_str:<8} {mae_str:<8}"
         )
 
@@ -77,6 +79,7 @@ def run_resolve_outcomes(
     database_url: Optional[str] = None,
     exclude_ambiguous: bool = False,
     exclude_unfilled: bool = False,
+    force_recompute: bool = False,
 ) -> int:
     db_url = database_url or settings.database_url
     bar_repo = DailyBarRepository(db_url)
@@ -96,6 +99,7 @@ def run_resolve_outcomes(
         mode=mode,
         save=save_db,
         ambiguity_policy=ambiguity_policy,
+        force_recompute=force_recompute,
     )
 
     outcomes = [r[0] for r in results]
@@ -199,6 +203,12 @@ def main() -> None:
         help="Database URL (default: from settings).",
     )
 
+    parser.add_argument(
+        "--force-recompute",
+        action="store_true",
+        help="Recompute all outcomes even if previously resolved.",
+    )
+
     args = parser.parse_args()
     parsed_date = _parse_date(args.as_of_date)
 
@@ -214,6 +224,7 @@ def main() -> None:
             database_url=args.database_url,
             exclude_ambiguous=args.exclude_ambiguous,
             exclude_unfilled=args.exclude_unfilled,
+            force_recompute=args.force_recompute,
         )
     )
 

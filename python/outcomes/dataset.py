@@ -50,12 +50,15 @@ def build_matured_outcomes_dataset(
             "signal_id": out.signal_id,
             "ticker": out.ticker,
             "signal_date": out.signal_date.isoformat(),
-            "entry_date": out.entry_date.isoformat(),
+            "entry_date": out.entry_date.isoformat() if out.entry_date else None,
             "entry_price": out.entry_price,
             "entry_status": out.entry_status,
             "outcome_status": out.outcome_status,
             "binary_target": 1 if out.outcome_status == "TP" else 0,
             "realized_return": out.realized_return,
+            "gross_return": out.gross_return,
+            "return_after_fees": out.return_after_fees,
+            "return_after_fees_and_slippage": out.return_after_fees_and_slippage,
             "holding_days": out.holding_days,
             "mfe": out.mfe,
             "mae": out.mae,
@@ -71,6 +74,21 @@ def build_matured_outcomes_dataset(
             "resolved_at": out.resolved_at.isoformat() if out.resolved_at else None,
             "notes": out.notes,
             "mode": out.mode_id,
+            "trigger_price": out.trigger_price,
+            "observation_end_date": (
+                out.observation_end_date.isoformat() if out.observation_end_date else None
+            ),
+            "full_horizon_mfe": out.full_horizon_mfe,
+            "full_horizon_mae": out.full_horizon_mae,
+            "full_horizon_mfe_price": out.full_horizon_mfe_price,
+            "full_horizon_mae_price": out.full_horizon_mae_price,
+            "full_horizon_time_to_peak": out.full_horizon_time_to_peak,
+            "horizon_end_date": (
+                out.horizon_end_date.isoformat() if out.horizon_end_date else None
+            ),
+            "horizon_end_price": out.horizon_end_price,
+            "horizon_end_return": out.horizon_end_return,
+            "is_full_horizon_complete": out.is_full_horizon_complete,
         }
 
         signal = sig_map.get(out.signal_id) or signal_repo.get_signal_by_id(out.signal_id)

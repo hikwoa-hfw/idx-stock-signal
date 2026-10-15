@@ -16,6 +16,7 @@ def build_matured_outcomes_dataset(
     ticker: Optional[str] = None,
     mode: Optional[str] = None,
     exclude_ambiguous: bool = False,
+    exclude_unfilled: bool = False,
 ) -> pd.DataFrame:
     """Merge matured outcomes with original signal metadata and feature snapshots."""
     eff_mode = mode.strip().upper() if mode and mode != "ALL" else None
@@ -41,6 +42,8 @@ def build_matured_outcomes_dataset(
     for out in matured_outcomes:
         if exclude_ambiguous and out.outcome_status == "AMBIGUOUS":
             continue
+        if exclude_unfilled and out.outcome_status == "UNFILLED_EXPIRED":
+            continue
 
         row: dict = {
             "outcome_id": out.outcome_id,
@@ -49,12 +52,19 @@ def build_matured_outcomes_dataset(
             "signal_date": out.signal_date.isoformat(),
             "entry_date": out.entry_date.isoformat(),
             "entry_price": out.entry_price,
+            "entry_status": out.entry_status,
             "outcome_status": out.outcome_status,
             "binary_target": 1 if out.outcome_status == "TP" else 0,
             "realized_return": out.realized_return,
             "holding_days": out.holding_days,
             "mfe": out.mfe,
             "mae": out.mae,
+            "mfe_price": out.mfe_price,
+            "mae_price": out.mae_price,
+            "time_to_peak": out.time_to_peak,
+            "time_to_tp": out.time_to_tp,
+            "time_to_sl": out.time_to_sl,
+            "net_return": out.net_return,
             "exit_date": out.exit_date.isoformat() if out.exit_date else None,
             "exit_price": out.exit_price,
             "exit_reason": out.exit_reason,

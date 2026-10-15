@@ -243,3 +243,164 @@ def test_cli_resolve_outcomes_pipeline(tmp_path: Path):
     assert len(df_exported) == 1
     assert df_exported.iloc[0]["ticker"] == "TLKM"
     assert df_exported.iloc[0]["outcome_status"] == "TP"
+
+
+def test_outcome_pipeline_dual_mode_and_breakout_integration(tmp_path: Path):
+    """Integration test verifying dual-mode filtering and breakout progression through CLI."""
+    db_file = tmp_path / "dual_mode_cli.db"
+    db_url = f"sqlite:///{db_file}"
+
+    bar_repo = DailyBarRepository(db_url)
+    sig_repo = SignalRepository(db_url)
+    out_repo = OutcomeRepository(db_url)
+
+    # 1. Create one LOW_PRICE IMMEDIATE signal and one HIGHER_PRICE BREAKOUT signal
+    sig_low = SignalRecord(
+        signal_id="sig-goto-low",
+        ticker="GOTO",
+        signal_date=date(2026, 10, 1),
+        signal="BUY",
+        status="BUY",
+        entry_policy="IMMEDIATE",
+        reference_price=80.0,
+        entry_low=79.0,
+        entry_high=81.0,
+        tp_price=85.0,
+        sl_price=77.0,
+        max_holding_days=5,
+        predicted_probability=0.75,
+        expected_return=0.05,
+        score=85.0,
+        model_version="lgbm_low_v1",
+        mode="LOW_PRICE",
+        feature_snapshot={"rsi14": 45.0},
+    )
+    sig_high = SignalRecord(
+        signal_id="sig-bbca-high",
+        ticker="BBCA",
+        signal_date=date(2026, 10, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=10000.0,
+        entry_low=10600.0,
+        entry_high=10800.0,
+        tp_price=11200.0,
+        sl_price=10200.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        expected_return=0.04,
+        score=80.0,
+        model_version="lgbm_high_v1",
+        mode="HIGHER_PRICE",
+        feature_snapshot={"rsi14": 60.0},
+    )
+    sig_repo.save_signals([sig_low, sig_high])
+
+    # 2. Ingest forward price bars
+    # GOTO: Day 1 (Oct 2) opens at 80.0, hits TP at 86.0
+    goto_bars = [
+        DailyBar(
+            ticker="GOTO",
+            date=date(2026, 10, 2),
+            open=80.0,
+            high=86.0,
+            low=79.5,
+            close=85.5,
+            volume=500_000.0,
+        ),
+    ]
+
+    # BBCA: Day 1 (Oct 2) stays below breakout (High 10400 < 10600)
+    #       Day 2 (Oct 3) breaks out (High 10700 >= 10600)
+    #       Day 3 (Oct 4) hits TP (High 11300 >= 11200)
+    bbca_bars = [
+        DailyBar(
+            ticker="BBCA",
+            date=date(2026, 10, 2),
+            open=10100.0,
+            high=10400.0,
+            low=10000.0,
+            close=10300.0,
+            volume=50_000.0,
+        ),
+        DailyBar(
+            ticker="BBCA",
+            date=date(2026, 10, 3),
+            open=10300.0,
+            high=10700.0,
+            low=10250.0,
+            close=10650.0,
+            volume=60_000.0,
+        ),
+        DailyBar(
+            ticker="BBCA",
+            date=date(2026, 10, 4),
+            open=10700.0,
+            high=11300.0,
+            low=10600.0,
+            close=11250.0,
+            volume=70_000.0,
+        ),
+    ]
+    bar_repo.save_bars(goto_bars)
+    bar_repo.save_bars(bbca_bars)
+
+    # 3. Test CLI runner with --mode LOW_PRICE
+    csv_low = tmp_path / "low_outcomes.csv"
+    code_low = run_resolve_outcomes(
+        mode="LOW_PRICE",
+        save_db=True,
+        export_matured="csv",
+        export_path=str(csv_low),
+        database_url=db_url,
+    )
+    assert code_low == 0
+    df_low = pd.read_csv(csv_low)
+    assert len(df_low) == 1
+    assert df_low.iloc[0]["ticker"] == "GOTO"
+    assert df_low.iloc[0]["mode"] == "LOW_PRICE"
+    assert df_low.iloc[0]["outcome_status"] == "TP"
+
+    # 4. Test CLI runner with --mode HIGHER_PRICE
+    csv_high = tmp_path / "high_outcomes.csv"
+    code_high = run_resolve_outcomes(
+        mode="HIGHER_PRICE",
+        save_db=True,
+        export_matured="csv",
+        export_path=str(csv_high),
+        database_url=db_url,
+    )
+    assert code_high == 0
+    df_high = pd.read_csv(csv_high)
+    assert len(df_high) == 1
+    assert df_high.iloc[0]["ticker"] == "BBCA"
+    assert df_high.iloc[0]["mode"] == "HIGHER_PRICE"
+    assert df_high.iloc[0]["outcome_status"] == "TP"
+    assert df_high.iloc[0]["entry_price"] == pytest.approx(10600.0)
+    assert df_high.iloc[0]["entry_date"] == "2026-10-03"
+
+    # Check snapshots in DB for BBCA
+    snaps = out_repo.get_snapshots_by_signal_id("sig-bbca-high")
+    assert len(snaps) == 2
+    assert snaps[0].holding_day == 1
+    assert snaps[0].snapshot_date == date(2026, 10, 3)
+    assert snaps[1].holding_day == 2
+    assert snaps[1].snapshot_date == date(2026, 10, 4)
+
+
+def test_outcome_engine_standalone_decoupling():
+    """Verify OutcomeEngine runs as standalone service without ML or FeatureEngine imports."""
+    import sys
+
+    # Confirm OutcomeEngine and repository modules do not import ML or feature modules
+    outcome_engine_mod = sys.modules.get("python.outcomes.engine")
+    assert outcome_engine_mod is not None
+
+    # Check imported symbols / module dictionary: no feature engine or ML model registry
+    engine_globals = vars(outcome_engine_mod)
+    assert "FeatureEngine" not in engine_globals
+    assert "SignalEngine" not in engine_globals
+    assert "ModelRegistry" not in engine_globals
+    assert "LightGBM" not in engine_globals
+

@@ -587,3 +587,99 @@ Log Perubahan Tambahan (14 Oktober 2026)
    4. Melakukan live deployment ulang paket serverless ke AWS Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) dan memverifikasi eksekusi live via AWS Boto3:
       - Eksekusi normal: berhasil mengembalikan status HTTP 200 `SKIPPED_DUPLICATE` (sinyal 14 Oktober 2026 terlindungi tanpa duplikasi).
       - Eksekusi forced: berhasil menyelesaikan siklus pipeline HTTP 200 `SUCCESS` (`outcomes_resolved: 2`, `signals_generated: 10`, `db_uploaded: true`, `log_uploaded: true`).
+
+
+38. Audit Empiris Model Pelatihan & Kualitas Champion Dual-Mode (LOW_PRICE & HIGHER_PRICE)
+   Masalah:
+   1. Diskrepansi status sinyal BUY dengan probabilitas rendah (~25–32%) dan Expected Return berstatus N/A di Telegram, menimbulkan pertanyaan apakah model champion saat ini valid secara statistik untuk bursa BEI.
+   2. Perlunya pembuktian empiris berbasis data historis (out-of-sample) sebelum mengambil keputusan retraining atau tetap mempertahankan model champion.
+   Solusi:
+   1. Melakukan audit komprehensif terhadap basis data `datasets/stock_signals.db` (186.436 bar, 208 ticker) dan artefak model `models/registry/`.
+   2. Mengukur metrik probabilistik out-of-sample (ROC-AUC, Brier score, Log loss) serta simulasi backtest walk-forward riil dengan friksi BEI (fee beli 0,15%, fee jual 0,25%, slippage 10 bps).
+   3. Mengidentifikasi cacat kritis: model HIGHER_PRICE memiliki ROC-AUC 0,5135 (tanpa edge prediktif), Brier score 0,1884 lebih buruk dari baseline prevalensi (0,1867), backtest rugi -52,10%, serta kebocoran masa depan pada cross-validation kalibrasi (K-Fold non-kronologis).
+   4. Menyusun seluruh temuan dan rekomendasi formal RETRAIN REQUIRED ke dalam berkas dokumentasi permanen `docs/07_audit_training_and_model_quality_report.md`.
+
+39. Implementasi Rencana Remediasi Audit Pelatihan (Items 1–10): Pembersihan Duplikasi Bar, Kalibrasi Kausal & Early Stopping, Gerbang EV Hurdle Fail-Closed, Model Regresi Return Kontinu, dan Evaluasi Walk-Forward Dual-Mode
+   Masalah:
+   1. Ditemukan 145 bar duplikat pada tabel `daily_bars` basis data `datasets/stock_signals.db` yang berasal dari provider legacy (`provider='unknown'`), berisiko menimbulkan distorsi saat pemisahan dataset.
+   2. Modul `python/models/baseline.py` menggunakan `CalibratedClassifierCV(cv=3)` yang menjalankan K-Fold non-kronologis standar sehingga membocorkan data masa depan ke kalibrasi masa lampau, serta tidak memanfaatkan `X_val, y_val` untuk early stopping LightGBM.
+   3. DatasetBuilder pada `python/models/dataset.py` mengalami kolisi nama kolom `entry_price` antara feature set (bernilai `None`) dan label set, menyebabkan seluruh harga entri menjadi NaN dan mode harga kolaps menjadi `"INVALID"`.
+   4. Engine sinyal memancarkan BUY pada probabilitas rendah (0.25) tanpa evaluasi nilai harapan matematis (EV) setelah memperhitungkan friksi riil BEI (fee beli 0,15%, fee jual 0,25%, slippage 10 bps), menghasilkan ekspektansi negatif (-0.46% s.d. -1.11% per trade).
+   5. Sinyal harian tidak memiliki nilai Expected Return karena belum tersedianya model regresi companion terkalibrasi untuk memprediksi return kontinu.
+   Solusi:
+   1. Menghapus 145 bar duplikat legacy `unknown` pada `daily_bars` dengan tetap mempertahankan data resmi `yfinance`, lalu menjalankan `VACUUM` SQLite (terverifikasi 0 duplikat tersisa).
+   2. Mengrombak pipeline validasi kronologis, early stopping, dan kalibrasi probabilitas kausal pada `python/models/baseline.py`: jika `X_val, y_val` tersedia, model dasar difit dengan early stopping pada validasi, kemudian dikalibrasi kausal menggunakan `CalibratedClassifierCV(estimator=FrozenEstimator(base_pipe))` langsung pada set validasi terisolasi tanpa kebocoran masa depan; jika fallback, menggunakan `TimeSeriesSplit(n_splits=3)`.
+   3. Memperbaiki bug merging pada `python/models/dataset.py` dengan memprioritaskan `entry_price_label`, sehingga `LOW_PRICE` memuat 45.763 baris dan `HIGHER_PRICE` memuat 137.426 baris secara valid.
+   4. Mengimplementasikan gerbang fail-closed Mathematical Expected Value (EV) hurdle check pada `python/signals/engine.py` dan `python/common/types.py`:
+      - EV diskret memperhitungkan TP (+4,5% net), SL (-2,5% net), serta empirical outcome expiry (+0,69% net return pada 14,14% trade non-TP), menetapkan batas breakeven win rate matematis sebesar 32,1%.
+      - Menolak seluruh kandidat yang memiliki net EV <= 0 atau return regresi <= friksi (0,50%), serta fail-closed jika data esensial tidak lengkap.
+   5. Melatih 4 kandidat model baru (2 klasifikasi, 2 regresi companion) dan mendaftarkannya sebagai `challenger` di `models/registry/` (model champion lama tetap terlindungi tanpa mutasi):
+      - `LOW_PRICE` Classifier: `lightgbm_classification_20261015_092538`
+      - `HIGHER_PRICE` Classifier: `lightgbm_classification_20261015_092608`
+      - `LOW_PRICE` Regressor: `lightgbm_regression_20261015_092635`
+      - `HIGHER_PRICE` Regressor: `lightgbm_regression_20261015_092710`
+   6. Menjalankan evaluasi walk-forward komprehensif pada test set terisolasi (`2026-03-26` s.d. `2026-10-13`) via `scripts/audit_evaluation_runner.py` dan menyimpan artefak JSON di `docs/audit_remediation_evaluation_results.json`:
+      - Pada mode unhurdled (thresh=0.25), seluruh model champion dan kandidat mengalami kerugian besar (-26.32% s.d. -52.14%).
+      - Pada mode EV Hurdle Gate, sistem fail-closed memblokir 100% taruhan bernilai harapan negatif, menghasilkan total trades = 0, Max Drawdown = 0,00%, dan menyelamatkan modal 100% (Rp 100.000.000 utuh).
+   7. Memberikan rekomendasi formal: REJECT kandidat `HIGHER_PRICE` (ROC-AUC 0.4913, di bawah acak), dan CONTINUE TESTING / GATED CANDIDATE untuk `LOW_PRICE` di bawah perlindungan EV hurdle gate tanpa melakukan promosi champion otomatis.
+   8. Memastikan isolasi S3 pada unit test `tests/unit/test_aws.py` dan memvalidasi 100% kelulusan seluruh test suite (386 passed, ruff clean).
+
+40. Penguatan Fail-Closed EV Hurdle Gate terhadap Nilai Non-Finite (NaN/Inf) dan Restorasi Status Assertion Unit Test
+   Masalah:
+   1. Pada `python/signals/engine.py`, fungsi regressor yang memprediksi nilai `NaN` atau `+inf` tidak terdeteksi oleh evaluasi `exp_ret is None`, dan fungsi `min(ev_net_discrete, exp_ret - friction)` pada Python mengevaluasi `min(positive_float, nan)` menjadi `positive_float`. Akibatnya, sinyal BUY dengan nilai `expected_return = nan` tetap dipancarkan meski `require_expected_return=True` atau `enforce_positive_ev=True`.
+   2. Pada `tests/unit/test_aws.py`, pengecekan assertion `assert body["status"] == "ok"` sebelumnya terhapus pada `test_lambda_telegram_webhook_handler_callback_query`.
+   Solusi:
+   1. Memperbarui `python/signals/engine.py` dengan validasi `math.isfinite()` yang ketat pada output regresi, evaluasi `effective_net_ev`, dan pembuatan `SignalRecord`. Menolak secara fail-closed jika nilai yang dibutuhkan tidak finite atau net EV <= min_hurdle.
+   2. Menambahkan unit test `test_ev_hurdle_fails_closed_when_regressor_predicts_nan_or_inf` pada `tests/unit/test_signals.py` untuk memverifikasi penolakan mutlak (0 sinyal BUY) saat regressor menghasilkan NaN/Inf.
+   3. Mengembalikan assertion `assert body["status"] == "ok"` pada `tests/unit/test_aws.py` dan memperbaiki formatting panjang baris agar 100% mematuhi linter `ruff check .`.
+
+
+41. Penyusunan Laporan Resmi Remediasi Audit & Evaluasi Kandidat Model Dual-Mode
+   - Seluruh hasil implementasi rencana remediasi audit pelatihan (Items 1–10), metrik out-of-sample klasifikasi/regresi, hasil backtest walk-forward riil BEI, serta rekomendasi formal kandidat telah disusun dan disimpan dalam format Markdown permanen pada `docs/08_audit_remediation_and_candidate_evaluation_report.md`.
+
+Log Perubahan Tambahan (15 Oktober 2026)
+42. Verifikasi Komprehensif EV Hurdle Gate dan Implementasi Outcome Tracking Terpisah
+   Masalah:
+   1. Perlunya verifikasi ketat fail-closed Mathematical Expected Value (EV) hurdle gate pada `python/signals/engine.py` terhadap seluruh kondisi batas (EV positif > 0, EV negatif <= 0, breakeven eksak p=32.1% / 32.02%, output non-finite NaN/Inf dari regressor maupun classifier, ekspektansi return hilang saat diwajibkan, deduksi friksi transaksi BEI 50 bps, dan perbandingan EV diskret vs return kontinu).
+   2. Pada `python/signals/engine.py`, fungsi `_predict_prob` melakukan `np.clip(prob, 0.0, 1.0)` sebelum pemeriksaan `math.isfinite()`, sehingga nilai probabilitas `+inf` dari classifier secara keliru terpotong menjadi `1.0` (100% win rate) dan lolos memancarkan sinyal BUY.
+   3. Residu pembulatan floating point IEEE 754 pada probabilitas breakeven eksak (menghasilkan residu +4.87e-19) meloloskan taruhan bernilai harapan netral jika evaluasi hurdle tidak memperhitungkan ambang batas numerik strictly positive epsilon.
+   4. Evaluasi `OutcomeEngine` sebelumnya mengasumsikan entri langsung pada bar pertama (`first_bar.open`) tanpa membedakan kebijakan entri `BREAKOUT` (sinyal `WAIT_FOR_BREAKOUT`), sehingga tidak menanti terpenuhinya level penembusan `entry_low` dan mencatat snapshot sebelum posisi terpicu.
+   5. Outcome tracking perlu dipastikan decoupled secara modular tanpa memuat dependensi berat `FeatureEngine`, `SignalEngine`, atau model pembelajaran mesin ML, serta mendukung pelacakan terisolasi untuk mode ganda (`LOW_PRICE` dan `HIGHER_PRICE`).
+   6. Pada candle hari pertama pemicu penembusan breakout (`k=1`), jika bar dibuka di bawah harga pemicu (`open < trigger_level`) lalu menyentuh `sl_price`, `OutcomeEngine` sebelumnya mengevaluasi `sl_hit` secara prematur dan tanpa syarat menetapkan status `SL` di harga open (sebelum order sempat terbeli) bahkan saat `ambiguity_policy='ambiguous'` atau `optimistic`.
+   Solusi:
+   1. Memperbaiki urutan sanitasi fail-closed probabilitas pada `python/signals/engine.py`: validasi `math.isfinite(prob)` dan `prob <= 0.0` kini dieksekusi sebelum `np.clip`, mencegah probabilitas `inf` lolos.
+   2. Menambahkan ambang batas toleransi numerik strictly positive (`effective_net_ev <= min_hurdle or abs(effective_net_ev - min_hurdle) < 1e-9`) pada langkah 7 dan langkah 11 `python/signals/engine.py`, menjamin kondisi breakeven eksak (EV = 0.0) gagal-tertutup (fail-closed) tanpa kompromi.
+   3. Mengimplementasikan penanganan kebijakan entri `BREAKOUT` pada `python/outcomes/engine.py`: sinyal `WAIT_FOR_BREAKOUT` menanti hingga harga bar menembus `entry_low`, mencatat snapshot harian hanya sejak hari eksekusi entri, menahan status jika belum terpicu, dan menyelesaikan status menjadi `EXPIRY` dengan 0 holding days jika jendela waktu `max_holding_days` habis tanpa penembusan.
+   4. Memperluas `OutcomeEngine.resolve_all_signals` dan CLI runner `scripts/resolve_outcomes.py` dengan parameter `--mode` (`LOW_PRICE`, `HIGHER_PRICE`, `ALL`), memungkinkan eksekusi standalone terisolasi per mode harga.
+   5. Membuat test suite komprehensif `tests/unit/test_ev_gate.py` (9 pengujian unit yang memverifikasi seluruh skenario batas EV hurdle gate), memperluas `tests/unit/test_outcomes.py` dengan pengujian entri breakout dan mode ganda, serta memperluas `tests/integration/test_outcome_pipeline.py` untuk menguji pipeline CLI end-to-end dan verifikasi independensi/decoupling repositori outcome tanpa dependensi model ML.
+   6. Memperbaiki resolusi barrier hari entri breakout pada `python/outcomes/engine.py`: mendeteksi secara presisi bar entri intraday breakout (`k=1` dan `open < trigger_level`), mencegah harga open dijadikan harga exit, serta menangani ambiguitas tubrukan level entri dan stop loss sesuai kebijakan `ambiguity_policy` (`conservative` -> `SL` pada `sl_price`, `ambiguous` -> `AMBIGUOUS` pada `close`, `optimistic` -> posisi bertahan jika candle ditutup di atas `sl_price`). Menambahkan 2 unit test baru di `tests/unit/test_outcomes.py`.
+
+43. Historical Backfill Sinyal & Audit Integritas Outcome Tracking (UNFILLED_EXPIRED, MFE/MAE Clamping, Metrik Jalur, Net Return BEI)
+   Masalah:
+   1. Sinyal breakout yang kedaluwarsa tanpa pernah terpicu sebelumnya diselesaikan sebagai EXPIRY dengan realized_return = 0.0, terhitung sebagai perdagangan riil impas dan mendistorsi win rate serta ekspektansi model.
+   2. Nilai MFE berisiko negatif jika harga tertinggi candle berada di bawah harga entri, dan MAE berisiko positif jika harga terendah di atas harga entri, melanggar invarian matematis MFE >= 0 dan MAE <= 0.
+   3. Skema dan repositori outcome belum menyimpan metrik jalur penting (mfe_price, mae_price, time_to_peak, time_to_tp, time_to_sl) dan realized return setelah memperhitungkan friksi riil BEI (net_return).
+   4. Evaluasi performa outcome (evaluate_from_outcomes) dan dataset training belum memisahkan sinyal yang tidak tereksekusi dari perdagangan riil.
+   5. Perlu audit rekonsiliasi independen historis dan verifikasi idempotensi eksekusi outcome tracking terhadap data candle harian mentah.
+   Solusi:
+   1. Menambahkan status siklus hidup UNFILLED_EXPIRED pada SignalOutcomeRecord di python/common/types.py dengan holding_days = 0, realized_return = None, net_return = None, dan exit_reason = 'UNFILLED_EXPIRED'.
+   2. Memperbarui OutcomeEngine di python/outcomes/engine.py: sinyal breakout kedaluwarsa tanpa penembusan diselesaikan sebagai UNFILLED_EXPIRED; MFE diklem max(0.0, ...) dan MAE diklem min(0.0, ...); menghitung mfe_price, mae_price, time_to_peak (indeks hari titik tertinggi), time_to_tp, time_to_sl, serta net_return menggunakan friksi BEI riil (fee beli 0,15%, fee jual 0,25%).
+   3. Mengimplementasikan migrasi otomatis skema SQLite tabel outcomes_daily pada python/outcomes/repository.py untuk menambahkan kolom mfe_price, mae_price, time_to_peak, time_to_tp, time_to_sl, dan net_return secara backward-compatible.
+   4. Memperbarui evaluate_from_outcomes di python/models/evaluation.py dan build_matured_outcomes_dataset di python/outcomes/dataset.py agar secara default memfilter status UNFILLED_EXPIRED dan OPEN sehingga tidak mendistorsi statistik perdagangan.
+   5. Memperbarui scripts/resolve_outcomes.py dengan ringkasan status UNFILLED_EXPIRED dan opsi CLI --exclude-unfilled.
+   6. Menjalankan replay historis pada datasets/stock_signals.db (terverifikasi 100% idempoten, 31 record matured, 0 duplikat), melakukan audit independen via scripts/audit_historical_outcomes.py dengan 0 inkonsistensi terhadap bar harian mentah, serta menyusun laporan lengkap di docs/09_outcome_tracking_backfill_and_integrity_audit_report.md.
+   7. Memvalidasi 100% kelulusan test suite (409 passed, ruff clean).
+44. Perbaikan Kritis Horison Validitas Breakout, Kolom entry_status, Penyelarasan MAE Snapshot, dan Penanganan UNFILLED_EXPIRED pada Evaluasi Metrik
+   Masalah:
+   1. Loop penelusuran pemicu breakout (`trigger_level`) pada `python/outcomes/engine.py` sebelumnya memeriksa seluruh bar yang ada tanpa membatasi pada `deduped_bars[: signal.max_holding_days]`. Akibatnya, sinyal breakout yang tidak terpicu dalam horison validitasnya berisiko hidup kembali dan tereksekusi jika harga menyentuh level pemicu di masa depan jauh setelah jendela holding habis (pelanggaran kausalitas dan idempotensi eksekusi).
+   2. Metrik wajib `entry_status` belum disimpan sebagai kolom skema independen di `outcomes_daily` dan `SignalOutcomeRecord`, sehingga query DB tidak dapat membedakan langsung status eksekusi entri tanpa mengandalkan inferensi `outcome_status`.
+   3. Perhitungan `mae_so_far` pada loop snapshot harian `SignalDailySnapshot` untuk entri intraday breakout hari ke-1 menggunakan harga low mentah candle (sebelum entri terbentuk), bertolak belakang dengan klem MAE `OutcomeEngine` yang mengecualikan low pra-entri.
+   4. Fungsi `compute_trading_metrics` dan `evaluate_dataset` pada `python/models/evaluation.py` sebelumnya mengonversi return `NaN` menjadi `0.0` dan memperhitungkan `UNFILLED_EXPIRED` ke dalam pembagi `total_trades`, mendistorsi win rate dan ekspektansi perdagangan riil.
+   5. Eksekusi langsung `python scripts/resolve_outcomes.py` gagal dengan `ModuleNotFoundError: No module named 'python'` di lingkungan shell tanpa PYTHONPATH yang disetel secara manual.
+   Solusi:
+   1. Membatasi pencarian pemicu breakout ketat pada jendela validitas `deduped_bars[: signal.max_holding_days]`, memastikan sinyal kadaluarsa tepat waktu sebagai `UNFILLED_EXPIRED` jika tidak tertembus dalam batas horison, serta mencatat harga tertinggi yang diobservasi (`max_observed_high`) pada field `notes`.
+   2. Menambahkan kolom `entry_status` (`FILLED` vs `UNFILLED`) pada `SignalOutcomeRecord`, skema `outcomes_daily`, migrasi otomatis di `OutcomeRepository`, dan dataset export `build_matured_outcomes_dataset`.
+   3. Menyelaraskan akumulasi `lowest_low` pada loop snapshot harian menggunakan `effective_lows` (`min(entry_price, close)` saat SL tidak tertembus di hari ke-1 entri intraday breakout), menjamin konsistensi matematis antara snapshot harian dan terminal outcome.
+   4. Memperbarui `compute_trading_metrics` dan `evaluate_dataset` agar secara otomatis menyaring status `UNFILLED_EXPIRED` dan `OPEN` dari perhitungan metrik performa trading out-of-sample.
+   5. Menambahkan konfigurasi root `sys.path` pada `scripts/resolve_outcomes.py` agar dapat dipanggil langsung dari terminal PowerShell/Bash.
+   6. Menambahkan unit test baru di `tests/unit/test_outcomes.py` dan `tests/unit/test_evaluation.py`, menguji seluruh skenario batas horison breakout, konsistensi snapshot MAE, persistensi `entry_status`, dan eksklusi sinyal unfilled pada evaluasi.

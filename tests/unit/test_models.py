@@ -556,3 +556,37 @@ def test_models_with_extreme_imbalance():
     probs_lgb = lgb.predict_probability(X)
     assert len(probs_lgb) == 100
     assert np.all(probs_lgb >= 0.0) and np.all(probs_lgb <= 1.0)
+
+
+def test_causal_calibration_with_validation_set():
+    X_tr = np.random.randn(100, 5)
+    y_tr = np.random.binomial(1, 0.3, 100)
+    X_val = np.random.randn(40, 5)
+    y_val = np.random.binomial(1, 0.3, 40)
+    # Ensure at least 3 samples of each class in val
+    y_val[:5] = 1
+    y_val[5:10] = 0
+
+    # 1. Logistic regression with validation set
+    lr = LogisticRegressionBaseline(calibrated=True).fit(X_tr, y_tr, X_val=X_val, y_val=y_val)
+    p_lr = lr.predict_probability(X_val)
+    assert len(p_lr) == 40
+    assert np.all((p_lr >= 0.0) & (p_lr <= 1.0))
+
+    # 2. LightGBM with validation set and early stopping
+    lgbm = LightGBMClassifierBaseline(n_estimators=50, calibrated=True).fit(
+        X_tr, y_tr, X_val=X_val, y_val=y_val
+    )
+    p_lgbm = lgbm.predict_probability(X_val)
+    assert len(p_lgbm) == 40
+    assert np.all((p_lgbm >= 0.0) & (p_lgbm <= 1.0))
+    assert lgbm.feature_importances_ is not None
+
+    # 3. LightGBM regressor with validation set
+    reg = LightGBMRegressorBaseline(n_estimators=50).fit(
+        X_tr, y_tr.astype(float), X_val=X_val, y_val=y_val.astype(float)
+    )
+    preds = reg.predict(X_val)
+    assert len(preds) == 40
+    assert np.all(np.isfinite(preds))
+

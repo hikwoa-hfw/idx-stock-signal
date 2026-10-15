@@ -1,0 +1,383 @@
+{
+  "evaluation_date": "2026-10-15",
+  "test_period": {
+    "start": "2026-03-26",
+    "end": "2026-10-13"
+  },
+  "modes": {
+    "LOW_PRICE": {
+      "sample_counts": {
+        "total": 45763,
+        "train": 31794,
+        "val": 5576,
+        "test": 7410
+      },
+      "champion": {
+        "version": "lightgbm_classification_20261014_093522",
+        "classification": {
+          "brier_score": 0.19101624877045717,
+          "log_loss": 0.5673565451986617,
+          "roc_auc": 0.5538860300539232,
+          "accuracy": 0.7404858299595142,
+          "calibration_error": 0.03341384666522976
+        },
+        "backtest": {
+          "config": {
+            "initial_capital": 100000000.0,
+            "commission_buy": 0.0015,
+            "commission_sell": 0.0025,
+            "slippage_bps": 10.0,
+            "max_concurrent_positions": 5,
+            "risk_per_trade_pct": 0.02,
+            "max_position_pct": 0.2,
+            "lot_size": 100,
+            "position_sizing_method": "risk_based",
+            "tp_pct": 0.05,
+            "sl_pct": 0.02,
+            "max_holding_days": 10,
+            "entry_execution": "next_open",
+            "probability_threshold": 0.25,
+            "ambiguity_policy": "conservative"
+          },
+          "start_date": "2026-03-26",
+          "end_date": "2026-10-13",
+          "initial_capital": 100000000.0,
+          "final_equity": 73683842.99570704,
+          "total_net_pnl": -26316157.00429292,
+          "total_return_pct": -0.26316157004292967,
+          "cagr_pct": -0.4258919491070291,
+          "total_trades": 346,
+          "winning_trades": 104,
+          "losing_trades": 242,
+          "win_rate": 0.30057803468208094,
+          "average_win_pct": 0.04431994169857423,
+          "average_loss_pct": -0.025133041897838528,
+          "win_loss_ratio": 1.7634133535736396,
+          "profit_factor": 0.7541862073664083,
+          "expectancy_pct": -0.004257000585621977,
+          "max_drawdown_pct": 0.30650571319531206,
+          "max_drawdown_amount": 32566265.185009614,
+          "average_holding_days": 1.930635838150289,
+          "tp_rate": 0.29190751445086704,
+          "sl_rate": 0.6705202312138728,
+          "expiry_rate": 0.03757225433526012
+        }
+      },
+      "candidate_classifier": {
+        "version": "lightgbm_classification_20261015_092538",
+        "classification": {
+          "brier_score": 0.1981296421242316,
+          "log_loss": 0.5810030689164365,
+          "roc_auc": 0.5390005649433194,
+          "accuracy": 0.7283400809716599,
+          "calibration_error": 0.07276764991242528
+        },
+        "backtest_unhurdled": {
+          "config": {
+            "initial_capital": 100000000.0,
+            "commission_buy": 0.0015,
+            "commission_sell": 0.0025,
+            "slippage_bps": 10.0,
+            "max_concurrent_positions": 5,
+            "risk_per_trade_pct": 0.02,
+            "max_position_pct": 0.2,
+            "lot_size": 100,
+            "position_sizing_method": "risk_based",
+            "tp_pct": 0.05,
+            "sl_pct": 0.02,
+            "max_holding_days": 10,
+            "entry_execution": "next_open",
+            "probability_threshold": 0.25,
+            "ambiguity_policy": "conservative"
+          },
+          "start_date": "2026-03-26",
+          "end_date": "2026-10-13",
+          "initial_capital": 100000000.0,
+          "final_equity": 65363770.581643745,
+          "total_net_pnl": -34636229.418356255,
+          "total_return_pct": -0.34636229418356257,
+          "cagr_pct": -0.5382178010460695,
+          "total_trades": 316,
+          "winning_trades": 80,
+          "losing_trades": 236,
+          "win_rate": 0.25316455696202533,
+          "average_win_pct": 0.04738187406109616,
+          "average_loss_pct": -0.025006447977398896,
+          "win_loss_ratio": 1.8947862608844095,
+          "profit_factor": 0.6562087619139405,
+          "expectancy_pct": -0.00668029049929888,
+          "max_drawdown_pct": 0.3888307354223573,
+          "max_drawdown_amount": 41584949.47026253,
+          "average_holding_days": 2.1107594936708862,
+          "tp_rate": 0.23734177215189872,
+          "sl_rate": 0.7056962025316456,
+          "expiry_rate": 0.056962025316455694
+        },
+        "backtest_ev_hurdle": {
+          "config": {
+            "initial_capital": 100000000.0,
+            "commission_buy": 0.0015,
+            "commission_sell": 0.0025,
+            "slippage_bps": 10.0,
+            "max_concurrent_positions": 5,
+            "risk_per_trade_pct": 0.02,
+            "max_position_pct": 0.2,
+            "lot_size": 100,
+            "position_sizing_method": "risk_based",
+            "tp_pct": 0.05,
+            "sl_pct": 0.02,
+            "max_holding_days": 10,
+            "entry_execution": "next_open",
+            "probability_threshold": 0.5,
+            "ambiguity_policy": "conservative"
+          },
+          "start_date": "2026-03-26",
+          "end_date": "2026-10-13",
+          "initial_capital": 100000000.0,
+          "final_equity": 100000000.0,
+          "total_net_pnl": 0.0,
+          "total_return_pct": 0.0,
+          "cagr_pct": 0.0,
+          "total_trades": 0,
+          "winning_trades": 0,
+          "losing_trades": 0,
+          "win_rate": 0.0,
+          "average_win_pct": 0.0,
+          "average_loss_pct": 0.0,
+          "win_loss_ratio": 0.0,
+          "profit_factor": 0.0,
+          "expectancy_pct": 0.0,
+          "max_drawdown_pct": 0.0,
+          "max_drawdown_amount": 0.0,
+          "average_holding_days": 0.0,
+          "tp_rate": 0.0,
+          "sl_rate": 0.0,
+          "expiry_rate": 0.0
+        }
+      },
+      "candidate_regressor": {
+        "version": "lightgbm_regression_20261015_092635",
+        "regression": {
+          "mse": 0.0013117711735134755,
+          "rmse": 0.03621838170754563,
+          "mae": 0.029073969331164403,
+          "r2": -0.015501597101589715
+        }
+      },
+      "baselines": {
+        "classification_prevalence": {
+          "brier_score": 0.19220895166049615,
+          "log_loss": 0.5726596507371905,
+          "roc_auc": 0.5,
+          "accuracy": 0.7404858299595142,
+          "calibration_error": 0.0065104586483991644
+        },
+        "regression_zero": {
+          "mse": 0.0012920151270926865,
+          "rmse": 0.035944611934095025,
+          "mae": 0.028324249434993704,
+          "r2": -0.00020754498502362217
+        },
+        "regression_mean": {
+          "mse": 0.0012928404061018383,
+          "rmse": 0.03595608997237934,
+          "mae": 0.028170092602637822,
+          "r2": -0.0008464309193769726
+        },
+        "regression_ridge": {
+          "mse": 0.0013019423811758027,
+          "rmse": 0.03608243868110639,
+          "mae": 0.029273302609111478,
+          "r2": -0.007892682896109227
+        }
+      }
+    },
+    "HIGHER_PRICE": {
+      "sample_counts": {
+        "total": 137426,
+        "train": 94821,
+        "val": 20049,
+        "test": 19439
+      },
+      "champion": {
+        "version": "lightgbm_classification_20261014_093607",
+        "classification": {
+          "brier_score": 0.18843562208459105,
+          "log_loss": 0.5643405332417528,
+          "roc_auc": 0.5135252992886911,
+          "accuracy": 0.7515304285199856,
+          "calibration_error": 0.0337497331944226
+        },
+        "backtest": {
+          "config": {
+            "initial_capital": 100000000.0,
+            "commission_buy": 0.0015,
+            "commission_sell": 0.0025,
+            "slippage_bps": 10.0,
+            "max_concurrent_positions": 5,
+            "risk_per_trade_pct": 0.02,
+            "max_position_pct": 0.2,
+            "lot_size": 100,
+            "position_sizing_method": "risk_based",
+            "tp_pct": 0.05,
+            "sl_pct": 0.02,
+            "max_holding_days": 10,
+            "entry_execution": "next_open",
+            "probability_threshold": 0.25,
+            "ambiguity_policy": "conservative"
+          },
+          "start_date": "2026-03-26",
+          "end_date": "2026-10-13",
+          "initial_capital": 100000000.0,
+          "final_equity": 47856486.16748025,
+          "total_net_pnl": -52143513.83251978,
+          "total_return_pct": -0.5214351383251975,
+          "cagr_pct": -0.7379405045878988,
+          "total_trades": 333,
+          "winning_trades": 68,
+          "losing_trades": 265,
+          "win_rate": 0.2042042042042042,
+          "average_win_pct": 0.04303597415453826,
+          "average_loss_pct": -0.02501352121043573,
+          "win_loss_ratio": 1.7205084319189534,
+          "profit_factor": 0.4406656539248872,
+          "expectancy_pct": -0.011117528162933533,
+          "max_drawdown_pct": 0.5214351383251975,
+          "max_drawdown_amount": 52143513.83251975,
+          "average_holding_days": 2.003003003003003,
+          "tp_rate": 0.18618618618618618,
+          "sl_rate": 0.7927927927927928,
+          "expiry_rate": 0.021021021021021023
+        }
+      },
+      "candidate_classifier": {
+        "version": "lightgbm_classification_20261015_092608",
+        "classification": {
+          "brier_score": 0.19893481728313714,
+          "log_loss": 0.5878146632747246,
+          "roc_auc": 0.49134839452749496,
+          "accuracy": 0.7319820978445394,
+          "calibration_error": 0.08079557996536486
+        },
+        "backtest_unhurdled": {
+          "config": {
+            "initial_capital": 100000000.0,
+            "commission_buy": 0.0015,
+            "commission_sell": 0.0025,
+            "slippage_bps": 10.0,
+            "max_concurrent_positions": 5,
+            "risk_per_trade_pct": 0.02,
+            "max_position_pct": 0.2,
+            "lot_size": 100,
+            "position_sizing_method": "risk_based",
+            "tp_pct": 0.05,
+            "sl_pct": 0.02,
+            "max_holding_days": 10,
+            "entry_execution": "next_open",
+            "probability_threshold": 0.25,
+            "ambiguity_policy": "conservative"
+          },
+          "start_date": "2026-03-26",
+          "end_date": "2026-10-13",
+          "initial_capital": 100000000.0,
+          "final_equity": 56344617.997257225,
+          "total_net_pnl": -43655382.00274277,
+          "total_return_pct": -0.43655382002742776,
+          "cagr_pct": -0.6474197539368811,
+          "total_trades": 320,
+          "winning_trades": 76,
+          "losing_trades": 244,
+          "win_rate": 0.2375,
+          "average_win_pct": 0.043482619289060366,
+          "average_loss_pct": -0.02523905008539982,
+          "win_loss_ratio": 1.7228310551281012,
+          "profit_factor": 0.5142943906749015,
+          "expectancy_pct": -0.008917653608965527,
+          "max_drawdown_pct": 0.43655382002742776,
+          "max_drawdown_amount": 43655382.002742775,
+          "average_holding_days": 2.05625,
+          "tp_rate": 0.215625,
+          "sl_rate": 0.759375,
+          "expiry_rate": 0.025
+        },
+        "backtest_ev_hurdle": {
+          "config": {
+            "initial_capital": 100000000.0,
+            "commission_buy": 0.0015,
+            "commission_sell": 0.0025,
+            "slippage_bps": 10.0,
+            "max_concurrent_positions": 5,
+            "risk_per_trade_pct": 0.02,
+            "max_position_pct": 0.2,
+            "lot_size": 100,
+            "position_sizing_method": "risk_based",
+            "tp_pct": 0.05,
+            "sl_pct": 0.02,
+            "max_holding_days": 10,
+            "entry_execution": "next_open",
+            "probability_threshold": 0.5,
+            "ambiguity_policy": "conservative"
+          },
+          "start_date": "2026-03-26",
+          "end_date": "2026-10-13",
+          "initial_capital": 100000000.0,
+          "final_equity": 100000000.0,
+          "total_net_pnl": 0.0,
+          "total_return_pct": 0.0,
+          "cagr_pct": 0.0,
+          "total_trades": 0,
+          "winning_trades": 0,
+          "losing_trades": 0,
+          "win_rate": 0.0,
+          "average_win_pct": 0.0,
+          "average_loss_pct": 0.0,
+          "win_loss_ratio": 0.0,
+          "profit_factor": 0.0,
+          "expectancy_pct": 0.0,
+          "max_drawdown_pct": 0.0,
+          "max_drawdown_amount": 0.0,
+          "average_holding_days": 0.0,
+          "tp_rate": 0.0,
+          "sl_rate": 0.0,
+          "expiry_rate": 0.0
+        }
+      },
+      "candidate_regressor": {
+        "version": "lightgbm_regression_20261015_092710",
+        "regression": {
+          "mse": 0.0018508068106307183,
+          "rmse": 0.043021004295933384,
+          "mae": 0.030729167636271867,
+          "r2": -0.025118681950046406
+        }
+      },
+      "baselines": {
+        "classification_prevalence": {
+          "brier_score": 0.18673340273381006,
+          "log_loss": 0.5606501065078096,
+          "roc_auc": 0.5,
+          "accuracy": 0.7515304285199856,
+          "calibration_error": 0.0009793902478728578
+        },
+        "regression_zero": {
+          "mse": 0.0018059323404833482,
+          "rmse": 0.04249626266489029,
+          "mae": 0.02991607407081797,
+          "r2": -0.0002637606117128488
+        },
+        "regression_mean": {
+          "mse": 0.0018056200224041174,
+          "rmse": 0.04249258785251985,
+          "mae": 0.029811141378323493,
+          "r2": -9.077491926179349e-05
+        },
+        "regression_ridge": {
+          "mse": 0.0018318173100575943,
+          "rmse": 0.042799734929758554,
+          "mae": 0.031455923116999525,
+          "r2": -0.014600840927094572
+        }
+      }
+    }
+  }
+}

@@ -787,6 +787,13 @@ class SignalConfig(BaseModel):
     enforce_bei_ticks: bool = False
     allow_breakout: bool = True
     raw_adjusted_tolerance_pct: float = 0.05
+    enforce_positive_ev: bool = True
+    min_net_ev: float = 0.0
+    commission_buy: float = 0.0015
+    commission_sell: float = 0.0025
+    slippage_bps: float = 10.0
+    empirical_expiry_return: float = 0.0069
+    expiry_given_negative_ratio: float = 0.1414
     weights: dict[str, float] = Field(
         default_factory=lambda: {
             "probability": 0.40,
@@ -841,6 +848,27 @@ class SignalConfig(BaseModel):
             raise ValueError("At least one weight must be greater than 0")
         return v
 
+    @field_validator("commission_buy", "commission_sell", "slippage_bps")
+    @classmethod
+    def validate_non_negative_costs(cls, v: float) -> float:
+        if not math.isfinite(v) or v < 0.0:
+            raise ValueError(f"Cost parameter must be non-negative finite float, got {v}")
+        return v
+
+    @field_validator("empirical_expiry_return", "min_net_ev")
+    @classmethod
+    def validate_finite_ev_params(cls, v: float) -> float:
+        if not math.isfinite(v):
+            raise ValueError(f"EV parameter must be a finite float, got {v}")
+        return v
+
+    @field_validator("expiry_given_negative_ratio")
+    @classmethod
+    def validate_ratio_bounds(cls, v: float) -> float:
+        if not math.isfinite(v) or v < 0.0 or v > 1.0:
+            raise ValueError(f"expiry_given_negative_ratio must be in [0.0, 1.0], got {v}")
+        return v
+
 
 class SignalRecord(BaseModel):
     signal_id: str
@@ -855,6 +883,7 @@ class SignalRecord(BaseModel):
     max_holding_days: int = 10
     predicted_probability: float
     expected_return: Optional[float] = None
+    net_ev: Optional[float] = None
     score: float
     model_version: str
     feature_version: str = "v1.0.0"
@@ -1149,11 +1178,18 @@ class SignalOutcomeRecord(BaseModel):
     signal_date: date
     entry_date: date
     entry_price: float
+    entry_status: str = "FILLED"
     outcome_status: str = "OPEN"
     realized_return: Optional[float] = None
     holding_days: int = 0
     mfe: float = 0.0
     mae: float = 0.0
+    mfe_price: Optional[float] = None
+    mae_price: Optional[float] = None
+    time_to_peak: Optional[int] = None
+    time_to_tp: Optional[int] = None
+    time_to_sl: Optional[int] = None
+    net_return: Optional[float] = None
     exit_date: Optional[date] = None
     exit_price: Optional[float] = None
     exit_reason: Optional[str] = None
@@ -1189,13 +1225,22 @@ class SignalOutcomeRecord(BaseModel):
             raise ValueError("signal_id cannot be empty")
         return clean
 
+    @field_validator("entry_status")
+    @classmethod
+    def validate_entry_status(cls, v: str) -> str:
+        clean = v.strip().upper()
+        if clean not in {"FILLED", "UNFILLED", "PENDING"}:
+            raise ValueError(f"entry_status must be in FILLED, UNFILLED, PENDING, got '{v}'")
+        return clean
+
     @field_validator("outcome_status")
     @classmethod
     def validate_outcome_status(cls, v: str) -> str:
         clean = v.strip().upper()
-        if clean not in {"OPEN", "TP", "SL", "EXPIRY", "AMBIGUOUS"}:
+        if clean not in {"OPEN", "TP", "SL", "EXPIRY", "AMBIGUOUS", "UNFILLED_EXPIRED"}:
             raise ValueError(
-                f"outcome_status must be in OPEN, TP, SL, EXPIRY, AMBIGUOUS, got '{v}'"
+                f"outcome_status must be in OPEN, TP, SL, EXPIRY, AMBIGUOUS, "
+                f"UNFILLED_EXPIRED, got '{v}'"
             )
         return clean
 
@@ -1215,7 +1260,9 @@ class SignalOutcomeRecord(BaseModel):
             raise ValueError(f"exit_price must be positive and finite, got {v}")
         return v
 
-    @field_validator("realized_return", "mfe", "mae")
+    @field_validator(
+        "realized_return", "mfe", "mae", "mfe_price", "mae_price", "net_return"
+    )
     @classmethod
     def validate_finite_return_metrics(cls, v: Optional[float]) -> Optional[float]:
         if v is not None and not math.isfinite(v):
@@ -1227,6 +1274,13 @@ class SignalOutcomeRecord(BaseModel):
     def validate_holding_days(cls, v: int) -> int:
         if v < 0:
             raise ValueError(f"holding_days cannot be negative, got {v}")
+        return v
+
+    @field_validator("time_to_peak", "time_to_tp", "time_to_sl")
+    @classmethod
+    def validate_time_to_metrics(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError(f"Time-to-event metric cannot be negative, got {v}")
         return v
 
     @field_validator("exit_reason")
@@ -1254,7 +1308,25 @@ class SignalOutcomeRecord(BaseModel):
                 raise ValueError("Open outcome cannot have realized_return")
             if self.resolved_at is not None:
                 raise ValueError("Open outcome cannot have resolved_at")
+        elif self.outcome_status == "UNFILLED_EXPIRED":
+            self.entry_status = "UNFILLED"
+            if self.realized_return is not None:
+                raise ValueError("Unfilled expired signal cannot have realized_return")
+            if self.holding_days != 0:
+                raise ValueError(
+                    f"Unfilled expired signal must have holding_days == 0, got {self.holding_days}"
+                )
+            if self.net_return is not None:
+                raise ValueError("Unfilled expired signal cannot have net_return")
+            if self.exit_reason is None:
+                self.exit_reason = "UNFILLED_EXPIRED"
+            if self.resolved_at is None:
+                self.resolved_at = datetime.now(timezone.utc)
         else:
+            if self.entry_status == "UNFILLED":
+                raise ValueError(
+                    f"Resolved outcome ({self.outcome_status}) cannot have entry_status 'UNFILLED'"
+                )
             if self.exit_price is None:
                 raise ValueError(
                     f"Resolved outcome ({self.outcome_status}) must specify exit_price"

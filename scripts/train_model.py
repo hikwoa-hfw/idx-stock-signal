@@ -126,6 +126,7 @@ def load_or_generate_dataset(
             feature_repo=feat_repo,
             label_repo=lbl_repo,
             tickers=tickers,
+            mode=resolved_mode,
         )
         if len(dataset) > 0:
             return dataset
@@ -233,8 +234,20 @@ def main() -> None:
     # Train
     y_train = train_ds.y if args.task == "classification" else train_ds.y_return
     y_test = test_ds.y if args.task == "classification" else test_ds.y_return
+    X_val = val_ds.X if val_ds is not None and len(val_ds) > 0 else None
+    y_val = (
+        (val_ds.y if args.task == "classification" else val_ds.y_return)
+        if val_ds is not None and len(val_ds) > 0
+        else None
+    )
 
-    model.fit(train_ds.X, y_train, feature_names=dataset.feature_names)
+    model.fit(
+        train_ds.X,
+        y_train,
+        feature_names=dataset.feature_names,
+        X_val=X_val,
+        y_val=y_val,
+    )
 
     # Evaluate on Unseen Test Set
     print("\n--- Evaluation on Unseen Test Data ---")

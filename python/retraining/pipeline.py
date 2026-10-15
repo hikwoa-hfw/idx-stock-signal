@@ -188,8 +188,20 @@ class RetrainingPipeline:
 
             y_train = train_ds.y if self.config.task == "classification" else train_ds.y_return
             y_test = test_ds.y if self.config.task == "classification" else test_ds.y_return
+            X_val = val_ds.X if val_ds is not None and len(val_ds) > 0 else None
+            y_val = (
+                (val_ds.y if self.config.task == "classification" else val_ds.y_return)
+                if val_ds is not None and len(val_ds) > 0
+                else None
+            )
 
-            model.fit(train_ds.X, y_train, feature_names=dataset.feature_names)
+            model.fit(
+                train_ds.X,
+                y_train,
+                feature_names=dataset.feature_names,
+                X_val=X_val,
+                y_val=y_val,
+            )
 
             # Compute test metrics
             y_prob = model.predict_probability(test_ds.X)

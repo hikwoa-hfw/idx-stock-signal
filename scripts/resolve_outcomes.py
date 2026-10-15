@@ -1,7 +1,11 @@
 import argparse
 import sys
 from datetime import date, datetime
+from pathlib import Path
 from typing import Optional
+
+# Add project root to sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from python.common.types import SignalOutcomeRecord
 from python.config.settings import settings
@@ -33,15 +37,15 @@ def _print_outcomes_table(outcomes: list[SignalOutcomeRecord], limit: int = 20) 
         print("\n[INFO] No outcomes resolved.\n")
         return
 
-    print("\n" + "=" * 105)
+    print("\n" + "=" * 112)
     print("                    INDONESIAN STOCK AI -- OUTCOME ENGINE RESULTS")
-    print("=" * 105)
+    print("=" * 112)
     print(
         f"{'Ticker':<8} {'Signal Dt':<11} {'Entry Dt':<11} {'Entry Px':<10} "
-        f"{'Status':<10} {'Exit Dt':<11} {'Exit Px':<10} "
+        f"{'Status':<16} {'Exit Dt':<11} {'Exit Px':<10} "
         f"{'Return':<9} {'Hold':<5} {'MFE':<8} {'MAE':<8}"
     )
-    print("-" * 105)
+    print("-" * 112)
 
     display = outcomes[:limit]
     for o in display:
@@ -53,13 +57,13 @@ def _print_outcomes_table(outcomes: list[SignalOutcomeRecord], limit: int = 20) 
 
         print(
             f"{o.ticker:<8} {str(o.signal_date):<11} {str(o.entry_date):<11} "
-            f"{o.entry_price:<10,.1f} {o.outcome_status:<10} {exit_dt_str:<11} "
+            f"{o.entry_price:<10,.1f} {o.outcome_status:<16} {exit_dt_str:<11} "
             f"{exit_px_str:<10} {ret_str:<9} {o.holding_days:<5} {mfe_str:<8} {mae_str:<8}"
         )
 
     if len(outcomes) > limit:
         print(f"... and {len(outcomes) - limit} more outcomes.")
-    print("=" * 105 + "\n")
+    print("=" * 112 + "\n")
 
 
 def run_resolve_outcomes(
@@ -69,8 +73,10 @@ def run_resolve_outcomes(
     export_matured: Optional[str] = None,
     export_path: Optional[str] = None,
     ticker: Optional[str] = None,
+    mode: Optional[str] = None,
     database_url: Optional[str] = None,
     exclude_ambiguous: bool = False,
+    exclude_unfilled: bool = False,
 ) -> int:
     db_url = database_url or settings.database_url
     bar_repo = DailyBarRepository(db_url)
@@ -87,6 +93,7 @@ def run_resolve_outcomes(
     results = engine.resolve_all_signals(
         as_of_date=as_of_date,
         ticker=ticker,
+        mode=mode,
         save=save_db,
         ambiguity_policy=ambiguity_policy,
     )
@@ -99,12 +106,12 @@ def run_resolve_outcomes(
         counts[o.outcome_status] = counts.get(o.outcome_status, 0) + 1
 
     print("[SUMMARY] Resolved Outcomes Distribution:")
-    for status in ("TP", "SL", "EXPIRY", "AMBIGUOUS", "OPEN"):
+    for status in ("TP", "SL", "EXPIRY", "UNFILLED_EXPIRED", "AMBIGUOUS", "OPEN"):
         if status in counts:
-            print(f"  {status:<10}: {counts[status]}")
-    print(f"  TOTAL     : {len(outcomes)}")
+            print(f"  {status:<18}: {counts[status]}")
+    print(f"  TOTAL             : {len(outcomes)}")
     if save_db:
-        print("  Database  : Persisted to SQLite successfully.")
+        print("  Database          : Persisted to SQLite successfully.")
 
     if export_matured:
         df = build_matured_outcomes_dataset(
@@ -112,7 +119,9 @@ def run_resolve_outcomes(
             signal_repo=sig_repo,
             end_date=as_of_date,
             ticker=ticker,
+            mode=mode,
             exclude_ambiguous=exclude_ambiguous,
+            exclude_unfilled=exclude_unfilled,
         )
         if df.empty:
             print("\n[WARNING] No matured outcomes found to export.")
@@ -167,9 +176,21 @@ def main() -> None:
         help="Filter signals by specific ticker symbol (e.g. BBCA).",
     )
     parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["LOW_PRICE", "HIGHER_PRICE", "ALL"],
+        default=None,
+        help="Filter signals by dual price mode (LOW_PRICE, HIGHER_PRICE, ALL).",
+    )
+    parser.add_argument(
         "--exclude-ambiguous",
         action="store_true",
         help="Exclude AMBIGUOUS outcomes when exporting matured dataset.",
+    )
+    parser.add_argument(
+        "--exclude-unfilled",
+        action="store_true",
+        help="Exclude UNFILLED_EXPIRED breakout outcomes when exporting matured dataset.",
     )
     parser.add_argument(
         "--database-url",
@@ -189,8 +210,10 @@ def main() -> None:
             export_matured=args.export_matured,
             export_path=args.export_path,
             ticker=args.ticker,
+            mode=args.mode,
             database_url=args.database_url,
             exclude_ambiguous=args.exclude_ambiguous,
+            exclude_unfilled=args.exclude_unfilled,
         )
     )
 

@@ -1,3 +1,4 @@
+import math
 import sqlite3
 from datetime import date, timedelta
 from typing import Any
@@ -546,3 +547,167 @@ def test_repository_date_range_and_min_probability_query():
     prob_sigs = repo.get_signals(min_probability=0.70)
     assert len(prob_sigs) == 2
     assert {s.ticker for s in prob_sigs} == {"BBRI", "BMRI"}
+
+
+def test_ev_hurdle_blocks_negative_ev_bets():
+    """Verify that a candidate passing min_probability=0.25 is BLOCKED when net EV <= 0."""
+    start = date(2026, 1, 1)
+    bars = create_bars_sequence("BBCA", start, 25, 10000.0)
+
+    class LowEdgeClassifier:
+        model_version = "low_edge_clf"
+        feature_names_ = ["return_1d"]
+
+        def predict_probability(self, X: Any) -> list[float]:
+            return [0.26] * len(X)
+
+    # 1. With EV hurdle enforced (default), 26% prob has negative EV -> 0 signals
+    cfg = SignalConfig(min_probability=0.25, enforce_positive_ev=True)
+    engine = SignalEngine(config=cfg)
+    signals = engine.generate_signals(
+        signal_date=bars[-1].date,
+        classifier=LowEdgeClassifier(),
+        bars_by_ticker={"BBCA": bars},
+        config=cfg,
+    )
+    assert len(signals) == 0
+
+    # 2. When EV hurdle is disabled, 26% passes min_probability 0.25
+    cfg_no_ev = SignalConfig(min_probability=0.25, enforce_positive_ev=False)
+    engine_no_ev = SignalEngine(config=cfg_no_ev)
+    signals_no_ev = engine_no_ev.generate_signals(
+        signal_date=bars[-1].date,
+        classifier=LowEdgeClassifier(),
+        bars_by_ticker={"BBCA": bars},
+        config=cfg_no_ev,
+    )
+    assert len(signals_no_ev) == 1
+    assert signals_no_ev[0].predicted_probability == 0.26
+
+
+def test_ev_hurdle_passes_positive_ev_bets():
+    """Verify that candidate with positive net EV (>32.1% with empirical expiry) is emitted."""
+    start = date(2026, 1, 1)
+    bars = create_bars_sequence("BBCA", start, 25, 10000.0)
+
+    class PositiveEdgeClassifier:
+        model_version = "pos_edge_clf"
+        feature_names_ = ["return_1d"]
+
+        def predict_probability(self, X: Any) -> list[float]:
+            return [0.35] * len(X)
+
+    cfg = SignalConfig(min_probability=0.25, enforce_positive_ev=True)
+    engine = SignalEngine(config=cfg)
+    signals = engine.generate_signals(
+        signal_date=bars[-1].date,
+        classifier=PositiveEdgeClassifier(),
+        bars_by_ticker={"BBCA": bars},
+        config=cfg,
+    )
+    assert len(signals) == 1
+    assert signals[0].signal == "BUY"
+    assert signals[0].expected_return is not None
+    assert signals[0].expected_return > 0.0
+    assert signals[0].net_ev is not None
+    assert signals[0].net_ev > 0.0
+
+
+def test_ev_hurdle_fails_closed_when_regressor_predicts_negative_return():
+    """Verify that even with high win prob, negative predicted return rejects candidate."""
+    start = date(2026, 1, 1)
+    bars = create_bars_sequence("BBCA", start, 25, 10000.0)
+
+    class HighProbClassifier:
+        model_version = "high_p_clf"
+        feature_names_ = ["return_1d"]
+
+        def predict_probability(self, X: Any) -> list[float]:
+            return [0.80] * len(X)
+
+    class NegativeReturnRegressor:
+        model_version = "neg_reg"
+
+        def predict_expected_return(self, X: Any) -> list[float]:
+            return [-0.02] * len(X)
+
+    cfg = SignalConfig(min_probability=0.25, enforce_positive_ev=True)
+    engine = SignalEngine(config=cfg)
+    signals = engine.generate_signals(
+        signal_date=bars[-1].date,
+        classifier=HighProbClassifier(),
+        regressor=NegativeReturnRegressor(),
+        bars_by_ticker={"BBCA": bars},
+        config=cfg,
+    )
+    assert len(signals) == 0
+
+
+def test_ev_hurdle_fails_closed_when_regressor_predicts_nan_or_inf():
+    """Verify that NaN or Inf from regressor fails closed and does not emit BUY signals."""
+    start = date(2026, 1, 1)
+    bars = create_bars_sequence("BBCA", start, 25, 10000.0)
+
+    class HighProbClassifier:
+        model_version = "high_p_clf"
+        feature_names_ = ["return_1d"]
+
+        def predict_probability(self, X: Any) -> list[float]:
+            return [0.80] * len(X)
+
+    class NanRegressor:
+        model_version = "nan_reg"
+
+        def predict_expected_return(self, X: Any) -> list[float]:
+            return [float("nan")] * len(X)
+
+    class InfRegressor:
+        model_version = "inf_reg"
+
+        def predict_expected_return(self, X: Any) -> list[float]:
+            return [float("inf")] * len(X)
+
+    # 1. require_expected_return=True with NaN regressor -> Fail closed (0 signals)
+    cfg_req = SignalConfig(
+        min_probability=0.25,
+        enforce_positive_ev=True,
+        require_expected_return=True,
+    )
+    engine = SignalEngine(config=cfg_req)
+    sigs_nan = engine.generate_signals(
+        signal_date=bars[-1].date,
+        classifier=HighProbClassifier(),
+        regressor=NanRegressor(),
+        bars_by_ticker={"BBCA": bars},
+        config=cfg_req,
+    )
+    assert len(sigs_nan) == 0
+
+    # 2. require_expected_return=True with Inf regressor -> Fail closed (0 signals)
+    sigs_inf = engine.generate_signals(
+        signal_date=bars[-1].date,
+        classifier=HighProbClassifier(),
+        regressor=InfRegressor(),
+        bars_by_ticker={"BBCA": bars},
+        config=cfg_req,
+    )
+    assert len(sigs_inf) == 0
+
+    # 3. require_expected_return=False with NaN regressor -> Fallback to discrete EV
+    cfg_opt = SignalConfig(
+        min_probability=0.25,
+        enforce_positive_ev=True,
+        require_expected_return=False,
+    )
+    sigs_opt = engine.generate_signals(
+        signal_date=bars[-1].date,
+        classifier=HighProbClassifier(),
+        regressor=NanRegressor(),
+        bars_by_ticker={"BBCA": bars},
+        config=cfg_opt,
+    )
+    assert len(sigs_opt) == 1
+    assert math.isfinite(sigs_opt[0].expected_return)
+    assert math.isfinite(sigs_opt[0].net_ev)
+
+

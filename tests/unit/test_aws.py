@@ -111,6 +111,12 @@ class FakeS3Client:
         return {"Contents": contents}
 
 
+@pytest.fixture(autouse=True)
+def disable_real_s3(monkeypatch):
+    monkeypatch.delenv("S3_BUCKET", raising=False)
+    monkeypatch.setattr("python.config.settings.settings.s3_bucket", "")
+
+
 def test_compute_hashes(tmp_path: Path):
     test_file = tmp_path / "sample.txt"
     test_file.write_text("Indonesian Stock Signal AI")
@@ -944,7 +950,7 @@ def test_lambda_telegram_webhook_handler_callback_query(tmp_path: Path):
     assert resp["statusCode"] == 200
     body = json.loads(resp["body"])
     assert body["status"] == "ok"
-    assert "Model Registry" in body["reply"] or "Model Information" in body["reply"]
+    assert "model registry" in body["reply"].lower() or "model information" in body["reply"].lower()
 
 
 def test_setup_function_url_and_telegram_webhook_helpers():

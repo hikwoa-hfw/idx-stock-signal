@@ -386,29 +386,72 @@ class SignalEngine:
             except Exception:
                 continue
 
-            prob = float(np.clip(prob, 0.0, 1.0))
-
-            # Fail-closed BUY policy: Non-finite or zero probability blocks BUY
+            # Fail-closed BUY policy: Non-finite or non-positive probability blocks BUY
             if not math.isfinite(prob) or prob <= 0.0:
                 continue
+
+            prob = float(np.clip(prob, 0.0, 1.0))
 
             # 7. Apply risk & liquidity filters
             if prob < cfg.min_probability:
                 continue
 
+            # Calculate mathematical Expected Value (EV) components
+            comm_buy = getattr(cfg, "commission_buy", 0.0015)
+            comm_sell = getattr(cfg, "commission_sell", 0.0025)
+            slippage = getattr(cfg, "slippage_bps", 10.0) / 10000.0
+            friction = comm_buy + comm_sell + slippage
+
+            exp_ratio = getattr(cfg, "expiry_given_negative_ratio", 0.1414)
+            empirical_expiry_ret = getattr(cfg, "empirical_expiry_return", 0.0069)
+
+            p_tp = prob
+            p_sl = (1.0 - p_tp) * (1.0 - exp_ratio)
+            p_exp = (1.0 - p_tp) * exp_ratio
+
+            tp_net = cfg.tp_pct - friction
+            sl_net = -cfg.sl_pct - friction
+            exp_net = empirical_expiry_ret - friction
+
+            ev_net_discrete = p_tp * tp_net + p_sl * sl_net + p_exp * exp_net
+            ev_gross_discrete = (
+                p_tp * cfg.tp_pct + p_sl * (-cfg.sl_pct) + p_exp * empirical_expiry_ret
+            )
+
             exp_ret: Optional[float] = None
             if regressor is not None:
                 try:
-                    exp_ret = float(self._predict_reg(regressor, [x_row])[0])
+                    pred_val = float(self._predict_reg(regressor, [x_row])[0])
+                    if math.isfinite(pred_val):
+                        exp_ret = pred_val
                 except Exception:
                     exp_ret = None
 
-            # Fail-closed if expected return is explicitly required but missing
+            # Fail-closed if expected return is explicitly required but missing or non-finite
             if getattr(cfg, "require_expected_return", False) and exp_ret is None:
                 continue
 
-            if cfg.min_expected_return is not None and exp_ret is not None:
-                if exp_ret < cfg.min_expected_return:
+            if exp_ret is not None:
+                effective_exp_ret = exp_ret
+                effective_net_ev = min(ev_net_discrete, exp_ret - friction)
+            else:
+                effective_exp_ret = ev_gross_discrete
+                effective_net_ev = ev_net_discrete
+
+            # Fail-closed if calculated values are non-finite
+            if not math.isfinite(effective_net_ev) or not math.isfinite(effective_exp_ret):
+                continue
+
+            # Mathematical EV Hurdle Check (fail-closed)
+            enforce_ev = getattr(cfg, "enforce_positive_ev", True)
+            min_hurdle = getattr(cfg, "min_net_ev", 0.0)
+            if enforce_ev and (
+                effective_net_ev <= min_hurdle or abs(effective_net_ev - min_hurdle) < 1e-9
+            ):
+                continue
+
+            if cfg.min_expected_return is not None and effective_exp_ret is not None:
+                if effective_exp_ret < cfg.min_expected_return:
                     continue
 
             if cfg.min_volume_20d is not None:
@@ -429,7 +472,7 @@ class SignalEngine:
             # 8. Calculate composite score
             score = self.calculate_composite_score(
                 prob=prob,
-                expected_return=exp_ret,
+                expected_return=effective_exp_ret,
                 feat_rec=feat_rec,
                 config=cfg,
             )
@@ -438,7 +481,8 @@ class SignalEngine:
                 {
                     "ticker": ticker,
                     "prob": prob,
-                    "expected_return": exp_ret,
+                    "expected_return": effective_exp_ret,
+                    "net_ev": effective_net_ev,
                     "score": score,
                     "feat_rec": feat_rec,
                     "last_bar": last_bar,
@@ -553,6 +597,24 @@ class SignalEngine:
                 entry_policy = "IMMEDIATE"
                 sig_status = "BUY"
 
+            # Fail-closed safeguard: BUY cannot be emitted if net EV fails hurdle or inputs invalid
+            enforce_ev = getattr(cfg, "enforce_positive_ev", True)
+            min_hurdle = getattr(cfg, "min_net_ev", 0.0)
+            if sig_status in ("BUY", "WAIT_FOR_BREAKOUT"):
+                if getattr(cfg, "require_expected_return", False):
+                    c_exp = cand.get("expected_return")
+                    if c_exp is None or not math.isfinite(c_exp):
+                        continue
+                if enforce_ev:
+                    cand_net_ev = cand.get("net_ev")
+                    if (
+                        cand_net_ev is None
+                        or not math.isfinite(cand_net_ev)
+                        or cand_net_ev <= min_hurdle
+                        or abs(cand_net_ev - min_hurdle) < 1e-9
+                    ):
+                        continue
+
             # Feature snapshot (all default columns + model feature names)
             cols_to_capture = list(
                 dict.fromkeys(list(DEFAULT_FEATURE_COLUMNS) + list(feature_names))
@@ -591,7 +653,16 @@ class SignalEngine:
                 sl_price=sl_price,
                 max_holding_days=cfg.max_holding_days,
                 predicted_probability=round(prob, 4),
-                expected_return=round(exp_ret, 4) if exp_ret is not None else None,
+                expected_return=(
+                    round(exp_ret, 4)
+                    if (exp_ret is not None and math.isfinite(exp_ret))
+                    else None
+                ),
+                net_ev=(
+                    round(cand["net_ev"], 4)
+                    if (cand.get("net_ev") is not None and math.isfinite(cand["net_ev"]))
+                    else None
+                ),
                 score=score,
                 model_version=str(model_version_str),
                 feature_version=feat_rec.feature_version,

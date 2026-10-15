@@ -61,11 +61,18 @@ class OutcomeRepository:
                         signal_date TEXT NOT NULL,
                         entry_date TEXT NOT NULL,
                         entry_price REAL NOT NULL,
+                        entry_status TEXT NOT NULL DEFAULT 'FILLED',
                         outcome_status TEXT NOT NULL,
                         realized_return REAL,
                         holding_days INTEGER NOT NULL DEFAULT 0,
                         mfe REAL NOT NULL DEFAULT 0.0,
                         mae REAL NOT NULL DEFAULT 0.0,
+                        mfe_price REAL DEFAULT 0.0,
+                        mae_price REAL DEFAULT 0.0,
+                        time_to_peak INTEGER,
+                        time_to_tp INTEGER,
+                        time_to_sl INTEGER,
+                        net_return REAL,
                         exit_date TEXT,
                         exit_price REAL,
                         exit_reason TEXT,
@@ -80,8 +87,24 @@ class OutcomeRepository:
                     row[1]
                     for row in conn.execute("PRAGMA table_info(outcomes_daily);").fetchall()
                 ]
-                if "mode" not in cols:
-                    conn.execute("ALTER TABLE outcomes_daily ADD COLUMN mode TEXT;")
+                new_cols = [
+                    ("mode", "TEXT"),
+                    ("mfe_price", "REAL DEFAULT 0.0"),
+                    ("mae_price", "REAL DEFAULT 0.0"),
+                    ("time_to_peak", "INTEGER"),
+                    ("time_to_tp", "INTEGER"),
+                    ("time_to_sl", "INTEGER"),
+                    ("net_return", "REAL"),
+                    ("entry_status", "TEXT DEFAULT 'FILLED'"),
+                ]
+                for c_name, c_type in new_cols:
+                    if c_name not in cols:
+                        conn.execute(f"ALTER TABLE outcomes_daily ADD COLUMN {c_name} {c_type};")
+                conn.execute(
+                    "UPDATE outcomes_daily SET entry_status = 'UNFILLED' "
+                    "WHERE outcome_status = 'UNFILLED_EXPIRED' "
+                    "AND (entry_status IS NULL OR entry_status != 'UNFILLED');"
+                )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_outcomes_mode "
                     "ON outcomes_daily(mode);"
@@ -132,7 +155,27 @@ class OutcomeRepository:
         resolved_at_val = (
             datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None
         )
-        mode_val = row["mode"] if "mode" in row.keys() else None
+        keys = row.keys()
+        mode_val = row["mode"] if "mode" in keys else None
+
+        def _get_float(k: str) -> Optional[float]:
+            return float(row[k]) if k in keys and row[k] is not None else None
+
+        def _get_int(k: str) -> Optional[int]:
+            return int(row[k]) if k in keys and row[k] is not None else None
+
+        mfe_p = _get_float("mfe_price")
+        mae_p = _get_float("mae_price")
+        ttp = _get_int("time_to_peak")
+        tt_tp = _get_int("time_to_tp")
+        tt_sl = _get_int("time_to_sl")
+        net_ret = _get_float("net_return")
+        entry_status_val = (
+            row["entry_status"]
+            if "entry_status" in keys and row["entry_status"] is not None
+            else ("UNFILLED" if row["outcome_status"] == "UNFILLED_EXPIRED" else "FILLED")
+        )
+
         return SignalOutcomeRecord(
             outcome_id=row["outcome_id"],
             signal_id=row["signal_id"],
@@ -140,6 +183,7 @@ class OutcomeRepository:
             signal_date=date.fromisoformat(row["signal_date"]),
             entry_date=date.fromisoformat(row["entry_date"]),
             entry_price=float(row["entry_price"]),
+            entry_status=entry_status_val,
             outcome_status=row["outcome_status"],
             realized_return=(
                 float(row["realized_return"]) if row["realized_return"] is not None else None
@@ -147,6 +191,12 @@ class OutcomeRepository:
             holding_days=int(row["holding_days"]),
             mfe=float(row["mfe"]),
             mae=float(row["mae"]),
+            mfe_price=mfe_p,
+            mae_price=mae_p,
+            time_to_peak=ttp,
+            time_to_tp=tt_tp,
+            time_to_sl=tt_sl,
+            net_return=net_ret,
             exit_date=exit_date_val,
             exit_price=float(row["exit_price"]) if row["exit_price"] is not None else None,
             exit_reason=row["exit_reason"],
@@ -181,16 +231,28 @@ class OutcomeRepository:
                 conn.execute(
                     """
                     INSERT INTO outcomes_daily (
-                        outcome_id, signal_id, ticker, signal_date, entry_date, entry_price,
-                        outcome_status, realized_return, holding_days, mfe, mae,
-                        exit_date, exit_price, exit_reason, resolved_at, notes, mode
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        outcome_id, signal_id, ticker, signal_date, entry_date,
+                        entry_price, entry_status, outcome_status, realized_return,
+                        holding_days, mfe, mae, mfe_price, mae_price, time_to_peak,
+                        time_to_tp, time_to_sl, net_return, exit_date, exit_price,
+                        exit_reason, resolved_at, notes, mode
+                    ) VALUES (
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
                     ON CONFLICT(signal_id) DO UPDATE SET
+                        entry_status = excluded.entry_status,
                         outcome_status = excluded.outcome_status,
                         realized_return = excluded.realized_return,
                         holding_days = excluded.holding_days,
                         mfe = excluded.mfe,
                         mae = excluded.mae,
+                        mfe_price = excluded.mfe_price,
+                        mae_price = excluded.mae_price,
+                        time_to_peak = excluded.time_to_peak,
+                        time_to_tp = excluded.time_to_tp,
+                        time_to_sl = excluded.time_to_sl,
+                        net_return = excluded.net_return,
                         exit_date = excluded.exit_date,
                         exit_price = excluded.exit_price,
                         exit_reason = excluded.exit_reason,
@@ -205,11 +267,18 @@ class OutcomeRepository:
                         rec.signal_date.isoformat(),
                         rec.entry_date.isoformat(),
                         rec.entry_price,
+                        rec.entry_status,
                         rec.outcome_status,
                         rec.realized_return,
                         rec.holding_days,
                         rec.mfe,
                         rec.mae,
+                        rec.mfe_price,
+                        rec.mae_price,
+                        rec.time_to_peak,
+                        rec.time_to_tp,
+                        rec.time_to_sl,
+                        rec.net_return,
                         rec.exit_date.isoformat() if rec.exit_date else None,
                         rec.exit_price,
                         rec.exit_reason,
@@ -236,16 +305,28 @@ class OutcomeRepository:
                     conn.execute(
                         """
                         INSERT INTO outcomes_daily (
-                            outcome_id, signal_id, ticker, signal_date, entry_date, entry_price,
-                            outcome_status, realized_return, holding_days, mfe, mae,
-                            exit_date, exit_price, exit_reason, resolved_at, notes, mode
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            outcome_id, signal_id, ticker, signal_date, entry_date,
+                            entry_price, entry_status, outcome_status, realized_return,
+                            holding_days, mfe, mae, mfe_price, mae_price, time_to_peak,
+                            time_to_tp, time_to_sl, net_return, exit_date, exit_price,
+                            exit_reason, resolved_at, notes, mode
+                        ) VALUES (
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        )
                         ON CONFLICT(signal_id) DO UPDATE SET
+                            entry_status = excluded.entry_status,
                             outcome_status = excluded.outcome_status,
                             realized_return = excluded.realized_return,
                             holding_days = excluded.holding_days,
                             mfe = excluded.mfe,
                             mae = excluded.mae,
+                            mfe_price = excluded.mfe_price,
+                            mae_price = excluded.mae_price,
+                            time_to_peak = excluded.time_to_peak,
+                            time_to_tp = excluded.time_to_tp,
+                            time_to_sl = excluded.time_to_sl,
+                            net_return = excluded.net_return,
                             exit_date = excluded.exit_date,
                             exit_price = excluded.exit_price,
                             exit_reason = excluded.exit_reason,
@@ -262,11 +343,18 @@ class OutcomeRepository:
                             rec.signal_date.isoformat(),
                             rec.entry_date.isoformat(),
                             rec.entry_price,
+                            rec.entry_status,
                             rec.outcome_status,
                             rec.realized_return,
                             rec.holding_days,
                             rec.mfe,
                             rec.mae,
+                            rec.mfe_price,
+                            rec.mae_price,
+                            rec.time_to_peak,
+                            rec.time_to_tp,
+                            rec.time_to_sl,
+                            rec.net_return,
                             rec.exit_date.isoformat() if rec.exit_date else None,
                             rec.exit_price,
                             rec.exit_reason,

@@ -6,8 +6,17 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.exceptions import NotFittedError
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+
+try:
+    from sklearn.frozen import FrozenEstimator
+except ImportError:
+    try:
+        from sklearn.calibration import _FrozenEstimator as FrozenEstimator
+    except ImportError:
+        FrozenEstimator = None
 
 
 class LogisticRegressionBaseline:
@@ -55,6 +64,8 @@ class LogisticRegressionBaseline:
         X: Union[np.ndarray, list],
         y: Union[np.ndarray, list],
         feature_names: Optional[list[str]] = None,
+        X_val: Optional[Union[np.ndarray, list]] = None,
+        y_val: Optional[Union[np.ndarray, list]] = None,
     ) -> "LogisticRegressionBaseline":
         X_arr = np.asarray(X, dtype=np.float64)
         y_arr = np.asarray(y, dtype=np.int64)
@@ -73,16 +84,46 @@ class LogisticRegressionBaseline:
         counts = np.bincount(y_arr)
         min_count = int(np.min(counts)) if len(counts) > 1 else 0
 
-        if self.calibrated and min_count >= 3:
-            self.fitted_model_ = CalibratedClassifierCV(
-                estimator=base_pipe,
-                method=self.calibration_method,
-                cv=3,
-            )
-        else:
-            self.fitted_model_ = base_pipe
+        has_val = X_val is not None and y_val is not None and len(X_val) > 0
+        if has_val:
+            X_val_arr = np.asarray(X_val, dtype=np.float64)
+            y_val_arr = np.asarray(y_val, dtype=np.int64)
+            val_counts = np.bincount(y_val_arr)
+            base_pipe.fit(X_arr, y_arr)
 
-        self.fitted_model_.fit(X_arr, y_arr)
+            can_calibrate = (
+                self.calibrated
+                and len(val_counts) > 1
+                and np.min(val_counts) >= 1
+                and FrozenEstimator is not None
+            )
+            if can_calibrate:
+                cal = CalibratedClassifierCV(
+                    estimator=FrozenEstimator(base_pipe),
+                    method=self.calibration_method,
+                )
+                cal.fit(X_val_arr, y_val_arr)
+                self.fitted_model_ = cal
+            else:
+                self.fitted_model_ = base_pipe
+        else:
+            if self.calibrated and min_count >= 2:
+                n_splits = min(3, min_count)
+                if n_splits >= 2:
+                    tscv = TimeSeriesSplit(n_splits=n_splits)
+                    self.fitted_model_ = CalibratedClassifierCV(
+                        estimator=base_pipe,
+                        method=self.calibration_method,
+                        cv=tscv,
+                    )
+                    self.fitted_model_.fit(X_arr, y_arr)
+                else:
+                    self.fitted_model_ = base_pipe
+                    self.fitted_model_.fit(X_arr, y_arr)
+            else:
+                self.fitted_model_ = base_pipe
+                self.fitted_model_.fit(X_arr, y_arr)
+
         return self
 
     def predict_proba(self, X: Union[np.ndarray, list]) -> np.ndarray:
@@ -157,6 +198,8 @@ class LightGBMClassifierBaseline:
         X: Union[np.ndarray, list],
         y: Union[np.ndarray, list],
         feature_names: Optional[list[str]] = None,
+        X_val: Optional[Union[np.ndarray, list]] = None,
+        y_val: Optional[Union[np.ndarray, list]] = None,
     ) -> "LightGBMClassifierBaseline":
         X_arr = np.asarray(X, dtype=np.float64)
         y_arr = np.asarray(y, dtype=np.int64)
@@ -175,16 +218,56 @@ class LightGBMClassifierBaseline:
         counts = np.bincount(y_arr)
         min_count = int(np.min(counts)) if len(counts) > 1 else 0
 
-        if self.calibrated and min_count >= 3:
-            self.fitted_model_ = CalibratedClassifierCV(
-                estimator=base_lgbm,
-                method=self.calibration_method,
-                cv=3,
+        has_val = X_val is not None and y_val is not None and len(X_val) > 0
+        if has_val:
+            X_val_arr = np.asarray(X_val, dtype=np.float64)
+            y_val_arr = np.asarray(y_val, dtype=np.int64)
+            val_counts = np.bincount(y_val_arr)
+            callbacks = [lgb.early_stopping(stopping_rounds=15, verbose=False)]
+            base_lgbm.fit(
+                X_arr,
+                y_arr,
+                eval_X=X_val_arr,
+                eval_y=y_val_arr,
+                callbacks=callbacks,
             )
-        else:
-            self.fitted_model_ = base_lgbm
+            self.base_estimator_ = base_lgbm
 
-        self.fitted_model_.fit(X_arr, y_arr)
+            if (
+                self.calibrated
+                and len(val_counts) > 1
+                and np.min(val_counts) >= 1
+                and FrozenEstimator is not None
+            ):
+                cal = CalibratedClassifierCV(
+                    estimator=FrozenEstimator(base_lgbm),
+                    method=self.calibration_method,
+                )
+                cal.fit(X_val_arr, y_val_arr)
+                self.fitted_model_ = cal
+            else:
+                self.fitted_model_ = base_lgbm
+        else:
+            if self.calibrated and min_count >= 2:
+                n_splits = min(3, min_count)
+                if n_splits >= 2:
+                    tscv = TimeSeriesSplit(n_splits=n_splits)
+                    self.fitted_model_ = CalibratedClassifierCV(
+                        estimator=base_lgbm,
+                        method=self.calibration_method,
+                        cv=tscv,
+                    )
+                    self.fitted_model_.fit(X_arr, y_arr)
+                    self.base_estimator_ = getattr(self.fitted_model_, "estimator", base_lgbm)
+                else:
+                    self.fitted_model_ = base_lgbm
+                    self.fitted_model_.fit(X_arr, y_arr)
+                    self.base_estimator_ = base_lgbm
+            else:
+                self.fitted_model_ = base_lgbm
+                self.fitted_model_.fit(X_arr, y_arr)
+                self.base_estimator_ = base_lgbm
+
         return self
 
     def predict_proba(self, X: Union[np.ndarray, list]) -> np.ndarray:
@@ -218,13 +301,22 @@ class LightGBMClassifierBaseline:
 
     @property
     def feature_importances_(self) -> Optional[np.ndarray]:
+        base = getattr(self, "base_estimator_", None)
+        if base is not None and hasattr(base, "feature_importances_"):
+            return base.feature_importances_
         fitted = getattr(self, "fitted_model_", None) or getattr(self, "model", None)
-        if (
-            not getattr(self, "calibrated", False)
-            and fitted is not None
-            and hasattr(fitted, "feature_importances_")
-        ):
-            return fitted.feature_importances_
+        if fitted is not None:
+            if hasattr(fitted, "feature_importances_"):
+                return fitted.feature_importances_
+            if (
+                hasattr(fitted, "calibrated_classifiers_")
+                and len(fitted.calibrated_classifiers_) > 0
+            ):
+                est = fitted.calibrated_classifiers_[0].estimator
+                if hasattr(est, "estimator") and hasattr(est.estimator, "feature_importances_"):
+                    return est.estimator.feature_importances_
+                if hasattr(est, "feature_importances_"):
+                    return est.feature_importances_
         return None
 
 
@@ -264,13 +356,27 @@ class LightGBMRegressorBaseline:
         X: Union[np.ndarray, list],
         y: Union[np.ndarray, list],
         feature_names: Optional[list[str]] = None,
+        X_val: Optional[Union[np.ndarray, list]] = None,
+        y_val: Optional[Union[np.ndarray, list]] = None,
     ) -> "LightGBMRegressorBaseline":
         X_arr = np.asarray(X, dtype=np.float64)
         y_arr = np.asarray(y, dtype=np.float64)
         if len(X_arr) == 0:
             raise ValueError("Cannot fit on empty dataset")
         self.feature_names_ = feature_names or [f"feature_{i}" for i in range(X_arr.shape[1])]
-        self.model.fit(X_arr, y_arr)
+        if X_val is not None and y_val is not None and len(X_val) > 0:
+            X_val_arr = np.asarray(X_val, dtype=np.float64)
+            y_val_arr = np.asarray(y_val, dtype=np.float64)
+            callbacks = [lgb.early_stopping(stopping_rounds=15, verbose=False)]
+            self.model.fit(
+                X_arr,
+                y_arr,
+                eval_X=X_val_arr,
+                eval_y=y_val_arr,
+                callbacks=callbacks,
+            )
+        else:
+            self.model.fit(X_arr, y_arr)
         return self
 
     def predict(self, X: Union[np.ndarray, list]) -> np.ndarray:
@@ -309,6 +415,8 @@ class RidgeRegressionBaseline:
         X: Union[np.ndarray, list],
         y: Union[np.ndarray, list],
         feature_names: Optional[list[str]] = None,
+        X_val: Optional[Union[np.ndarray, list]] = None,
+        y_val: Optional[Union[np.ndarray, list]] = None,
     ) -> "RidgeRegressionBaseline":
         X_arr = np.asarray(X, dtype=np.float64)
         y_arr = np.asarray(y, dtype=np.float64)

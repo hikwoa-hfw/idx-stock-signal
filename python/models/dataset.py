@@ -232,8 +232,13 @@ class DatasetBuilder:
             return self._empty_dataset(mode_id=eff_mode)
 
         # Assign historical price mode based on decision entry price
-        if "entry_price" in merged.columns:
+        if "entry_price_label" in merged.columns and merged["entry_price_label"].notna().any():
+            merged["entry_price"] = merged["entry_price_label"]
+
+        if "entry_price" in merged.columns and merged["entry_price"].notna().any():
             merged["mode"] = merged["entry_price"].apply(classify_price_mode)
+        elif "mode_label" in merged.columns and merged["mode_label"].notna().any():
+            merged["mode"] = merged["mode_label"]
         elif "mode" not in merged.columns:
             merged["mode"] = "INVALID"
 

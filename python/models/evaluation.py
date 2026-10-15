@@ -82,7 +82,22 @@ def compute_trading_metrics(
     outcome_statuses: Optional[list[str]] = None,
 ) -> TradingMetrics:
     """Computes trading performance metrics from out-of-sample trade returns."""
-    raw_list = [r if r is not None and math.isfinite(r) else 0.0 for r in returns]
+    clean_statuses: Optional[list[str]] = None
+    if outcome_statuses is not None:
+        raw_ret_list = list(returns)
+        if len(raw_ret_list) == len(outcome_statuses):
+            pairs = [
+                (r, str(s).strip().upper())
+                for r, s in zip(raw_ret_list, outcome_statuses, strict=False)
+                if s is not None and str(s).strip().upper() not in ("OPEN", "UNFILLED_EXPIRED")
+            ]
+            raw_list = [r if r is not None and math.isfinite(r) else 0.0 for r, _ in pairs]
+            clean_statuses = [s for _, s in pairs]
+        else:
+            raw_list = [r if r is not None and math.isfinite(r) else 0.0 for r in raw_ret_list]
+    else:
+        raw_list = [r if r is not None and math.isfinite(r) else 0.0 for r in returns]
+
     r_arr = np.asarray(raw_list, dtype=np.float64)
     n = len(r_arr)
     if n == 0:
@@ -126,8 +141,7 @@ def compute_trading_metrics(
     tp_rate = 0.0
     sl_rate = 0.0
     expiry_rate = 0.0
-    if outcome_statuses and len(outcome_statuses) == n:
-        clean_statuses = [str(s).strip().upper() for s in outcome_statuses]
+    if clean_statuses and len(clean_statuses) == n:
         tp_rate = float(sum(1 for s in clean_statuses if s == "TP") / n)
         sl_rate = float(sum(1 for s in clean_statuses if s == "SL") / n)
         expiry_rate = float(sum(1 for s in clean_statuses if s == "EXPIRY") / n)
@@ -325,15 +339,22 @@ class EvaluationEngine:
                 sample_size=0,
             )
 
-        returns = [out.realized_return or 0.0 for out in outcomes]
-        statuses = [out.outcome_status for out in outcomes]
+        filled_trades = [
+            out
+            for out in outcomes
+            if out.outcome_status not in ("OPEN", "UNFILLED_EXPIRED")
+        ]
+        returns = [
+            out.realized_return for out in filled_trades if out.realized_return is not None
+        ]
+        statuses = [out.outcome_status for out in filled_trades]
         trade_metrics = compute_trading_metrics(returns, outcome_statuses=statuses)
 
         return EvaluationReport(
             model_version=model_version,
             evaluation_date=evaluation_date or date.today(),
             dataset_version=dataset_version,
-            sample_size=len(outcomes),
+            sample_size=len(filled_trades),
             trading_metrics=trade_metrics,
             prediction_metrics=PredictionMetrics(
                 accuracy=trade_metrics.win_rate,

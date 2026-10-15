@@ -554,3 +554,657 @@ def test_build_matured_dataset_exclude_ambiguous():
     assert df_clean.iloc[0]["outcome_status"] == "TP"
     assert df_clean.iloc[0]["binary_target"] == 1
 
+
+# -------------------------------------------------------------------------
+# Unit Tests: Breakout Entry Policy & Dual-Mode Outcome Tracking
+# -------------------------------------------------------------------------
+
+
+def test_breakout_policy_delayed_entry_and_snapshots():
+    """Verify that BREAKOUT policy waits for price >= entry_low before entering."""
+    signal = SignalRecord(
+        signal_id="sig-bo-001",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,  # Breakout trigger level
+        entry_high=108.0,
+        tp_price=112.0,
+        sl_price=102.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+
+    bars = [
+        # Day 1: High reaches 104 (< 106) -> breakout not triggered yet
+        _make_bar(date(2026, 1, 2), open_=101.0, high=104.0, low=100.0, close=103.0),
+        # Day 2: Open 103, High 107 (>= 106) -> triggers breakout at 106, Close 106.5
+        _make_bar(date(2026, 1, 3), open_=103.0, high=107.0, low=102.5, close=106.5),
+        # Day 3: Open 107, High 113 (>= 112 TP hit), Low 105, Close 112.0
+        _make_bar(date(2026, 1, 4), open_=107.0, high=113.0, low=105.0, close=112.0),
+    ]
+
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "TP"
+    assert outcome.entry_date == date(2026, 1, 3)  # Entered on Day 2 when breakout triggered
+    assert outcome.entry_price == 106.0  # Trigger level fill
+    assert outcome.exit_date == date(2026, 1, 4)
+    assert outcome.exit_price == pytest.approx(112.0)
+    assert outcome.holding_days == 2  # Day 2 (entry) and Day 3 (TP hit)
+
+    # Snapshots start only from entry date (Day 2)
+    assert len(snapshots) == 2
+    assert snapshots[0].holding_day == 1
+    assert snapshots[0].snapshot_date == date(2026, 1, 3)
+    assert snapshots[1].holding_day == 2
+    assert snapshots[1].snapshot_date == date(2026, 1, 4)
+
+
+def test_breakout_policy_untriggered_within_max_holding_days_returns_none():
+    """Verify untriggered breakout signal returns None while within max holding window."""
+    signal = SignalRecord(
+        signal_id="sig-bo-002",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=112.0,
+        sl_price=102.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+
+    # 2 bars elapsed, both below 106.0 (< max_holding_days 5)
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=103.0, low=99.0, close=101.0),
+        _make_bar(date(2026, 1, 3), open_=101.0, high=104.0, low=100.0, close=102.0),
+    ]
+
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+    assert outcome is None
+    assert snapshots == []
+
+
+def test_breakout_policy_expired_without_triggering():
+    """Verify breakout signal expires with UNFILLED_EXPIRED if trigger level never reached."""
+    signal = SignalRecord(
+        signal_id="sig-bo-003",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=112.0,
+        sl_price=102.0,
+        max_holding_days=3,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+
+    # 3 bars elapsed (== max_holding_days), none reached 106.0
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=103.0, low=99.0, close=101.0),
+        _make_bar(date(2026, 1, 3), open_=101.0, high=104.0, low=100.0, close=102.0),
+        _make_bar(date(2026, 1, 4), open_=102.0, high=105.0, low=101.0, close=103.0),
+    ]
+
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "UNFILLED_EXPIRED"
+    assert outcome.exit_reason == "UNFILLED_EXPIRED"
+    assert outcome.holding_days == 0
+    assert outcome.realized_return is None
+    assert outcome.exit_price is None
+    assert outcome.net_return is None
+    assert snapshots == []
+
+
+def test_dual_mode_outcome_tracking_and_filtering():
+    """Verify dual mode (LOW_PRICE vs HIGHER_PRICE) isolation in repository and engine."""
+    sig_repo = SignalRepository(":memory:")
+    out_repo = OutcomeRepository(":memory:")
+    bar_repo = DailyBarRepository(":memory:")
+
+    engine = OutcomeEngine(bar_repo=bar_repo, signal_repo=sig_repo, outcome_repo=out_repo)
+
+    sig_low = SignalRecord(
+        signal_id="sig-low-01",
+        ticker="GOTO",
+        signal_date=date(2026, 1, 1),
+        signal="BUY",
+        entry_low=80.0,
+        entry_high=82.0,
+        tp_price=86.0,
+        sl_price=78.0,
+        max_holding_days=5,
+        predicted_probability=0.75,
+        score=85.0,
+        model_version="v1",
+        mode="LOW_PRICE",
+    )
+    sig_high = SignalRecord(
+        signal_id="sig-high-01",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="BUY",
+        entry_low=10000.0,
+        entry_high=10100.0,
+        tp_price=10600.0,
+        sl_price=9800.0,
+        max_holding_days=5,
+        predicted_probability=0.72,
+        score=82.0,
+        model_version="v1",
+        mode="HIGHER_PRICE",
+    )
+    sig_repo.save_signals([sig_low, sig_high])
+
+    # Save forward bars
+    bar_repo.save_bars(
+        [
+            DailyBar(
+                ticker="GOTO",
+                date=date(2026, 1, 2),
+                open=81.0,
+                high=87.0,
+                low=80.0,
+                close=86.0,
+                volume=1000,
+            ),
+            DailyBar(
+                ticker="BBCA",
+                date=date(2026, 1, 2),
+                open=10050.0,
+                high=10700.0,
+                low=10000.0,
+                close=10650.0,
+                volume=1000,
+            ),
+        ]
+    )
+
+    # 1. Resolve LOW_PRICE mode only
+    results_low = engine.resolve_all_signals(mode="LOW_PRICE", save=True)
+    assert len(results_low) == 1
+    assert results_low[0][0].ticker == "GOTO"
+    assert results_low[0][0].mode == "LOW_PRICE"
+
+    # Repository query for matured outcomes in LOW_PRICE
+    matured_low = out_repo.get_matured_outcomes(mode="LOW_PRICE")
+    assert len(matured_low) == 1
+    assert matured_low[0].ticker == "GOTO"
+
+    matured_high_empty = out_repo.get_matured_outcomes(mode="HIGHER_PRICE")
+    assert len(matured_high_empty) == 0
+
+    # 2. Resolve HIGHER_PRICE mode
+    results_high = engine.resolve_all_signals(mode="HIGHER_PRICE", save=True)
+    assert len(results_high) == 1
+    assert results_high[0][0].ticker == "BBCA"
+    assert results_high[0][0].mode == "HIGHER_PRICE"
+
+    matured_high = out_repo.get_matured_outcomes(mode="HIGHER_PRICE")
+    assert len(matured_high) == 1
+    assert matured_high[0].ticker == "BBCA"
+
+
+def test_breakout_entry_bar_ambiguity_policies():
+    """Verify breakout entry bar collision between morning dip and trigger level."""
+    signal = SignalRecord(
+        signal_id="sig-bo-ambig",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=115.0,
+        sl_price=102.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+
+    # Day 1 (Jan 2): Opens at 103 (below entry 106), dips to 101 (<= SL 102),
+    # then rallies to 107 (>= trigger 106), closes at 106.5 (> SL 102).
+    bar1 = _make_bar(date(2026, 1, 2), open_=103.0, high=107.0, low=101.0, close=106.5)
+    # Day 2 (Jan 3): Reaches TP
+    bar2 = _make_bar(date(2026, 1, 3), open_=107.0, high=116.0, low=106.0, close=115.0)
+
+    # 1. Conservative policy: assumes worst-case -> stopped out on Day 1 at sl_price
+    engine_cons = OutcomeEngine(ambiguity_policy="conservative")
+    out_cons, snaps_cons = engine_cons.evaluate_signal(signal, [bar1, bar2])
+    assert out_cons is not None
+    assert out_cons.outcome_status == "SL"
+    assert out_cons.exit_price == 102.0
+    assert out_cons.exit_reason == "SL"
+    assert out_cons.holding_days == 1
+    assert out_cons.exit_date == date(2026, 1, 2)
+
+    # 2. Ambiguous policy: collision cannot be resolved -> AMBIGUOUS at close on Day 1
+    engine_ambig = OutcomeEngine(ambiguity_policy="ambiguous")
+    out_ambig, snaps_ambig = engine_ambig.evaluate_signal(signal, [bar1, bar2])
+    assert out_ambig is not None
+    assert out_ambig.outcome_status == "AMBIGUOUS"
+    assert out_ambig.exit_price == pytest.approx(106.5)
+    assert out_ambig.exit_reason == "AMBIGUOUS"
+    assert out_ambig.holding_days == 1
+
+    # 3. Optimistic policy: assumes dip occurred before breakout -> trade survives Day 1
+    engine_opt = OutcomeEngine(ambiguity_policy="optimistic")
+    out_opt, snaps_opt = engine_opt.evaluate_signal(signal, [bar1, bar2])
+    assert out_opt is not None
+    assert out_opt.outcome_status == "TP"
+    assert out_opt.exit_price == pytest.approx(115.0)
+    assert out_opt.exit_reason == "TP"
+    assert out_opt.holding_days == 2
+    assert out_opt.exit_date == date(2026, 1, 3)
+    assert len(snaps_opt) == 2
+
+
+def test_breakout_entry_bar_gap_down_then_surge():
+    """Verify breakout entry bar where open is below SL, then rallies past TP."""
+    signal = SignalRecord(
+        signal_id="sig-bo-gapdown",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=112.0,
+        sl_price=102.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+
+    # Open is 101 (< SL 102), low 100, high 115 (>= TP 112), close 114
+    bar = _make_bar(date(2026, 1, 2), open_=101.0, high=115.0, low=100.0, close=114.0)
+
+    # Conservative exits at sl_price (102.0), NOT at open (101.0)
+    engine_cons = OutcomeEngine(ambiguity_policy="conservative")
+    out_cons, _ = engine_cons.evaluate_signal(signal, [bar])
+    assert out_cons is not None
+    assert out_cons.outcome_status == "SL"
+    assert out_cons.exit_price == 102.0
+
+    # Optimistic resolves to TP (112.0)
+    engine_opt = OutcomeEngine(ambiguity_policy="optimistic")
+    out_opt, _ = engine_opt.evaluate_signal(signal, [bar])
+    assert out_opt is not None
+    assert out_opt.outcome_status == "TP"
+    assert out_opt.exit_price == pytest.approx(112.0)
+
+    # Ambiguous resolves to AMBIGUOUS at close (114.0)
+    engine_ambig = OutcomeEngine(ambiguity_policy="ambiguous")
+    out_ambig, _ = engine_ambig.evaluate_signal(signal, [bar])
+    assert out_ambig is not None
+    assert out_ambig.outcome_status == "AMBIGUOUS"
+    assert out_ambig.exit_price == pytest.approx(114.0)
+
+
+def test_extended_metrics_mfe_mae_price_and_time_to_events():
+    """Verify calculation of mfe_price, mae_price, time_to_peak, time_to_tp, net_return."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0, max_holding_days=5)
+    bars = [
+        # Day 1: Open 100, High 103, Low 98, Close 101
+        _make_bar(date(2026, 1, 2), open_=100.0, high=103.0, low=98.0, close=101.0),
+        # Day 2: Open 101, High 108 (peak), Low 97, Close 104
+        _make_bar(date(2026, 1, 3), open_=101.0, high=108.0, low=97.0, close=104.0),
+        # Day 3: Open 104, High 111 (>= 110 TP hit), Low 102, Close 110.0
+        _make_bar(date(2026, 1, 4), open_=104.0, high=111.0, low=102.0, close=110.0),
+    ]
+
+    engine = OutcomeEngine()
+    outcome, _ = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "TP"
+    assert outcome.entry_price == 100.0
+    assert outcome.exit_price == pytest.approx(110.0)
+    assert outcome.holding_days == 3
+
+    # MFE / MAE in price and percentage
+    assert outcome.mfe == pytest.approx(0.11)  # (111 - 100) / 100
+    assert outcome.mae == pytest.approx(-0.03)  # (97 - 100) / 100
+    assert outcome.mfe_price == pytest.approx(11.0)
+    assert outcome.mae_price == pytest.approx(-3.0)
+
+    # Time to events
+    assert outcome.time_to_peak == 3  # High 111 occurred on Day 3
+    assert outcome.time_to_tp == 3
+    assert outcome.time_to_sl is None
+
+    # Net return after transaction costs (buy 0.15%, sell 0.25%)
+    expected_net = ((110.0 * (1.0 - 0.0025)) / (100.0 * (1.0 + 0.0015))) - 1.0
+    assert outcome.net_return == pytest.approx(expected_net)
+
+
+def test_mfe_never_negative_and_mae_never_positive():
+    """Verify that MFE is never negative and MAE is never positive when clamped."""
+    signal = _make_signal(tp_price=120.0, sl_price=80.0, max_holding_days=1)
+    # Candle where high == entry_price and low == entry_price (flat bar)
+    bar_flat = _make_bar(date(2026, 1, 2), open_=100.0, high=100.0, low=100.0, close=100.0)
+
+    engine = OutcomeEngine()
+    outcome, _ = engine.evaluate_signal(signal, [bar_flat])
+
+    assert outcome is not None
+    assert outcome.mfe >= 0.0
+    assert outcome.mfe_price >= 0.0
+    assert outcome.mae <= 0.0
+    assert outcome.mae_price <= 0.0
+
+
+def test_unfilled_breakout_excluded_from_evaluation_metrics():
+    """Verify that UNFILLED_EXPIRED outcomes are excluded from trade performance metrics."""
+    from python.models.evaluation import EvaluationEngine
+
+    out_tp = SignalOutcomeRecord(
+        signal_id="sig-tp",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        entry_price=100.0,
+        outcome_status="TP",
+        realized_return=0.10,
+        holding_days=2,
+        exit_date=date(2026, 1, 3),
+        exit_price=110.0,
+    )
+    out_sl = SignalOutcomeRecord(
+        signal_id="sig-sl",
+        ticker="BBRI",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        entry_price=100.0,
+        outcome_status="SL",
+        realized_return=-0.05,
+        holding_days=1,
+        exit_date=date(2026, 1, 2),
+        exit_price=95.0,
+    )
+    out_unfilled = SignalOutcomeRecord(
+        signal_id="sig-unfilled",
+        ticker="TLKM",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        entry_price=105.0,
+        outcome_status="UNFILLED_EXPIRED",
+        realized_return=None,
+        holding_days=0,
+        exit_date=date(2026, 1, 6),
+        exit_price=None,
+    )
+
+    eval_engine = EvaluationEngine()
+    report = eval_engine.evaluate_from_outcomes(
+        outcomes=[out_tp, out_sl, out_unfilled],
+        model_version="test_v1",
+    )
+
+    # Sample size should only be the 2 filled trades, NOT 3!
+    assert report.sample_size == 2
+    assert report.trading_metrics.total_trades == 2
+    # 1 win out of 2 trades -> win_rate = 50% (NOT 33.3% from counting unfilled as loss)
+    assert report.trading_metrics.win_rate == pytest.approx(0.50)
+    assert report.trading_metrics.tp_rate == pytest.approx(0.50)
+    assert report.trading_metrics.sl_rate == pytest.approx(0.50)
+
+
+def test_repository_extended_metrics_persistence():
+    """Verify persistence and retrieval of extended outcome fields in OutcomeRepository."""
+    repo = OutcomeRepository(":memory:")
+
+    rec = SignalOutcomeRecord(
+        signal_id="sig-ext-01",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        entry_price=100.0,
+        outcome_status="TP",
+        realized_return=0.08,
+        net_return=0.0756,
+        holding_days=3,
+        mfe=0.10,
+        mae=-0.02,
+        mfe_price=10.0,
+        mae_price=-2.0,
+        time_to_peak=2,
+        time_to_tp=3,
+        exit_date=date(2026, 1, 5),
+        exit_price=108.0,
+    )
+    repo.save_outcome(rec)
+
+    fetched = repo.get_outcome_by_signal_id("sig-ext-01")
+    assert fetched is not None
+    assert fetched.mfe_price == pytest.approx(10.0)
+    assert fetched.mae_price == pytest.approx(-2.0)
+    assert fetched.time_to_peak == 2
+    assert fetched.time_to_tp == 3
+    assert fetched.time_to_sl is None
+    assert fetched.net_return == pytest.approx(0.0756)
+
+
+def test_build_matured_dataset_exclude_unfilled():
+    """Verify build_matured_outcomes_dataset with exclude_unfilled option."""
+    sig_repo = SignalRepository(":memory:")
+    out_repo = OutcomeRepository(":memory:")
+
+    s1 = _make_signal(signal_id="s-fill", ticker="BBCA")
+    s2 = _make_signal(signal_id="s-unfill", ticker="TLKM")
+    sig_repo.save_signals([s1, s2])
+
+    out_repo.save_outcome(
+        SignalOutcomeRecord(
+            signal_id="s-fill",
+            ticker="BBCA",
+            signal_date=date(2026, 1, 1),
+            entry_date=date(2026, 1, 2),
+            entry_price=100.0,
+            outcome_status="TP",
+            exit_date=date(2026, 1, 3),
+            exit_price=105.0,
+            holding_days=2,
+        )
+    )
+    out_repo.save_outcome(
+        SignalOutcomeRecord(
+            signal_id="s-unfill",
+            ticker="TLKM",
+            signal_date=date(2026, 1, 1),
+            entry_date=date(2026, 1, 2),
+            entry_price=105.0,
+            outcome_status="UNFILLED_EXPIRED",
+            holding_days=0,
+            exit_date=date(2026, 1, 6),
+        )
+    )
+
+    df_all = build_matured_outcomes_dataset(out_repo, sig_repo, exclude_unfilled=False)
+    assert len(df_all) == 2
+
+    df_no_unfilled = build_matured_outcomes_dataset(out_repo, sig_repo, exclude_unfilled=True)
+    assert len(df_no_unfilled) == 1
+    assert df_no_unfilled.iloc[0]["signal_id"] == "s-fill"
+    assert "mfe_price" in df_no_unfilled.columns
+    assert "net_return" in df_no_unfilled.columns
+
+
+def test_breakout_policy_trigger_beyond_max_holding_days_expires_unfilled():
+    """Verify that if trigger level is touched after max_holding_days, it expires as UNFILLED."""
+    signal = SignalRecord(
+        signal_id="sig-bo-late",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=112.0,
+        sl_price=102.0,
+        max_holding_days=3,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+    # Day 1-3 stay below 106.0; Day 4 reaches 107.0 (> 106.0)
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=103.0, low=99.0, close=101.0),
+        _make_bar(date(2026, 1, 3), open_=101.0, high=104.0, low=100.0, close=102.0),
+        _make_bar(date(2026, 1, 4), open_=102.0, high=105.0, low=101.0, close=103.0),
+        _make_bar(date(2026, 1, 5), open_=103.0, high=107.0, low=102.0, close=106.5),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "UNFILLED_EXPIRED"
+    assert outcome.entry_status == "UNFILLED"
+    assert outcome.holding_days == 0
+    assert outcome.realized_return is None
+    assert outcome.exit_date == date(2026, 1, 4)
+    assert outcome.notes is not None
+    assert "105.0" in outcome.notes
+
+
+def test_breakout_policy_trigger_on_exact_final_candle():
+    """Verify breakout trigger touched on exact final candle of max_holding_days enters."""
+    signal = SignalRecord(
+        signal_id="sig-bo-boundary",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=112.0,
+        sl_price=102.0,
+        max_holding_days=3,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+    # Day 1-2 below 106.0; Day 3 reaches 107.0 -> enters!
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=103.0, low=99.0, close=101.0),
+        _make_bar(date(2026, 1, 3), open_=101.0, high=104.0, low=100.0, close=102.0),
+        _make_bar(date(2026, 1, 4), open_=103.0, high=107.0, low=102.5, close=106.5),
+        _make_bar(date(2026, 1, 5), open_=107.0, high=113.0, low=105.0, close=112.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "TP"
+    assert outcome.entry_status == "FILLED"
+    assert outcome.entry_date == date(2026, 1, 4)
+    assert outcome.entry_price == 106.0
+    assert outcome.exit_date == date(2026, 1, 5)
+    assert outcome.holding_days == 2
+
+
+def test_intraday_breakout_snapshot_mae_consistency():
+    """Verify snapshot mae_so_far does not get polluted by pre-breakout morning low."""
+    signal = SignalRecord(
+        signal_id="sig-bo-mae",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        reference_price=100.0,
+        entry_low=106.0,
+        entry_high=108.0,
+        tp_price=115.0,
+        sl_price=95.0,
+        max_holding_days=5,
+        predicted_probability=0.70,
+        score=80.0,
+        model_version="v1",
+    )
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=102.0, high=108.0, low=101.0, close=107.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert len(snapshots) == 1
+    assert outcome.mae == pytest.approx(0.0)
+    assert snapshots[0].mae_so_far == pytest.approx(0.0)
+
+
+def test_entry_status_lifecycle_and_persistence():
+    """Verify entry_status validation and persistence in SQLite repository."""
+    repo = OutcomeRepository(":memory:")
+    out_fill = SignalOutcomeRecord(
+        signal_id="sig-stat-fill",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        entry_price=100.0,
+        entry_status="FILLED",
+        outcome_status="TP",
+        exit_date=date(2026, 1, 3),
+        exit_price=105.0,
+        holding_days=2,
+    )
+    out_unfill = SignalOutcomeRecord(
+        signal_id="sig-stat-unfill",
+        ticker="TLKM",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        entry_price=105.0,
+        entry_status="UNFILLED",
+        outcome_status="UNFILLED_EXPIRED",
+        holding_days=0,
+        exit_date=date(2026, 1, 6),
+    )
+    repo.save_outcomes([out_fill, out_unfill])
+
+    f1 = repo.get_outcome_by_signal_id("sig-stat-fill")
+    assert f1 is not None
+    assert f1.entry_status == "FILLED"
+
+    f2 = repo.get_outcome_by_signal_id("sig-stat-unfill")
+    assert f2 is not None
+    assert f2.entry_status == "UNFILLED"
+
+
+
+
+

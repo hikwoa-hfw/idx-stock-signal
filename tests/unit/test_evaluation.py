@@ -457,3 +457,35 @@ def test_model_comparator_floating_point_tolerance():
     )
     report = comparator.compare_reports(champ, chall)
     assert report.recommendation == ComparisonRecommendation.PROMOTE.value
+
+
+def test_unfilled_expired_excluded_from_compute_trading_metrics_and_dataset():
+    """Verify compute_trading_metrics and evaluate_dataset exclude UNFILLED_EXPIRED outcomes."""
+    # 1. compute_trading_metrics with outcome_statuses
+    returns = [0.10, -0.05, None]
+    statuses = ["TP", "SL", "UNFILLED_EXPIRED"]
+    tm = compute_trading_metrics(returns, outcome_statuses=statuses)
+
+    assert tm.total_trades == 2
+    assert tm.win_rate == pytest.approx(0.50)  # 1 win out of 2 trades
+    assert tm.expectancy == pytest.approx(0.025)  # (0.10 - 0.05) / 2
+    assert tm.tp_rate == pytest.approx(0.50)
+    assert tm.sl_rate == pytest.approx(0.50)
+    assert tm.expiry_rate == pytest.approx(0.0)
+
+    # 2. evaluate_dataset with DataFrame containing UNFILLED_EXPIRED row
+    engine = EvaluationEngine()
+    df = pd.DataFrame(
+        {
+            "model_version": ["v1", "v1", "v1"],
+            "predicted_probability": [0.8, 0.4, 0.6],
+            "binary_target": [1, 0, 0],
+            "realized_return": [0.10, -0.05, None],
+            "outcome_status": ["TP", "SL", "UNFILLED_EXPIRED"],
+        }
+    )
+    report = engine.evaluate_dataset(df, model_version="v1")
+    assert report.trading_metrics.total_trades == 2
+    assert report.trading_metrics.win_rate == pytest.approx(0.50)
+    assert report.trading_metrics.expectancy == pytest.approx(0.025)
+

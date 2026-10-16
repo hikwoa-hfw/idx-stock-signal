@@ -817,3 +817,16 @@ Log Perubahan Tambahan (15 Oktober 2026)
       - Sensitivitas batas rentang ketat $\pm 0,5\%$ mendiskualifikasi 42,31% (`LOW_PRICE`) dan 34,08% (`HIGHER_PRICE`), mengonfirmasi desain `enforce_entry_band=False` pada `OutcomeEngine`.
    4. Mengekspor artefak terstruktur ke `artifacts/target_contract/` (`target_contract_summary.csv/.json`, `target_transitions_by_mode.csv`, dan `target_contract_samples.csv` 30 kasus representatif).
    5. Menyusun laporan audit komprehensif pada `docs/12_phase_11b_target_contract_audit_report.md` menggunakan universal template, memperbarui root `audit_report.md` sebagai indeks status ringkas, menambahkan unit test `tests/unit/test_target_contract.py` (5 passed), dan memvalidasi seluruh test suite (460 passed, ruff clean).
+
+55. Sinkronisasi Data Harian 15–16 Oktober 2026, Penyelarasan Sinyal Dual-Mode Cloud, dan Hardening Logging Lambda Daily Pipeline (16 Oktober 2026)
+   Masalah:
+   1. Bot Telegram dan perintah `/daily` pada 16 Oktober 2026 masih memancarkan sinyal tanggal 14 Oktober 2026, karena basis data SQLite di S3 (`s3://idx-stock-signal-436095651956-data/database/stock_signals.db`) baru memuat data hingga penutupan 14 Oktober 2026.
+   2. Pada eksekusi terjadwal harian di cloud AWS Lambda, paket serverless ringan (193 KB) tidak memuat dependensi berat ML/scikit/pandas/lightgbm (`FeatureEngine` dan `SignalEngine`), sehingga Lambda jatuh ke fallback pembacaan sinyal pre-computed di basis data S3 (`distinct_dates[-1]`).
+   3. Level logging root pada `lambda_daily_pipeline_handler` dan `lambda_retraining_handler` sebelumnya belum disetel ke `logging.INFO`, sehingga catatan eksekusi rinci dan fallback diagnostik tidak tampil di CloudWatch.
+   Solusi:
+   1. Melakukan ingest bar harian pasar BEI untuk tanggal 15 dan 16 Oktober 2026 via `scripts.ingest_daily` (57.730 bar tersimpan, mencakup 201 ticker pada 15 Okt dan 194 ticker pada 16 Okt).
+   2. Mengekstrak fitur teknikal pada `features_daily` via `scripts.build_features` untuk seluruh ticker semesta hingga 16 Oktober 2026.
+   3. Membangun sinyal harian dual-mode resmi (`LOW_PRICE` dan `HIGHER_PRICE`) menggunakan model champion aktif untuk 15 Oktober (7 sinyal) dan 16 Oktober (10 sinyal: BNII, DILD, HAIS, GOOD, PNLF, DCII, ROTI, PNBN, CFIN, SIDO), serta menyelesaikan outcome via `scripts.resolve_outcomes`.
+   4. Mengunggah basis data terbarui `datasets/stock_signals.db` (191,9 MB) ke S3 (`s3://idx-stock-signal-436095651956-data/database/stock_signals.db`) lengkap dengan verifikasi SHA-256 dan cadangan timestamped `stock_signals_20261016_110640.db`.
+   5. Menambahkan `logging.getLogger().setLevel(logging.INFO)` pada `lambda_daily_pipeline_handler` dan `lambda_retraining_handler` di `python/cloud/handlers.py`, serta mendeploy ulang seluruh fungsi Lambda staging (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`).
+   6. Menguji endpoint live API Gateway webhook (`https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`) dengan perintah `/daily` dan memverifikasi bot langsung merespons sinyal tanggal 16 Oktober 2026 ("16 Oct 2026 (Daily Close / Not Real-Time Quote)"), serta mengirimkan siaran langsung via Telegram bot (`message_id=83`).

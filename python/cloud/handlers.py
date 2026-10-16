@@ -125,6 +125,7 @@ def dispatch_failure_alert(
 
 
 def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
+    logging.getLogger().setLevel(logging.INFO)
     try:
         s3_bucket = (
             event["s3_bucket"]
@@ -526,6 +527,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
 
 
 def lambda_retraining_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
+    logging.getLogger().setLevel(logging.INFO)
     try:
         s3_bucket = (
             event["s3_bucket"]

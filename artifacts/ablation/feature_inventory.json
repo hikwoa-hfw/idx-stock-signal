@@ -1,0 +1,242 @@
+[
+  {
+    "name": "return_1d",
+    "family": "price_momentum",
+    "lookback": "1 bar",
+    "formula": "(close[t] - close[t-1]) / close[t-1]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "return_3d",
+    "family": "price_momentum",
+    "lookback": "3 bars",
+    "formula": "(close[t] - close[t-3]) / close[t-3]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "return_5d",
+    "family": "price_momentum",
+    "lookback": "5 bars",
+    "formula": "(close[t] - close[t-5]) / close[t-5]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "return_10d",
+    "family": "price_momentum",
+    "lookback": "10 bars",
+    "formula": "(close[t] - close[t-10]) / close[t-10]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "return_20d",
+    "family": "price_momentum",
+    "lookback": "20 bars",
+    "formula": "(close[t] - close[t-20]) / close[t-20]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "ema20",
+    "family": "trend",
+    "lookback": "20 bars",
+    "formula": "EMA(close, span=20)",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "ema50",
+    "family": "trend",
+    "lookback": "50 bars",
+    "formula": "EMA(close, span=50)",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "ema200",
+    "family": "trend",
+    "lookback": "200 bars",
+    "formula": "EMA(close, span=200)",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "close_vs_ema20",
+    "family": "trend",
+    "lookback": "20 bars",
+    "formula": "(close[t] - ema20[t]) / ema20[t]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close, ema20"
+  },
+  {
+    "name": "close_vs_ema50",
+    "family": "trend",
+    "lookback": "50 bars",
+    "formula": "(close[t] - ema50[t]) / ema50[t]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close, ema50"
+  },
+  {
+    "name": "ema20_vs_ema50",
+    "family": "trend",
+    "lookback": "50 bars",
+    "formula": "(ema20[t] - ema50[t]) / ema50[t]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "ema20, ema50"
+  },
+  {
+    "name": "ema50_vs_ema200",
+    "family": "trend",
+    "lookback": "200 bars",
+    "formula": "(ema50[t] - ema200[t]) / ema200[t]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "ema50, ema200"
+  },
+  {
+    "name": "rsi14",
+    "family": "oscillators",
+    "lookback": "14 bars",
+    "formula": "Wilder RSI(14) in [0, 100]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "rsi_change_5d",
+    "family": "oscillators",
+    "lookback": "19 bars",
+    "formula": "rsi14[t] - rsi14[t-5]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "rsi14"
+  },
+  {
+    "name": "atr14",
+    "family": "volatility",
+    "lookback": "14 bars",
+    "formula": "Wilder Average True Range(14)",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "high, low, close"
+  },
+  {
+    "name": "atr_pct",
+    "family": "volatility",
+    "lookback": "14 bars",
+    "formula": "atr14[t] / close[t]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "atr14, close"
+  },
+  {
+    "name": "realized_vol_5d",
+    "family": "volatility",
+    "lookback": "5 bars",
+    "formula": "Sample standard deviation of daily returns over 5 bars",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "realized_vol_20d",
+    "family": "volatility",
+    "lookback": "20 bars",
+    "formula": "Sample standard deviation of daily returns over 20 bars",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close"
+  },
+  {
+    "name": "daily_range_pct",
+    "family": "volatility",
+    "lookback": "1 bar",
+    "formula": "(high[t] - low[t]) / close[t]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "high, low, close"
+  },
+  {
+    "name": "volume_ratio_5d",
+    "family": "volume_liquidity",
+    "lookback": "5 bars",
+    "formula": "volume[t] / SMA(volume, 5)",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "volume"
+  },
+  {
+    "name": "volume_ratio_20d",
+    "family": "volume_liquidity",
+    "lookback": "20 bars",
+    "formula": "volume[t] / SMA(volume, 20)",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "volume"
+  },
+  {
+    "name": "value_ratio_20d",
+    "family": "volume_liquidity",
+    "lookback": "20 bars",
+    "formula": "turnover[t] / SMA(turnover, 20)",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "volume, close"
+  },
+  {
+    "name": "rel_strength_ihsg_20d",
+    "family": "relative_strength",
+    "lookback": "20 bars",
+    "formula": "(1 + return_20d[t]) / (1 + ihsg_return_20d[t]) - 1",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close, ihsg_close"
+  },
+  {
+    "name": "rel_strength_sector_20d",
+    "family": "relative_strength",
+    "lookback": "20 bars",
+    "formula": "(1 + return_20d[t]) / (1 + sector_return_20d[t]) - 1",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "close, sector_indices"
+  },
+  {
+    "name": "ihsg_return_5d",
+    "family": "market_regime",
+    "lookback": "5 bars",
+    "formula": "(ihsg_close[t] - ihsg_close[t-5]) / ihsg_close[t-5]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "ihsg_close"
+  },
+  {
+    "name": "ihsg_return_20d",
+    "family": "market_regime",
+    "lookback": "20 bars",
+    "formula": "(ihsg_close[t] - ihsg_close[t-20]) / ihsg_close[t-20]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "ihsg_close"
+  },
+  {
+    "name": "ihsg_vs_ema20",
+    "family": "market_regime",
+    "lookback": "20 bars",
+    "formula": "(ihsg_close[t] - ihsg_ema20[t]) / ihsg_ema20[t]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "ihsg_close"
+  },
+  {
+    "name": "ihsg_vs_ema50",
+    "family": "market_regime",
+    "lookback": "50 bars",
+    "formula": "(ihsg_close[t] - ihsg_ema50[t]) / ihsg_ema50[t]",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "ihsg_close"
+  },
+  {
+    "name": "market_breadth",
+    "family": "market_regime",
+    "lookback": "20 bars",
+    "formula": "Fraction of universe stocks trading above EMA20 on date t",
+    "pit_availability": "Computed at Close t across universe, available for Open t+1",
+    "dependencies": "universe_closes, universe_ema20"
+  },
+  {
+    "name": "market_volatility",
+    "family": "market_regime",
+    "lookback": "20 bars",
+    "formula": "Sample standard deviation of daily IHSG returns over 20 bars",
+    "pit_availability": "Computed at Close t, available for entry at Open t+1",
+    "dependencies": "ihsg_close"
+  }
+]

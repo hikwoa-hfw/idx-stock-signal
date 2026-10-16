@@ -764,3 +764,16 @@ Log Perubahan Tambahan (15 Oktober 2026)
    1. Memperbarui seluruh kueri SQL dan skrip Python pada `audit_report.md` dan suite pengujian `tests/unit/test_outcomes.py` agar secara ketat menggunakan klausa filter resmi: `WHERE entry_status = 'FILLED' AND outcome_status IN ('TP', 'SL', 'EXPIRY')`.
    2. Menyelaraskan seluruh referensi fase selanjutnya pada `audit_report.md` (bagian Final Recommendation, Limitations, dan Final Decision/Next Step) menjadi "Roadmap Phase 11 — Model Remediation & Retraining Pipeline (Feature Ablation & Candidate Training)", menghilangkan ambiguitas bagi coding agent.
    3. Memvalidasi seluruh test suite (444 tests passed, 100% success rate, ruff clean).
+
+51. Phase 11A — Controlled Feature Ablation for BEI Dual-Mode Stock Signals (16 Oktober 2026)
+   Masalah:
+   1. Sebelum melatih dan mempromosikan model kandidat baru pada Phase 11 (Retraining Pipeline), sistem belum pernah menguji kontribusi empiris inkremental out-of-sample dari masing-masing kelompok fitur aktif (30 fitur) untuk mengidentifikasi fitur yang redundan atau merusak performa prediktif.
+   2. Belum ada pipeline ablasi leave-one-group-out terkontrol dengan pemisahan temporal walk-forward dan jendela purge (10 hari) untuk mencegah kebocoran label masa depan (lookahead leakage) pada regim harga `LOW_PRICE` dan `HIGHER_PRICE`.
+   3. Belum ada perbandingan terhadap baseline sederhana (prevalence baseline) dan baseline non-tree (`LogisticRegressionBaseline`) untuk memastikan kompleksitas pohon keputusan LightGBM memberikan nilai tambah probabilistik nyata.
+   Solusi:
+   1. Menginventarisasi 30 fitur aktif ke dalam 7 kelompok keluarga fitur terdisjoin (`price_momentum`, `trend`, `oscillators`, `volatility`, `volume_liquidity`, `relative_strength`, `market_regime`), lengkap dengan formula matematis, lookback window, ketersediaan point-in-time, dan dependensi indikator.
+   2. Mengimplementasikan engine ablasi fitur `python/experiments/ablation.py` dengan validasi temporal expanding 3-fold walk-forward, jendela purge 10 hari, serta isolasi preprocessing kausal (imputasi median dipelajari strictly pada data training fold).
+   3. Mengevaluasi 17 konfigurasi model per fold (model referensi 30 fitur, 7 model ablasi minus-satu-kelompok, prevalence baseline, logistic baseline, dan 7 model diagnostik group-only) pada 135,013 pengujian out-of-sample di `datasets/stock_signals.db`.
+   4. Menemukan asimetri empiris fundamental: kelompok `market_regime` sangat krusial bagi `LOW_PRICE` ($\Delta \text{ROC-AUC} = -0.0178$ jika dihapus), namun justru bersifat destruktif/noise bagi `HIGHER_PRICE` ($\Delta \text{ROC-AUC} = +0.0168$ dan Brier Score membaik $-0.0057$ jika dihapus). Sebaliknya, indikator `trend` (EMA) memperburuk performa `LOW_PRICE` di seluruh 3 fold ($\Delta \text{ROC-AUC} = +0.0065$ jika dihapus).
+   5. Membuat CLI runner `scripts/run_feature_ablation.py` dan mengekspor artefak machine-readable di `artifacts/ablation/` (`.json` dan `.csv`), menyusun laporan audit komprehensif 10 bagian pada `docs/10_controlled_feature_ablation_report.md`, serta menambahkan unit tests di `tests/unit/test_ablation.py`.
+   6. Menjaga 100% integritas model produksi (champion tetap aktif dan tidak tersentuh) serta memvalidasi 448 unit/integration tests (100% passed, ruff clean).

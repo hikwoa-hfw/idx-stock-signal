@@ -598,12 +598,12 @@ class OutcomeEngine:
                         outcome_status = "AMBIGUOUS"
                         exit_price_val = float(bar.close)
                         exit_reason_val = "AMBIGUOUS"
-                        bar_high_lower = min(bar.high, tp_price)
-                        bar_high_upper = min(bar.high, tp_price)
-                        bar_high_proxy = min(bar.high, tp_price)
-                        bar_low_lower = max(bar.low, sl_price)
-                        bar_low_upper = max(bar.low, sl_price)
-                        bar_low_proxy = max(bar.low, sl_price)
+                        bar_high_lower = bar.high
+                        bar_high_upper = bar.high
+                        bar_high_proxy = bar.high
+                        bar_low_lower = bar.low
+                        bar_low_upper = bar.low
+                        bar_low_proxy = bar.low
                     exit_date_val = bar.date
                     resolved_holding_days = k
 
@@ -631,7 +631,7 @@ class OutcomeEngine:
                         resolved_holding_days = k
                         bar_high_lower = ep
                         bar_high_upper = bar.high
-                        bar_high_proxy = bar.high
+                        bar_high_proxy = ep
                         bar_low_lower = sl_price
                         bar_low_upper = sl_price
                         bar_low_proxy = sl_price
@@ -645,7 +645,7 @@ class OutcomeEngine:
                             resolved_holding_days = k
                             bar_high_lower = ep
                             bar_high_upper = bar.high
-                            bar_high_proxy = bar.high
+                            bar_high_proxy = ep
                             bar_low_lower = sl_price
                             bar_low_upper = sl_price
                             bar_low_proxy = sl_price
@@ -656,12 +656,12 @@ class OutcomeEngine:
                             exit_reason_val = "AMBIGUOUS"
                             exit_date_val = bar.date
                             resolved_holding_days = k
-                            bar_high_lower = min(bar.high, tp_price)
-                            bar_high_upper = min(bar.high, tp_price)
+                            bar_high_lower = bar.high
+                            bar_high_upper = bar.high
                             bar_high_proxy = bar.high
-                            bar_low_lower = max(bar.low, sl_price)
-                            bar_low_upper = max(bar.low, sl_price)
-                            bar_low_proxy = sl_price
+                            bar_low_lower = bar.low
+                            bar_low_upper = bar.low
+                            bar_low_proxy = bar.low
                         elif policy == "optimistic":
                             is_exit = False
                             bar_high_lower = max(ep, bar.close)
@@ -743,12 +743,12 @@ class OutcomeEngine:
                             outcome_status = "AMBIGUOUS"
                             exit_price_val = float(bar.close)
                             exit_reason_val = "AMBIGUOUS"
-                            bar_high_lower = min(bar.high, tp_price)
-                            bar_high_upper = min(bar.high, tp_price)
-                            bar_high_proxy = min(bar.high, tp_price)
-                            bar_low_lower = max(bar.low, sl_price)
-                            bar_low_upper = max(bar.low, sl_price)
-                            bar_low_proxy = max(bar.low, sl_price)
+                            bar_high_lower = bar.high
+                            bar_high_upper = bar.high
+                            bar_high_proxy = bar.high
+                            bar_low_lower = bar.low
+                            bar_low_upper = bar.low
+                            bar_low_proxy = bar.low
                     exit_date_val = bar.date
                     resolved_holding_days = k
 
@@ -797,7 +797,7 @@ class OutcomeEngine:
                         exit_reason_val = "SL"
                         bar_high_lower = float(bar.open)
                         bar_high_upper = bar.high
-                        bar_high_proxy = bar.high
+                        bar_high_proxy = float(bar.open)
                         bar_low_lower = sl_price
                         bar_low_upper = sl_price
                         bar_low_proxy = sl_price

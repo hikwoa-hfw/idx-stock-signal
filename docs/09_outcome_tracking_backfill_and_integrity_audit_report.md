@@ -177,11 +177,11 @@ CREATE TABLE IF NOT EXISTS signal_snapshots_daily (
    Where on the exit candle $k = N$:
    - If gap exit at open ($Open \le SL$ or $Open \ge TP$): $\widetilde{High}_N = Open_N$
    - If intraday TP exit: $\widetilde{High}_N = P_{\text{TP}}$
-   - If intraday SL exit (single barrier touch): $\widetilde{High}_N = High_N$ (bounded by $< P_{\text{TP}}$)
+   - If intraday SL exit (single barrier touch): $\widetilde{High}_N = \text{bar\_high\_proxy} = Open_N$ (or $P_{\text{entry}}$ if breakout entry bar; bounded conservatively by lower bound to prevent post-stop high leakage; upper bound remains $High_N$)
    - If same-candle collision ($High \ge TP$ and $Low \le SL$):
      - `conservative`: $\widetilde{High}_N = Open_N$ (or $P_{\text{entry}}$ if breakout entry bar; $SL$ assumed first so rally to $TP$ is post-exit)
      - `optimistic`: $\widetilde{High}_N = P_{\text{TP}}$ ($TP$ assumed first)
-     - `ambiguous`: $\widetilde{High}_N = \min(High_N, P_{\text{TP}})$ (simulated exit at $Close_N$)
+     - `ambiguous`: $\widetilde{High}_N = High_N$ (Modeled close exit at $Close_N$; full candle range experienced)
 
 2. **In-Trade Maximum Adverse Excursion (MAE)**:
    $$\text{MAE}_{\text{trade}} = \min\left(0.0, \frac{\min_{k \in \{1,\dots,N\}} \widetilde{Low}_k - P_{\text{entry}}}{P_{\text{entry}}}\right)$$
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS signal_snapshots_daily (
    - If same-candle collision ($High \ge TP$ and $Low \le SL$):
      - `conservative`: $\widetilde{Low}_N = P_{\text{SL}}$ ($SL$ assumed first)
      - `optimistic`: $\widetilde{Low}_N = Open_N$ (or $P_{\text{entry}}$ if breakout entry bar; $TP$ assumed first so drop to $SL$ is post-exit)
-     - `ambiguous`: $\widetilde{Low}_N = \max(Low_N, P_{\text{SL}})$ (simulated exit at $Close_N$)
+     - `ambiguous`: $\widetilde{Low}_N = Low_N$ (Modeled close exit at $Close_N$; full candle range experienced)
 
 3. **Trade Returns & Execution Friction Reconciliation**:
    Indonesian stock exchange (BEI / IDX) standard fees:
@@ -322,7 +322,7 @@ Because daily OHLC bars lack tick-by-tick timestamp ordering, the engine avoids 
 Unfilled signals (`UNFILLED_EXPIRED` and `INVALIDATED_GAP`) represent orders that never executed in the market. Including them in trading performance metrics artificially deflates win rate and distorts expectancy with fabricated zero-return executions:
 - `compute_trading_metrics` and `evaluate_from_outcomes` strictly filter for `entry_status == 'FILLED' and outcome_status in ('TP', 'SL', 'EXPIRY')`.
 - Out of 31 matured historical signals: 27 are filled trades (8 TP, 17 SL, 2 EXPIRY), 1 is `UNFILLED_EXPIRED`, and 3 are `INVALIDATED_GAP`.
-- Total trades evaluated: **27**. Win rate: **37.04%** (10 positive returns / 27 trades; pure TP rate: 29.63%). Expectancy: **-0.0017** (-17 bps).
+- Total trades evaluated: **27**. Win rate: **37.04%** (10 positive returns / 27 trades; pure TP rate: 29.63%). Arithmetic Mean Gross Return: **-0.1714%** (-17.14 bps). Arithmetic Mean Net Return: **-0.6695%** (-66.95 bps). Expectancy: **-0.0067** (-66.95 bps per trade, exactly matching unweighted mean net return). Realized friction: **49.81 bps** (0.00498097).
 
 ---
 
@@ -340,11 +340,11 @@ Every record below has been recomputed and verified against underlying price bar
 | `LPKR` | 2026-08-03 | 2026-08-04 | 61.0 | `TP` | 2026-08-07 | 65.0 | +6.56% | +6.13% | +6.03% | 4d | +6.6% | -1.6% | +21.3% | -1.6% | LOW |
 | `PNLF` | 2026-08-03 | 2026-08-04 | 224.0 | `TP` | 2026-08-13 | 236.4 | +5.53% | +5.11% | +5.00% | 8d | +5.5% | +0.0% | +8.9% | +0.0% | LOW |
 | `WIRG` | 2026-08-03 | 2026-08-04 | 59.0 | `TP` | 2026-08-07 | 62.0 | +5.08% | +4.67% | +4.56% | 4d | +5.1% | -1.7% | +20.3% | -1.7% | LOW |
-| `ADHI` | 2026-08-18 | 2026-08-19 | 140.0 | `SL` | 2026-08-19 | 137.5 | -1.80% | -2.19% | -2.29% | 1d | +1.4% | -1.8% | +1.4% | -5.7% | LOW |
+| `ADHI` | 2026-08-18 | 2026-08-19 | 140.0 | `SL` | 2026-08-19 | 137.5 | -1.80% | -2.19% | -2.29% | 1d | +0.0% | -1.8% | +1.4% | -5.7% | LOW |
 | `BMTR` | 2026-08-18 | 2026-08-19 | 116.0 | `SL` | 2026-08-26 | 113.1 | -2.49% | -2.88% | -2.98% | 5d | +1.7% | -2.5% | +1.7% | -4.3% | LOW |
 | `BYAN` | 2026-08-18 | *None* | *None* | `INVALIDATED_GAP` | *None* | *None* | *None* | *None* | *None* | 0d | *None* | *None* | +8.0% | -22.3% | HIGHER |
-| `GIAA` | 2026-08-18 | 2026-08-19 | 75.0 | `SL` | 2026-08-19 | 72.0 | -4.00% | -4.38% | -4.48% | 1d | +1.3% | -4.0% | +1.3% | -18.7% | LOW |
-| `KRAS` | 2026-08-18 | 2026-08-19 | 226.0 | `SL` | 2026-08-19 | 220.4 | -2.49% | -2.88% | -2.98% | 1d | +0.9% | -2.5% | +9.7% | -3.5% | LOW |
+| `GIAA` | 2026-08-18 | 2026-08-19 | 75.0 | `SL` | 2026-08-19 | 72.0 | -4.00% | -4.38% | -4.48% | 1d | +0.0% | -4.0% | +1.3% | -18.7% | LOW |
+| `KRAS` | 2026-08-18 | 2026-08-19 | 226.0 | `SL` | 2026-08-19 | 220.4 | -2.49% | -2.88% | -2.98% | 1d | +0.0% | -2.5% | +9.7% | -3.5% | LOW |
 | `WIRG` | 2026-08-18 | 2026-08-19 | 69.0 | `TP` | 2026-08-20 | 74.0 | +7.25% | +6.82% | +6.71% | 2d | +7.2% | -2.9% | +17.4% | -2.9% | LOW |
 | `BKSL` | 2026-09-01 | 2026-09-02 | 77.0 | `SL` | 2026-09-09 | 73.0 | -5.19% | -5.57% | -5.67% | 6d | +0.0% | -5.2% | +0.0% | -14.3% | LOW |
 | `BMTR` | 2026-09-01 | 2026-09-02 | 113.0 | `TP` | 2026-09-10 | 120.3 | +6.46% | +6.03% | +5.93% | 7d | +6.5% | -0.9% | +7.1% | -0.9% | LOW |
@@ -352,15 +352,15 @@ Every record below has been recomputed and verified against underlying price bar
 | `LPKR` | 2026-09-01 | 2026-09-02 | 63.0 | `SL` | 2026-09-11 | 60.0 | -4.76% | -5.14% | -5.24% | 8d | +1.6% | -4.8% | +1.6% | -6.3% | LOW |
 | `WIRG` | 2026-09-01 | 2026-09-02 | 75.0 | `SL` | 2026-09-09 | 72.0 | -4.00% | -4.38% | -4.48% | 6d | +5.3% | -4.0% | +14.7% | -5.3% | LOW |
 | `BKSL` | 2026-09-15 | 2026-09-16 | 69.0 | `SL` | 2026-09-18 | 66.0 | -4.35% | -4.73% | -4.83% | 3d | +2.9% | -4.3% | +2.9% | -26.1% | LOW |
-| `BMTR` | 2026-09-15 | 2026-09-16 | 117.0 | `SL` | 2026-09-16 | 114.1 | -2.49% | -2.88% | -2.97% | 1d | +0.9% | -2.5% | +0.9% | -41.0% | LOW |
-| `DEWA` | 2026-09-15 | 2026-09-16 | 394.0 | `SL` | 2026-09-16 | 386.1 | -1.99% | -2.39% | -2.48% | 1d | +1.5% | -2.0% | +1.5% | -16.2% | HIGHER |
+| `BMTR` | 2026-09-15 | 2026-09-16 | 117.0 | `SL` | 2026-09-16 | 114.1 | -2.49% | -2.88% | -2.97% | 1d | +0.0% | -2.5% | +0.9% | -41.0% | LOW |
+| `DEWA` | 2026-09-15 | 2026-09-16 | 394.0 | `SL` | 2026-09-16 | 386.1 | -1.99% | -2.39% | -2.48% | 1d | +0.0% | -2.0% | +1.5% | -16.2% | HIGHER |
 | `EMTK` | 2026-09-15 | 2026-09-16 | 492.0 | `SL` | 2026-09-18 | 479.8 | -2.49% | -2.88% | -2.98% | 3d | +0.8% | -2.5% | +0.8% | -19.5% | HIGHER |
 | `LPKR` | 2026-09-15 | 2026-09-16 | 60.0 | `SL` | 2026-09-18 | 56.0 | -6.67% | -7.04% | -7.13% | 3d | +1.7% | -6.7% | +1.7% | -35.0% | LOW |
 | `MAPA` | 2026-09-15 | 2026-09-16 | 645.0 | `TP` | 2026-09-18 | 680.6 | +5.52% | +5.10% | +5.00% | 3d | +5.5% | +0.0% | +8.5% | -2.3% | HIGHER |
 | `NCKL` | 2026-09-15 | 2026-09-16 | 915.0 | `SL` | 2026-09-28 | 892.2 | -2.49% | -2.88% | -2.98% | 9d | +4.4% | -2.5% | +4.4% | -6.0% | HIGHER |
 | `SCMA` | 2026-09-15 | 2026-09-16 | 195.0 | `SL` | 2026-09-18 | 190.2 | -2.49% | -2.88% | -2.97% | 3d | +1.5% | -2.5% | +1.5% | -17.4% | LOW |
 | `SMGR` | 2026-09-15 | 2026-09-16 | 1,585.0 | `SL` | 2026-09-28 | 1,545.5 | -2.49% | -2.88% | -2.98% | 9d | +3.2% | -2.5% | +3.2% | -6.9% | HIGHER |
-| `WIRG` | 2026-09-15 | 2026-09-16 | 79.0 | `SL` | 2026-09-16 | 76.0 | -3.80% | -4.18% | -4.28% | 1d | +5.1% | -3.8% | +5.1% | -32.9% | LOW |
+| `WIRG` | 2026-09-15 | 2026-09-16 | 79.0 | `SL` | 2026-09-16 | 76.0 | -3.80% | -4.18% | -4.28% | 1d | +0.0% | -3.8% | +5.1% | -32.9% | LOW |
 | `ASII` | 2026-10-09 | *None* | *None* | `INVALIDATED_GAP` | *None* | *None* | *None* | *None* | *None* | 0d | *None* | *None* | +0.0% | -9.1% | HIGHER |
 | `BBCA` | 2026-10-09 | *None* | *None* | `INVALIDATED_GAP` | *None* | *None* | *None* | *None* | *None* | 0d | *None* | *None* | +0.0% | -42.6% | HIGHER |
 
@@ -374,8 +374,10 @@ Every record below has been recomputed and verified against underlying price bar
 - **Filled Trading Sample Size**: 27
   - Total Filled Trades: 27
   - Win Rate: 37.04% (10 positive returns / 27 trades; pure TP / 27 = 29.63%)
-  - Expectancy: -0.0017 (-17 bps)
-  - Avg Holding Time: 4.19 days
+  - Mean Gross Return: -0.1714% (-17.14 bps)
+  - Mean Net Return: -0.6695% (-66.95 bps)
+  - Expectancy: -0.0067 (-66.95 bps per trade)
+  - Avg Holding Time: 4.48 days
 
 ---
 
@@ -405,7 +407,7 @@ Every record below has been recomputed and verified against underlying price bar
 ## 7. Verification Record & Test Suite Results
 
 - **Linter (`ruff check .`)**: 100% clean, 0 errors, all lines under 100 characters.
-- **Pytest Suite**: Complete test suite passed (437 passing tests, 100% success rate).
+- **Pytest Suite**: Complete test suite passed (444 passing tests, 100% success rate).
 - **Audit Verification (`scripts/audit_historical_outcomes.py`)**: 31 records independently recomputed and verified against underlying price bars. Invariants, dual-bound excursions (`mfe_min <= mfe <= mfe_max`, `mae_min <= mae <= mae_max`), entry deviation metrics, snapshot parity, and fees/slippage all passed 100% with 0 violations.
 - **Replay Idempotency**: `scripts/resolve_outcomes.py --force-recompute --save-db` executed repeatedly yields identical DB state without duplicates or unexpected mutations.
 
@@ -444,5 +446,5 @@ Every record below has been recomputed and verified against underlying price bar
    - **Conclusion: YES**. Explicit mathematically sound intervals (`[mfe_min, mfe_max]`, `[mae_min, mae_max]`) capture the irreducible daily OHLC barrier touch ambiguity without claiming false tick precision. The deterministic conservative proxy (`mfe`, `mae`) is guaranteed to lie within the bounds. Snapshots and terminal metrics maintain 100% exact parity.
 
 3. **Outcome Tracking is ready to be used as a source of model-evaluation targets**:
-   - **Conclusion: READY**. All 31 historical records in `datasets/stock_signals.db` have been recomputed with 0 violations across invariants, database migration, excursion bounds, and fee/slippage alignment. Metric isolation guarantees that unfilled and invalidated orders do not pollute completed trade metrics (win rate: 37.04%, expectancy: -17 bps across 27 filled trades). The pipeline is robust, idempotent, and ready for model-evaluation target generation.
+   - **Conclusion: READY**. All 31 historical records in `datasets/stock_signals.db` have been recomputed with 0 violations across invariants, database migration, excursion bounds, and fee/slippage alignment. Metric isolation guarantees that unfilled and invalidated orders do not pollute completed trade metrics (win rate: 37.04%, mean gross: -17.14 bps, mean net: -66.95 bps, expectancy: -66.95 bps across 27 filled trades). The pipeline is robust, idempotent, and ready for model-evaluation target generation.
 

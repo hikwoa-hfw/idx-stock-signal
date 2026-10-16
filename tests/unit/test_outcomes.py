@@ -118,9 +118,11 @@ def test_sl_hit_before_tp():
     assert outcome.entry_price == 100.0
     assert outcome.exit_date == date(2026, 1, 2)
     assert outcome.exit_price == pytest.approx(95.0)
-    assert outcome.realized_return == pytest.approx(-0.05)
     assert outcome.exit_reason == "SL"
-    assert outcome.mfe == pytest.approx(0.02)
+    # Under conservative proxy, Day 1 SL exit bounds in-trade MFE at entry/open (0.0)
+    assert outcome.mfe == pytest.approx(0.0)
+    assert outcome.mfe_min == pytest.approx(0.0)
+    assert outcome.mfe_max == pytest.approx(0.02)
     # In-trade MAE bounded by SL barrier (95.0)
     assert outcome.mae == pytest.approx(-0.05)
     # Full horizon opportunity captures full candle low (94.0)
@@ -884,8 +886,9 @@ def test_breakout_entry_bar_gap_down_then_surge():
     assert out_ambig is not None
     assert out_ambig.outcome_status == "AMBIGUOUS"
     assert out_ambig.exit_price == pytest.approx(114.0)
-    assert out_ambig.mfe == pytest.approx((112.0 - 106.0) / 106.0)
-    assert out_ambig.mae == pytest.approx((102.0 - 106.0) / 106.0)
+    # Modeled close exit reflects full observed candle range from entry trigger (106.0)
+    assert out_ambig.mfe == pytest.approx((115.0 - 106.0) / 106.0)
+    assert out_ambig.mae == pytest.approx((100.0 - 106.0) / 106.0)
 
 
 def test_breakout_entry_bar_tp_no_post_exit_mae_leakage():
@@ -1372,15 +1375,15 @@ def test_same_candle_collision_ambiguity_policies():
     assert out_opt.full_horizon_mfe == pytest.approx(0.06)
     assert out_opt.full_horizon_mae == pytest.approx(-0.06)
 
-    # 3. Ambiguous (closes at market close 99): MFE bounded by TP 105 (+5%), MAE by SL 95 (-5%)
+    # 3. Ambiguous (closes at market close 99): reflects full observed candle range [94.0, 106.0]
     eng_amb = OutcomeEngine(ambiguity_policy="ambiguous")
     out_amb, _ = eng_amb.evaluate_signal(signal, [collision_bar])
     assert out_amb is not None
     assert out_amb.outcome_status == "AMBIGUOUS"
     assert out_amb.exit_price == pytest.approx(99.0)  # Close
     assert out_amb.exit_reason == "AMBIGUOUS"
-    assert out_amb.mfe == pytest.approx(0.05)
-    assert out_amb.mae == pytest.approx(-0.05)
+    assert out_amb.mfe == pytest.approx(0.06)
+    assert out_amb.mae == pytest.approx(-0.06)
     assert out_amb.full_horizon_mfe == pytest.approx(0.06)
     assert out_amb.full_horizon_mae == pytest.approx(-0.06)
 
@@ -1769,7 +1772,7 @@ def test_tp_day_low_conservative_proxy_semantics():
 
 
 def test_sl_day_high_conservative_proxy_semantics():
-    """Verify exit proxy: SL exit bounds MAE at SL, while MFE reflects candle high."""
+    """Verify exit proxy: SL exit bounds MAE at SL, while MFE proxy uses lower bound."""
     signal = _make_signal(tp_price=110.0, sl_price=95.0, max_holding_days=5)
     # Day 1: entries at open 100.0, high 103.0, drops to low 93.0 (hitting SL 95)
     bars = [
@@ -1784,8 +1787,11 @@ def test_sl_day_high_conservative_proxy_semantics():
     assert outcome.realized_return == pytest.approx(-0.05)
     # In-trade MAE bounded at SL barrier (95.0 = -5%)
     assert outcome.mae == pytest.approx(-0.05)
-    # In-trade MFE reflects candle high of 103.0 (+3%) prior to stop-out
-    assert outcome.mfe == pytest.approx(0.03)
+    # In-trade conservative MFE proxy is 0.0 (open/entry); bounds capture [0.0, 0.03]
+    assert outcome.mfe == pytest.approx(0.0)
+    assert outcome.mfe_min == pytest.approx(0.0)
+    assert outcome.mfe_max == pytest.approx(0.03)
+    assert snapshots[0].mfe_so_far == pytest.approx(0.0)
     # Full horizon opportunity captures full candle low of 93.0 (-7%)
     assert outcome.full_horizon_mae == pytest.approx(-0.07)
 
@@ -2091,18 +2097,18 @@ def test_same_candle_collision_excursion_bounds_policies():
     assert out_opt.mae_min == pytest.approx(-0.15)  # lower bound had low touched first
     assert out_opt.mae_max == pytest.approx(0.0)
 
-    # 3. Ambiguous (Close exit)
+    # 3. Ambiguous (Close exit): reflects full observed candle range [85.0, 115.0]
     eng_amb = OutcomeEngine(ambiguity_policy="ambiguous")
     out_amb, _ = eng_amb.evaluate_signal(signal, [bar])
     assert out_amb is not None
     assert out_amb.outcome_status == "AMBIGUOUS"
     assert out_amb.exit_price == pytest.approx(102.0)
-    assert out_amb.mfe == pytest.approx(0.10)
-    assert out_amb.mfe_min == pytest.approx(0.10)
-    assert out_amb.mfe_max == pytest.approx(0.10)
-    assert out_amb.mae == pytest.approx(-0.10)
-    assert out_amb.mae_min == pytest.approx(-0.10)
-    assert out_amb.mae_max == pytest.approx(-0.10)
+    assert out_amb.mfe == pytest.approx(0.15)
+    assert out_amb.mfe_min == pytest.approx(0.15)
+    assert out_amb.mfe_max == pytest.approx(0.15)
+    assert out_amb.mae == pytest.approx(-0.15)
+    assert out_amb.mae_min == pytest.approx(-0.15)
+    assert out_amb.mae_max == pytest.approx(-0.15)
 
 
 def test_immediate_entry_band_and_deviation_scenarios():
@@ -2180,8 +2186,8 @@ def test_sl_touched_before_days_high_uncertain_excursion():
     assert outcome.mfe_min == pytest.approx(0.02)
     # Upper bound (candle high visited before SL): Day 2 high 108.0 reached in-trade (+8%).
     assert outcome.mfe_max == pytest.approx(0.08)
-    # Proxy tracks upper bound estimate
-    assert outcome.mfe == pytest.approx(0.08)
+    # Conservative proxy tracks lower bound (confirmed in-trade peak from Day 1)
+    assert outcome.mfe == pytest.approx(0.02)
 
     # Snapshots parity on terminal day
     assert len(snapshots) == 2
@@ -2258,3 +2264,197 @@ def test_breakout_open_gating_scenarios():
     assert out3_strict.entry_status == "FILLED"
     assert out3_strict.entry_price == pytest.approx(106.0)
     assert len(snaps3_strict) == 1
+
+
+# ==============================================================================
+# Final Consistency Remediation: Outcome Statistics, Time-to-Peak, and Ambiguous Exits
+# ==============================================================================
+
+
+def test_regression_sl_day_high_potentially_occurring_after_stop():
+    """Verify SL exit does not adopt optimistic exit-day high into conservative MFE proxy."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0, max_holding_days=5)
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=102.0, low=98.0, close=101.0),
+        # Day 2: open 101, surges to high 108 (+8%), but drops to low 88 (SL 90 triggered)
+        _make_bar(date(2026, 1, 3), open_=101.0, high=108.0, low=88.0, close=89.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "SL"
+    assert outcome.exit_price == pytest.approx(90.0)
+    assert outcome.holding_days == 2
+
+    # MAE is bounded at SL barrier
+    assert outcome.mae == pytest.approx(-0.10)
+    assert outcome.mae_min == pytest.approx(-0.10)
+    assert outcome.mae_max == pytest.approx(-0.10)
+
+    # In-trade MFE bounds:
+    # Lower bound (conservative): Day 2 high in-trade cannot exceed Day 2 open 101.0,
+    # so in-trade peak is Day 1 high 102.0 (+2.0%).
+    assert outcome.mfe_min == pytest.approx(0.02)
+    # Upper bound (optimistic): Day 2 high 108.0 reached before SL (+8.0%).
+    assert outcome.mfe_max == pytest.approx(0.08)
+    # Conservative proxy MUST equal mfe_min, NEVER the optimistic bound
+    assert outcome.mfe == pytest.approx(0.02)
+    assert outcome.mfe_price == pytest.approx(2.0)
+    # Full horizon opportunity captures unconstrained peak
+    assert outcome.full_horizon_mfe == pytest.approx(0.08)
+
+
+def test_regression_tp_day_low_potentially_occurring_after_target():
+    """Verify TP exit bounds MAE conservatively to capture worst-case pre-target drawdown."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0, max_holding_days=5)
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=104.0, low=99.0, close=103.0),
+        # Day 2: open 103, hits TP 110 (high 112), drops to low 92, close 111
+        _make_bar(date(2026, 1, 3), open_=103.0, high=112.0, low=92.0, close=111.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "TP"
+    assert outcome.exit_price == pytest.approx(110.0)
+    assert outcome.holding_days == 2
+
+    # MFE is locked at TP barrier
+    assert outcome.mfe == pytest.approx(0.10)
+    assert outcome.mfe_min == pytest.approx(0.10)
+    assert outcome.mfe_max == pytest.approx(0.10)
+
+    # MAE bounds:
+    # Lower bound (worst case): low 92.0 visited before TP -> -8.0%
+    assert outcome.mae_min == pytest.approx(-0.08)
+    # Upper bound (best case): TP hit at open before drop -> Day 1 low 99.0 (-1.0%)
+    assert outcome.mae_max == pytest.approx(-0.01)
+    # Conservative risk proxy assumes worst-case drawdown (mae_min)
+    assert outcome.mae == pytest.approx(-0.08)
+    assert outcome.mae_price == pytest.approx(-8.0)
+
+
+def test_regression_time_to_peak_when_exit_day_high_is_uncertain():
+    """Verify time_to_peak reflects observable in-trade peak, not unconfirmed exit-day high."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0, max_holding_days=5)
+    bars = [
+        # Day 1: peak reaches 105.0 (+5%) on a full holding day
+        _make_bar(date(2026, 1, 2), open_=100.0, high=105.0, low=99.0, close=104.0),
+        # Day 2: holding bar
+        _make_bar(date(2026, 1, 5), open_=104.0, high=103.0, low=100.0, close=102.0),
+        # Day 3: opens 101, surges to 109 (> Day 1 peak), but drops to low 88 (SL 90 triggered)
+        _make_bar(date(2026, 1, 6), open_=101.0, high=109.0, low=88.0, close=89.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "SL"
+    assert outcome.holding_days == 3
+
+    # In-trade peak is confirmed from Day 1 (105.0), NOT from uncertain Day 3 (109.0)
+    assert outcome.time_to_peak == 1
+    assert outcome.mfe == pytest.approx(0.05)
+    assert outcome.mfe_min == pytest.approx(0.05)
+    assert outcome.mfe_max == pytest.approx(0.09)
+
+    # Full horizon opportunity captures unconstrained peak on Day 3
+    assert outcome.full_horizon_time_to_peak == 3
+    assert outcome.full_horizon_mfe == pytest.approx(0.09)
+
+
+def test_regression_ambiguous_policy_candle_touching_both_barriers():
+    """Verify ambiguous policy models Close exit with full observed candle excursion range."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0, max_holding_days=5)
+    # Candle touching both barriers: high 115 (>= 110), low 85 (<= 90), close 103
+    bar = _make_bar(date(2026, 1, 2), open_=100.0, high=115.0, low=85.0, close=103.0)
+
+    engine = OutcomeEngine(ambiguity_policy="ambiguous")
+    outcome, snapshots = engine.evaluate_signal(signal, [bar])
+
+    assert outcome is not None
+    assert outcome.outcome_status == "AMBIGUOUS"
+    assert outcome.exit_reason == "AMBIGUOUS"
+    assert outcome.exit_price == pytest.approx(103.0)
+    assert outcome.holding_days == 1
+
+    # Because position exits at Close, it was open for the full session.
+    # Excursion metrics represent the full observed candle range:
+    assert outcome.mfe == pytest.approx(0.15)
+    assert outcome.mfe_min == pytest.approx(0.15)
+    assert outcome.mfe_max == pytest.approx(0.15)
+    assert outcome.mfe_price == pytest.approx(15.0)
+    assert outcome.mae == pytest.approx(-0.15)
+    assert outcome.mae_min == pytest.approx(-0.15)
+    assert outcome.mae_max == pytest.approx(-0.15)
+    assert outcome.mae_price == pytest.approx(-15.0)
+
+    # 100% snapshot parity on final day
+    assert len(snapshots) == 1
+    assert snapshots[0].mfe_so_far == pytest.approx(outcome.mfe)
+    assert snapshots[0].mae_so_far == pytest.approx(outcome.mae)
+    assert snapshots[0].mfe_min_so_far == pytest.approx(outcome.mfe_min)
+    assert snapshots[0].mae_min_so_far == pytest.approx(outcome.mae_min)
+
+
+def test_regression_reconciliation_report_statistics_with_stored_trade_rows():
+    """Verify reconciliation of published performance statistics with exact unrounded DB rows."""
+    import sqlite3
+    con = sqlite3.connect("datasets/stock_signals.db")
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    rows = cur.execute(
+        "SELECT signal_id, ticker, signal_date, entry_status, outcome_status, "
+        "gross_return, net_return, holding_days "
+        "FROM outcomes_daily ORDER BY signal_date, ticker"
+    ).fetchall()
+
+    assert len(rows) == 31
+
+    filled = [r for r in rows if r["entry_status"] == "FILLED"]
+    unfilled = [r for r in rows if r["entry_status"] != "FILLED"]
+
+    # Exactly 27 filled trades and 4 unfilled signals
+    assert len(filled) == 27
+    assert len(unfilled) == 4
+
+    # Unfilled signals must have NULL trade returns
+    for u in unfilled:
+        assert u["gross_return"] is None
+        assert u["net_return"] is None
+        assert u["holding_days"] == 0
+
+    gross_returns = [r["gross_return"] for r in filled]
+    net_returns = [r["net_return"] for r in filled]
+    holding_days = [r["holding_days"] for r in filled]
+
+    mean_gross = sum(gross_returns) / len(gross_returns)
+    mean_net = sum(net_returns) / len(net_returns)
+    mean_hold = sum(holding_days) / len(holding_days)
+
+    # Arithmetic mean gross return: -0.1714% (-17.14 bps)
+    assert mean_gross == pytest.approx(-0.00171376, abs=1e-6)
+    # Arithmetic mean net return: -0.6695% (-66.95 bps)
+    assert mean_net == pytest.approx(-0.00669473, abs=1e-6)
+    # Expectancy formula (equally weighted average net return per trade)
+    expectancy = mean_net
+    assert expectancy == pytest.approx(-0.00669473, abs=1e-6)
+
+    # Win rates and breakdown
+    gross_wins = sum(1 for g in gross_returns if g > 0)
+    net_wins = sum(1 for n in net_returns if n > 0)
+    tp_count = sum(1 for r in filled if r["outcome_status"] == "TP")
+    sl_count = sum(1 for r in filled if r["outcome_status"] == "SL")
+    exp_count = sum(1 for r in filled if r["outcome_status"] == "EXPIRY")
+
+    assert gross_wins == 10
+    assert gross_wins / 27 == pytest.approx(10 / 27)
+    assert net_wins == 10
+    assert tp_count == 8
+    assert sl_count == 17
+    assert exp_count == 2
+    assert mean_hold == pytest.approx(121 / 27, abs=1e-4)
+

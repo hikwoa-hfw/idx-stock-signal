@@ -29,18 +29,18 @@ Dokumen ini mencatat rincian perbaikan dokumentasi audit, sinkronisasi metrik pe
     3. Kolom 38 s/d 46: 9 kolom migrasi bounded excursion intervals dan deviasi MOO (`mfe_min`, `mfe_max`, `mae_min`, `mae_max`, `mfe_price_min`, `mfe_price_max`, `mae_price_min`, `mae_price_max`, `entry_deviation_pct`).
   - Judul dan kamus data pada `audit_report.md` telah dikoreksi menjadi tepat **47 kolom**.
 
-### C. Adopsi Template Laporan Standar 10 Bagian
+### C. Adopsi Template Laporan Standar 10 Bagian & Eliminasi Phantom References
 - `audit_report.md` telah direstrukturisasi secara lengkap mengadopsi 10 bagian standar yang ditetapkan:
-  1. `Audit Metadata`
-  2. `Executive Summary`
-  3. `Scope and Acceptance Criteria`
-  4. `Quantitative Results` (Setup, Results, Skema SQLite 47 kolom, Tabel 31 Rekor Historis, Formulasi Matematis, Skrip Reproducible Python/SQL)
-  5. `Findings` (F1 s/d F6)
-  6. `Files and Data Changed`
-  7. `Verification Evidence`
-  8. `Known Limitations`
-  9. `Reproducibility`
-  10. `Final Decision and Next Step`
+  1. `Audit Metadata` (menyinkronkan Commit SHA dengan commit terbaru di branch `main`)
+  2. `Executive Summary` (sinkronisasi metrik unrounded -0.1714% gross, -0.6695% net, Expectancy -66.95 bps, 4.48d holding, win rate 37.04%)
+  3. `Scope and Acceptance Criteria` (memperbaiki broken reference Section 4.1/4.2/4.3 menjadi Section 4 named subsections dan menambahkan catatan mandat bukti pengujian)
+  4. `Quantitative Results` (menyusun alur baku Evaluation setup -> Results -> Definitions and calculations dengan 4 bullet baku dan penjelasan unrounded vs rounded display vs simulasi, diikuti DDL SQLite aktual dan tabel 31 rekor matured)
+  5. `Findings` (F1 s/d F6 lengkap dengan severity, status, evidence, root cause, impact, resolution, residual risk)
+  6. `Files and Data Changed` (tabel perubahan berkas, status batasan task, dan pernyataan eksplisit tidak ada pelanggaran)
+  7. `Verification Evidence` (tabel pengujian dan pengelompokan eksplisit tes riil yang dijalankan vs tes dilewati vs klaim log agent)
+  8. `Known Limitations` (resolusi bar harian, ukuran sampel 27 trade terisi, model friksi statis 50 bps)
+  9. `Reproducibility` (perintah CLI, konfigurasi, snapshot, expected results, evidence files)
+  10. `Final Decision and Next Step` (keputusan tahap, persetujuan Roadmap Phase 10, batasan perubahan terlarang)
 
 ---
 
@@ -65,15 +65,17 @@ Dokumen ini mencatat rincian perbaikan dokumentasi audit, sinkronisasi metrik pe
 ## 3. Rincian Modifikasi Berkas
 
 ### A. [`audit_report.md`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/audit_report.md)
-- Merekonstruksi dokumen ke dalam 10 bagian standar.
-- Menyelaraskan seluruh angka di Section 2 (Executive Summary) dengan Section 4 (Quantitative Results).
-- Memperbaiki jumlah kolom skema `outcomes_daily` menjadi 47 kolom dan menyertakan DDL SQL lengkap.
-- Menyertakan tabel 31 rekor historis matured lengkap dengan interval bounded excursion dan proksi konservatif.
-- Mendokumentasikan 6 temuan audit (F1–F6) lengkap dengan tingkat keparahan, akar masalah, status, dan resolusi.
-- Menyediakan bukti verifikasi pengujian unit/integrasi, linter, integritas basis data, dan skrip reproduksibilitas.
+- **Lines 5–12**: Memperbarui metadata audit (Commit SHA `5df2cb12f6af0612edaaa43fefb600d32d55b049`, dataset identifier, tanggal audit).
+- **Lines 14–44**: Menyelaraskan seluruh metrik Executive Summary dengan data unrounded riil database.
+- **Lines 48–60**: Memperbaiki broken reference pada evidence Section 3 (mengganti Section 4.1/4.2/4.3 ke named subsections Section 4) dan menyertakan catatan mandat pembuktian kriteria template.
+- **Lines 63–293**: Menyusun urutan Section 4 sesuai template: Setup -> Results -> Definitions and calculations (dengan 4 bullet wajib dan penjelasan unrounded floats vs display vs simulasi) -> DDL skema 47 kolom dan 14 kolom -> Tabel 31 rekor matured.
+- **Lines 296–357**: Memperjelas referensi pada F1–F6.
+- **Lines 360–376**: Menyertakan tabel berkas yang diubah dan konfirmasi eksplisit tidak ada pelanggaran batasan task.
+- **Lines 378–392**: Menyertakan tabel verifikasi dan rincian pembedaan tes riil, tes di-skip, dan klaim log agent.
+- **Lines 394–440**: Melengkapi Known Limitations, Reproducibility, dan Final Decision & Next Step.
 
 ### B. [`summary.md`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/summary.md)
-- Menambahkan entri log perubahan ke-49 secara append-only sesuai aturan tata kelola repositori.
+- **Lines 748–758**: Memperbarui entri log perubahan ke-49 secara append-only untuk mencatat rekonsiliasi dokumentasi, koreksi skema 47 kolom, eliminasi phantom references, dan pemenuhan struktur template 10 bagian.
 
 ### C. [`walkthrough.md`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/walkthrough.md)
 - Mendokumentasikan rincian pekerjaan rekonsiliasi dokumentasi, tabel before/after, sumber data terverifikasi, dan testing checklist komprehensif.

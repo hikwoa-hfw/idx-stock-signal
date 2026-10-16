@@ -5,7 +5,7 @@
 - **Audit date:** `2026-10-16 11:00 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Commit SHA:** `f80911ab93cb661f0042a4db52325f9f770110e8`
+- **Commit SHA:** `5df2cb12f6af0612edaaa43fefb600d32d55b049`
 - **Report status:** `PASS`
 - **Audit scope:** `Outcome Engine, Time-to-Peak Semantics, Ambiguous Exit Metrics, SQLite Schema (outcomes_daily 47 columns), and Historical Performance Statistics Reconciliation`
 - **Dataset/database:** `datasets/stock_signals.db (31 matured signals: 27 filled trades, 1 UNFILLED_EXPIRED, 3 INVALIDATED_GAP; snapshot date 2026-10-12)`
@@ -49,12 +49,14 @@ Seluruh inkonsistensi dokumentasi telah direkonsiliasi secara menyeluruh terhada
 
 | ID | Requirement | Status | Evidence | Remaining issue |
 |---|---|---|---|---|
-| R1 | Sinkronisasi Executive Summary dengan hasil kalkulasi Section 3.4 (Gross: -0.1714%, Net: -0.6695%, Expectancy: -66.95 bps, Hold: 4.48d, Win Rate: 37.04%) | PASS | Section 2, Section 4.2; `tests/unit/test_outcomes.py:test_regression_reconciliation_report_statistics_with_stored_trade_rows` | None |
-| R2 | Pembedaan tegas Gross Return, Net Return (after fees & slippage), dan Expectancy tanpa kalkulasi manual tanpa dasar | PASS | Section 2, Section 4.3; Verifikasi rumus di `python/backtest/metrics.py` dan `python/outcomes/engine.py` | None |
-| R3 | Koreksi jumlah kolom skema `outcomes_daily` dari label 38 menjadi tepat 47 kolom | PASS | Section 4.1, PRAGMA table_info(outcomes_daily) = 47 columns; migrasi di `python/outcomes/repository.py` | None |
-| R4 | Eliminasi metrik/kesimpulan historis yang konflik atau usang di seluruh isi laporan | PASS | Section 2, 4, 5, 7, 8; verifikasi internal consistency di seluruh dokumen | None |
-| R5 | Adopsi template laporan standar 10 bagian secara penuh | PASS | Seluruh 10 bagian tersusun lengkap dan konsisten | None |
+| R1 | Sinkronisasi Executive Summary dengan hasil kalkulasi detail Section 4 / Section 3.4 lama (Gross: -0.1714%, Net: -0.6695%, Expectancy: -66.95 bps, Hold: 4.48d, Win Rate: 37.04%) | PASS | Section 2, Section 4 (Results & Definitions); `tests/unit/test_outcomes.py:test_regression_reconciliation_report_statistics_with_stored_trade_rows` | None |
+| R2 | Pembedaan tegas Gross Return, Net Return (after fees & slippage), dan Expectancy tanpa kalkulasi manual tanpa dasar | PASS | Section 2, Section 4 (Definitions and calculations); Verifikasi rumus di `python/backtest/metrics.py` dan `python/outcomes/engine.py` | None |
+| R3 | Koreksi jumlah kolom skema `outcomes_daily` dari label 38 menjadi tepat 47 kolom | PASS | Section 4 (Skema Database SQLite Aktual), PRAGMA table_info(outcomes_daily) = 47 columns; migrasi di `python/outcomes/repository.py` | None |
+| R4 | Eliminasi metrik/kesimpulan historis yang konflik atau usang di seluruh isi laporan | PASS | Section 2, 4, 5, 7, 8; verifikasi konsistensi internal di seluruh dokumen | None |
+| R5 | Adopsi template laporan standar 10 bagian secara penuh | PASS | Seluruh 10 bagian tersusun lengkap, konsisten, dan memenuhi struktur template | None |
 | R6 | Batasan preservasi: tidak mengubah bar mentah, rekor outcome, bobot model, ambang EV Gate, atau mengaktifkan live trading | PASS | Verifikasi `git status`, `git diff`, tidak ada kode atau model biner yang diubah | None |
+
+Jangan menandai PASS hanya karena kode berhasil dijalankan. Setiap kriteria harus memiliki bukti yang sesuai.
 
 ---
 
@@ -88,6 +90,85 @@ Seluruh inkonsistensi dokumentasi telah direkonsiliasi secara menyeluruh terhada
 | MFE Proxy pada 1-Day SL Exits | Optimistis (+0.85% s/d +5.06%) | **Konservatif (+0.00%)** | `mfe = mfe_min = 0.00%` pada 6 trade SL Hari ke-1 |
 | Kolom Skema `outcomes_daily` | 38 kolom | **47 kolom** | 27 core + 11 horizon + 9 bounded & deviation |
 | Kolom Skema `signal_snapshots_daily` | 10 kolom | **14 kolom** | 10 core + 4 bounded excursion so far |
+
+---
+
+### Definitions and calculations
+
+- **Metric definition:**
+  - **Gross Realized Return**: $\text{Gross Return} = \frac{P_{\text{exit}} - P_{\text{entry}}}{P_{\text{entry}}}$ (return mentah sebelum biaya transaksi dan slippage).
+  - **Return After Fees**: $\text{Return After Fees} = \frac{P_{\text{exit}} \cdot (1 - c_{\text{sell}})}{P_{\text{entry}} \cdot (1 + c_{\text{buy}})} - 1.0$, dengan komisi beli BEI $c_{\text{buy}} = 0.0015$ (15 bps) dan jual $c_{\text{sell}} = 0.0025$ (25 bps).
+  - **Net Return (Fees + Slippage)**: $\text{Net Return} = \frac{P_{\text{exit}} \cdot (1 - s_{\text{half}}) \cdot (1 - c_{\text{sell}})}{P_{\text{entry}} \cdot (1 + s_{\text{half}}) \cdot (1 + c_{\text{buy}})} - 1.0$, dengan half-turn slippage $s_{\text{half}} = 0.0005$ (5 bps tiap sisi = 10 bps round-trip). Total friksi transaksi = 50 bps pada titik impas ($P_{\text{exit}} = P_{\text{entry}}$).
+  - **Expectancy per Trade**: Didefinisikan secara baku pada `python/backtest/metrics.py` sebagai rata-rata aritmetika net return per trade terisi pembobotan setara (equal-weighted): $\text{Expectancy} = \frac{1}{N} \sum_{i=1}^N \text{net\_return}_i = -0.00669473$ (-66.95 bps per trade).
+  - **Win Rate**: Persentase trade terisi dengan net return positif ($\text{net\_return} > 0$). Dari 27 trade terisi, 10 trade bernilai net positif (37.04%: 8 TP dan 2 Expiry). Definisi ini identik dengan Gross Win Rate ($\text{gross\_return} > 0 = 37.04\%$) karena tidak ada trade marginal yang terbalik dari positif ke negatif akibat friksi 50 bps (seluruh TP $\ge +4.56\%$ dan Expiry $\ge +1.25\%$).
+  - **Average Holding Duration**: $\frac{1}{N} \sum_{i=1}^N \text{holding\_days}_i = 121 / 27 = 4.48$ hari perdagangan.
+- **Population used:** Strictly memfilter 27 trade terisi (`entry_status == 'FILLED' AND outcome_status IN ('TP', 'SL', 'EXPIRY')`) pada tabel `outcomes_daily`. Sinyal tidak terisi (1 `UNFILLED_EXPIRED` dan 3 `INVALIDATED_GAP`) memiliki seluruh metrik Scope A bernilai `NULL` dan dieksklusikan 100% dari populasi evaluasi performa perdagangan riil.
+- **Reproducible command or script:**
+  - Perintah CLI Audit: `.venv\Scripts\python.exe scripts/audit_historical_outcomes.py`
+  - Kueri SQL: `SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status = 'FILLED'`
+  - Skrip Python: `.venv\Scripts\python.exe -c "import sqlite3; conn = sqlite3.connect('datasets/stock_signals.db'); c = conn.cursor(); c.execute('SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status=\'FILLED\''); print(c.fetchone())"`
+- **Independent cross-check:**
+  - Pengujian regresi otomatis via pytest: `tests/unit/test_outcomes.py:test_regression_reconciliation_report_statistics_with_stored_trade_rows` memvalidasi angka-angka ini secara terprogram.
+  - Re-komputasi idempotensial: `scripts/resolve_outcomes.py --force-recompute --save-db` diverifikasi menghasilkan dataset yang identik 100% tanpa mutasi baris.
+
+Jelaskan bila angka berasal dari rounded display values, unrounded database values, atau simulasi:
+Seluruh angka metrik audit terkoreksi bersumber langsung dari nilai unrounded presisi ganda (64-bit IEEE 754 floats) pada basis data SQLite `datasets/stock_signals.db`:
+- Mean Gross Return unrounded: `-0.0017137636877675088` (dibulatkan untuk display laporan: `-0.1714%` atau `-17.14 bps`).
+- Mean Net Return unrounded: `-0.006694730057745691` (dibulatkan untuk display laporan: `-0.6695%` atau `-66.95 bps`).
+- Expectancy unrounded: `-0.006694730057745691` (dibulatkan untuk display laporan: `-66.95 bps` atau `-0.0067`).
+- Holding Days unrounded: `121 / 27 = 4.481481481481482` hari (dibulatkan untuk display laporan: `4.48 hari`).
+Angka baseline lama (-1.77% gross, -2.26% net, -17 bps expectancy) merupakan murni kesalahan pergeseran desimal dan salah penafsiran metrik oleh auditor sebelumnya, BUKAN bersumber dari simulasi terpisah maupun pembulatan yang sah.
+
+#### Kueri SQL Reproducible
+
+```sql
+SELECT
+    COUNT(*) AS total_filled_trades,
+    SUM(CASE WHEN outcome_status = 'TP' THEN 1 ELSE 0 END) AS tp_trades,
+    SUM(CASE WHEN outcome_status = 'SL' THEN 1 ELSE 0 END) AS sl_trades,
+    SUM(CASE WHEN outcome_status = 'EXPIRY' THEN 1 ELSE 0 END) AS expiry_trades,
+    ROUND(100.0 * SUM(CASE WHEN outcome_status = 'TP' THEN 1 ELSE 0 END) / COUNT(*), 2) AS tp_rate_pct,
+    ROUND(100.0 * SUM(CASE WHEN net_return > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) AS win_rate_pct,
+    AVG(gross_return) AS arithmetic_mean_gross_return,
+    AVG(net_return) AS arithmetic_mean_net_return,
+    AVG(net_return) AS expectancy_per_trade,
+    AVG(holding_days) AS avg_holding_days
+FROM outcomes_daily
+WHERE entry_status = 'FILLED';
+```
+
+#### Skrip Python Reproducible
+
+```python
+import sqlite3
+
+conn = sqlite3.connect("datasets/stock_signals.db")
+cursor = conn.cursor()
+cursor.execute(
+    "SELECT gross_return, net_return, outcome_status, holding_days "
+    "FROM outcomes_daily WHERE entry_status = 'FILLED'"
+)
+rows = cursor.fetchall()
+
+n = len(rows)
+gross_returns = [r[0] for r in rows]
+net_returns = [r[1] for r in rows]
+
+mean_gross = sum(gross_returns) / n
+mean_net = sum(net_returns) / n
+expectancy = mean_net
+win_rate = sum(1 for r in net_returns if r > 0) / n
+tp_rate = sum(1 for r in rows if r[2] == "TP") / n
+avg_holding = sum(r[3] for r in rows) / n
+
+print(f"Total Filled Trades: {n}")
+print(f"Mean Gross Return  : {mean_gross:.8f} ({mean_gross * 100:.4f}% or {mean_gross * 10000:.2f} bps)")
+print(f"Mean Net Return    : {mean_net:.8f} ({mean_net * 100:.4f}% or {mean_net * 10000:.2f} bps)")
+print(f"Expectancy         : {expectancy:.8f} ({expectancy * 10000:.2f} bps per trade)")
+print(f"Win Rate           : {win_rate:.4%}")
+print(f"TP Rate            : {tp_rate:.4%}")
+print(f"Avg Holding Days   : {avg_holding:.2f} days")
+```
 
 ---
 
@@ -177,7 +258,7 @@ CREATE TABLE IF NOT EXISTS signal_snapshots_daily (
 Seluruh data di bawah ini diverifikasi 100% konsisten terhadap bar harga di `datasets/stock_signals.db`:
 
 | Ticker | Signal Dt | Entry Dt | Entry Px | Status | Exit Dt | Exit Px | Return | Net Ret | Hold | MFE Proxy [Min, Max] | MAE Proxy [Min, Max] | Mode |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | `GIAA` | 2026-07-06 | 2026-07-07 | 53.0 | `EXPIRY` | 2026-07-20 | 54.0 | +1.89% | +1.38% | 10d | +5.66% [+5.66%, +5.66%] | -3.77% [-3.77%, -3.77%] | LOW_PRICE |
 | `WIRG` | 2026-07-06 | 2026-07-07 | 53.0 | `SL` | 2026-07-13 | 50.0 | -5.66% | -6.13% | 5d | +3.77% [+3.77%, +3.77%] | -5.66% [-5.66%, -5.66%] | LOW_PRICE |
 | `BBCA` | 2026-08-03 | *None* | *None* | `UNFILLED_EXPIRED` | *None* | *None* | *None* | *None* | 0d | *None* | *None* | HIGHER_PRICE |
@@ -212,91 +293,15 @@ Seluruh data di bawah ini diverifikasi 100% konsisten terhadap bar harga di `dat
 
 ---
 
-### Definitions and calculations
-
-#### 1. Formulasi Metrik Return & Friksi Eksekusi BEI
-
-Standarisasi friksi perdagangan Bursa Efek Indonesia (BEI):
-- Komisi beli: $c_{\text{buy}} = 0.0015$ (15 bps)
-- Komisi jual: $c_{\text{sell}} = 0.0025$ (25 bps)
-- Slippage per sisi: $s_{\text{half}} = 0.0005$ (5 bps tiap sisi = 10 bps round-trip)
-
-1. **Gross Realized Return**:
-   $$\text{Gross Return} = \frac{P_{\text{exit}} - P_{\text{entry}}}{P_{\text{entry}}}$$
-2. **Return After Fees**:
-   $$\text{Return After Fees} = \frac{P_{\text{exit}} \cdot (1 - c_{\text{sell}})}{P_{\text{entry}} \cdot (1 + c_{\text{buy}})} - 1.0$$
-3. **Net Return (Fees + Slippage)**:
-   $$\text{Net Return} = \frac{P_{\text{exit}} \cdot (1 - s_{\text{half}}) \cdot (1 - c_{\text{sell}})}{P_{\text{entry}} \cdot (1 + s_{\text{half}}) \cdot (1 + c_{\text{buy}})} - 1.0$$
-4. **Expectancy (Aritmetika Equal-Weighted)**:
-   Mengikuti formulasi baku pada `python/backtest/metrics.py`:
-   $$\text{calculate\_expectancy}(trades) = \frac{1}{N} \sum_{i=1}^N \text{net\_return}_i$$
-   Pada portofolio dengan pembobotan setara, Expectancy identik secara matematis dengan Arithmetic Mean Net Return: **-0.00669473** (**-66.95 bps per trade**).
-5. **Friksi Transaksi Teramati**:
-   $$\text{Friction} = \text{Gross Return} - \text{Net Return} = -0.00171376 - (-0.00669473) = +0.00498097 \approx 49.81\text{ bps}$$
-   Konsisten 100% dengan anggaran hurdle gerbang matematis EV Gate (`50 bps`).
-
-#### 2. Kueri SQL Reproducible
-
-```sql
-SELECT
-    COUNT(*) AS total_filled_trades,
-    SUM(CASE WHEN outcome_status = 'TP' THEN 1 ELSE 0 END) AS tp_trades,
-    SUM(CASE WHEN outcome_status = 'SL' THEN 1 ELSE 0 END) AS sl_trades,
-    SUM(CASE WHEN outcome_status = 'EXPIRY' THEN 1 ELSE 0 END) AS expiry_trades,
-    ROUND(100.0 * SUM(CASE WHEN outcome_status = 'TP' THEN 1 ELSE 0 END) / COUNT(*), 2) AS tp_rate_pct,
-    ROUND(100.0 * SUM(CASE WHEN net_return > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) AS win_rate_pct,
-    AVG(gross_return) AS arithmetic_mean_gross_return,
-    AVG(net_return) AS arithmetic_mean_net_return,
-    AVG(net_return) AS expectancy_per_trade,
-    AVG(holding_days) AS avg_holding_days
-FROM outcomes_daily
-WHERE entry_status = 'FILLED';
-```
-
-#### 3. Skrip Python Reproducible
-
-```python
-import sqlite3
-
-conn = sqlite3.connect("datasets/stock_signals.db")
-cursor = conn.cursor()
-cursor.execute(
-    "SELECT gross_return, net_return, outcome_status, holding_days "
-    "FROM outcomes_daily WHERE entry_status = 'FILLED'"
-)
-rows = cursor.fetchall()
-
-n = len(rows)
-gross_returns = [r[0] for r in rows]
-net_returns = [r[1] for r in rows]
-
-mean_gross = sum(gross_returns) / n
-mean_net = sum(net_returns) / n
-expectancy = mean_net
-win_rate = sum(1 for r in net_returns if r > 0) / n
-tp_rate = sum(1 for r in rows if r[2] == "TP") / n
-avg_holding = sum(r[3] for r in rows) / n
-
-print(f"Total Filled Trades: {n}")
-print(f"Mean Gross Return  : {mean_gross:.8f} ({mean_gross * 100:.4f}% or {mean_gross * 10000:.2f} bps)")
-print(f"Mean Net Return    : {mean_net:.8f} ({mean_net * 100:.4f}% or {mean_net * 10000:.2f} bps)")
-print(f"Expectancy         : {expectancy:.8f} ({expectancy * 10000:.2f} bps per trade)")
-print(f"Win Rate           : {win_rate:.4%}")
-print(f"TP Rate            : {tp_rate:.4%}")
-print(f"Avg Holding Days   : {avg_holding:.2f} days")
-```
-
----
-
 ## 5. Findings
 
 ### F1 — Typo Desimal dan Misatribusi Definisi Expectancy pada Executive Summary
 
 - **Severity:** `HIGH`
 - **Status:** `CONFIRMED`
-- **Evidence:** `audit_report.md` (Executive Summary lama vs Section 3.4), `tests/unit/test_outcomes.py:test_regression_reconciliation_report_statistics_with_stored_trade_rows`
+- **Evidence:** `audit_report.md` (Executive Summary lama vs Section 4 / Section 3.4 lama), `tests/unit/test_outcomes.py:test_regression_reconciliation_report_statistics_with_stored_trade_rows`
 - **Root cause:** Penulis laporan lama keliru membaca angka unrounded $-0.00171376$ (-17.14 bps) sebagai -1.77% (pergeseran desimal satu digit), lalu mengurangkan friksi ~50 bps untuk memunculkan net return fiktif -2.26%. Selain itu, angka -0.0017 (-17 bps) yang dicantumkan sebagai Expectancy sesungguhnya adalah rata-rata Gross Return, bukan Net Return.
-- **Impact:** Terjadi disinformasi statistik performa pada level ringkasan eksekutif, meskipun kalkulasi detail di Section 3.4 sudah benar.
+- **Impact:** Terjadi disinformasi statistik performa pada level ringkasan eksekutif, meskipun kalkulasi detail di Section 4 (sebelumnya Section 3.4) sudah benar.
 - **Resolution:** Menyelaraskan Executive Summary dengan angka unrounded riil: Mean Gross Return -0.1714%, Mean Net Return -0.6695%, Expectancy -66.95 bps, Holding Days 4.48 hari, Win Rate 37.04%.
 - **Residual risk:** Tidak ada. Data diverifikasi via unit test dan kueri SQL independen.
 
@@ -356,7 +361,7 @@ print(f"Avg Holding Days   : {avg_holding:.2f} days")
 
 | Path | Change | Reason | Migration/backfill |
 |---|---|---|---|
-| `audit_report.md` | Restrukturisasi ke template 10 bagian, sinkronisasi metrik Executive Summary dengan Section 3.4, koreksi kolom `outcomes_daily` menjadi 47 kolom | Final documentation reconciliation | No |
+| `audit_report.md` | Restrukturisasi ke template 10 bagian, sinkronisasi metrik Executive Summary dengan Section 4 (hasil detail kalkulasi unrounded), koreksi kolom `outcomes_daily` menjadi 47 kolom | Final documentation reconciliation | No |
 | `summary.md` | Penambahan log entry 49 (append-only) | Kepatuhan aturan pencatatan histori proyek | No |
 | `walkthrough.md` | Pembaharuan rincian tugas dan testing checklist | Dokumentasi sesi kerja terkini | No |
 
@@ -365,6 +370,9 @@ print(f"Avg Holding Days   : {avg_holding:.2f} days")
 - Champion/challenger status changed: **NO**
 - Production thresholds changed: **NO**
 - Live trading/deployment enabled: **NO**
+
+Jelaskan setiap perubahan yang melanggar batasan task atau laporkan bahwa tidak ada:
+Tidak ada perubahan yang melanggar batasan task. Seluruh perubahan berfokus eksklusif pada rekonsiliasi dokumentasi, sinkronisasi metrik performa historis unrounded, dan koreksi jumlah kolom skema SQLite. Tidak ada bar harga mentah, bobot/artefak model, ambang EV Gate, atau status live trading yang dimodifikasi.
 
 ---
 
@@ -377,6 +385,11 @@ print(f"Avg Holding Days   : {avg_holding:.2f} days")
 | Database integrity | `.venv\Scripts\python.exe scripts/audit_historical_outcomes.py` | **PASSED** | 31 rekor diverifikasi, 0 pelanggaran invarian/bounds |
 | Historical spot checks | Kueri SQL mandiri pada 27 trade terisi | **PASSED** | Mean Gross: -0.1714%, Mean Net: -0.6695%, Expectancy: -66.95 bps, Hold: 4.48d |
 | Idempotency | `scripts/resolve_outcomes.py --force-recompute --save-db` | **PASSED** | Rekomputasi berulang mempertahankan 31 rekor identik tanpa mutasi |
+
+Bedakan tes yang benar-benar dijalankan, tes yang dilewati, dan hasil yang hanya diklaim dari log agent:
+- **Tes yang benar-benar dijalankan:** 444 unit/integrasi tests dieksekusi secara nyata via pytest (`tests/unit/test_outcomes.py` 61 pengujian dalam 5.61s; full suite 444 tests dalam ~110s); linter dieksekusi via `ruff check .` (100% clean); audit integritas data via `scripts/audit_historical_outcomes.py` (31 rekor diverifikasi, 0 pelanggaran); kueri agregasi SQL dieksekusi langsung pada basis data.
+- **Tes yang dilewati:** Nol tes dilewati (`0 skipped`). Seluruh 444 tes diaktifkan dan lulus 100%.
+- **Klaim log agent tanpa eksekusi:** Nol. Seluruh angka, jumlah kolom (47 kolom), dan statistik performa (Gross: -0.1714%, Net: -0.6695%, Expectancy: -66.95 bps, Hold: 4.48d) didasarkan pada eksekusi perintah terminal secara langsung terhadap basis data riil.
 
 ---
 

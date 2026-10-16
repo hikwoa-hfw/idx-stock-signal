@@ -41,7 +41,7 @@
 
 ### Final recommendation
 
-Seluruh inkonsistensi dokumentasi telah direkonsiliasi secara menyeluruh terhadap basis data riil `datasets/stock_signals.db`. Seluruh asersi invarian lulus 100%, 444 unit & integrasi tests lulus, linter 100% bersih, dan tidak ada defek kalkulasi baru yang ditemukan. Sistem outcome tracking berstatus **PASS** dan direkomendasikan untuk melanjutkan ke tahap berikutnya (Roadmap Phase 10 / Evaluasi Multi-Horizon).
+Seluruh inkonsistensi dokumentasi telah direkonsiliasi secara menyeluruh terhadap basis data riil `datasets/stock_signals.db`. Seluruh asersi invarian lulus 100%, 444 unit & integrasi tests lulus, linter 100% bersih, dan tidak ada defek kalkulasi baru yang ditemukan. Sistem outcome tracking berstatus **PASS** dan direkomendasikan untuk melanjutkan ke tahap berikutnya (Roadmap Phase 11 — Model Remediation & Retraining Pipeline).
 
 ---
 
@@ -105,8 +105,8 @@ Jangan menandai PASS hanya karena kode berhasil dijalankan. Setiap kriteria haru
 - **Population used:** Strictly memfilter 27 trade terisi (`entry_status == 'FILLED' AND outcome_status IN ('TP', 'SL', 'EXPIRY')`) pada tabel `outcomes_daily`. Sinyal tidak terisi (1 `UNFILLED_EXPIRED` dan 3 `INVALIDATED_GAP`) memiliki seluruh metrik Scope A bernilai `NULL` dan dieksklusikan 100% dari populasi evaluasi performa perdagangan riil.
 - **Reproducible command or script:**
   - Perintah CLI Audit: `.venv\Scripts\python.exe scripts/audit_historical_outcomes.py`
-  - Kueri SQL: `SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status = 'FILLED'`
-  - Skrip Python: `.venv\Scripts\python.exe -c "import sqlite3; conn = sqlite3.connect('datasets/stock_signals.db'); c = conn.cursor(); c.execute('SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status=\'FILLED\''); print(c.fetchone())"`
+  - Kueri SQL: `SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status = 'FILLED' AND outcome_status IN ('TP', 'SL', 'EXPIRY')`
+  - Skrip Python: `.venv\Scripts\python.exe -c "import sqlite3; conn = sqlite3.connect('datasets/stock_signals.db'); c = conn.cursor(); c.execute('SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status=\'FILLED\' AND outcome_status IN (\'TP\', \'SL\', \'EXPIRY\')'); print(c.fetchone())"`
 - **Independent cross-check:**
   - Pengujian regresi otomatis via pytest: `tests/unit/test_outcomes.py:test_regression_reconciliation_report_statistics_with_stored_trade_rows` memvalidasi angka-angka ini secara terprogram.
   - Re-komputasi idempotensial: `scripts/resolve_outcomes.py --force-recompute --save-db` diverifikasi menghasilkan dataset yang identik 100% tanpa mutasi baris.
@@ -134,7 +134,8 @@ SELECT
     AVG(net_return) AS expectancy_per_trade,
     AVG(holding_days) AS avg_holding_days
 FROM outcomes_daily
-WHERE entry_status = 'FILLED';
+WHERE entry_status = 'FILLED'
+  AND outcome_status IN ('TP', 'SL', 'EXPIRY');
 ```
 
 #### Skrip Python Reproducible
@@ -146,7 +147,8 @@ conn = sqlite3.connect("datasets/stock_signals.db")
 cursor = conn.cursor()
 cursor.execute(
     "SELECT gross_return, net_return, outcome_status, holding_days "
-    "FROM outcomes_daily WHERE entry_status = 'FILLED'"
+    "FROM outcomes_daily WHERE entry_status = 'FILLED' "
+    "AND outcome_status IN ('TP', 'SL', 'EXPIRY')"
 )
 rows = cursor.fetchall()
 
@@ -398,7 +400,7 @@ Bedakan tes yang benar-benar dijalankan, tes yang dilewati, dan hasil yang hanya
 | Limitation | Why it matters | Impact | Follow-up |
 |---|---|---|---|
 | Resolusi Bar Harian OHLC (Tick Sequence Absence) | Data harian tidak memiliki cap waktu sub-menit untuk menentukan urutan intraday | Ekstrem exit candle (High vs Low) tidak dapat diurutkan dengan kepastian 100% | Bounded interval $[MFE_{\min}, MFE_{\max}]$ dan proksi konservatif lower-bound mengeliminasi bias optimis |
-| Ukuran Sampel Matured Historis Terbatas ($N=27$ filled) | Sampel sinyal historis awal masih terbatas pada 31 sinyal matured (27 trade terisi) | Nilai expectancy -66.95 bps mencerminkan sampel awal sebelum ekspansi multi-horizon | Evaluasi semesta yang lebih besar pada Phase 10 (Multi-Horizon & Walk-Forward Testing) |
+| Ukuran Sampel Matured Historis Terbatas ($N=27$ filled) | Sampel sinyal historis awal masih terbatas pada 31 sinyal matured (27 trade terisi) | Nilai expectancy -66.95 bps mencerminkan sampel awal sebelum ekspansi multi-horizon | Evaluasi semesta yang lebih besar pada Phase 11 (Model Remediation & Retraining Pipeline) |
 | Model Friksi Transaksi Statis (50 bps) | Asumsi komisi tetap 40 bps round-trip dan slippage 10 bps round-trip | Saham dengan likuiditas sangat tinggi vs sangat rendah mungkin memiliki slippage riil yang sedikit berbeda | Model slippage dinamis berbasis likuiditas dapat dipertimbangkan pada modul eksekusi live mendatang |
 
 ---
@@ -410,7 +412,7 @@ Bedakan tes yang benar-benar dijalankan, tes yang dilewati, dan hasil yang hanya
   .venv\Scripts\python.exe -m pytest
   .venv\Scripts\ruff.exe check .
   .venv\Scripts\python.exe scripts/audit_historical_outcomes.py
-  .venv\Scripts\python.exe -c "import sqlite3; conn = sqlite3.connect('datasets/stock_signals.db'); c = conn.cursor(); c.execute('SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status=\'FILLED\''); print(c.fetchone())"
+  .venv\Scripts\python.exe -c "import sqlite3; conn = sqlite3.connect('datasets/stock_signals.db'); c = conn.cursor(); c.execute('SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status=\'FILLED\' AND outcome_status IN (\'TP\', \'SL\', \'EXPIRY\')'); print(c.fetchone())"
   ```
 - **Required configuration:** Python 3.12 venv, SQLite database di `datasets/stock_signals.db`.
 - **Data snapshot/version:** 31 matured historical records (snapshot per 2026-10-12).
@@ -431,7 +433,7 @@ Bedakan tes yang benar-benar dijalankan, tes yang dilewati, dan hasil yang hanya
 - **Current stage completed:** `YES`
 - **Can the next stage begin?** `YES`
 - **Required blockers:** `None`
-- **Next approved task:** `Roadmap Phase 10: Multi-Horizon Evaluation & Feature Ablation Experiments`
+- **Next approved task:** `Roadmap Phase 11: Model Remediation & Retraining Pipeline (Feature Ablation & Candidate Training)`
 - **Explicitly prohibited changes:**
   - Dilarang mengaktifkan live trading / deployment riil ke bursa.
   - Dilarang mempromosikan atau mengganti model champion tanpa tinjauan komite tata kelola.

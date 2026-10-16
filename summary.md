@@ -756,3 +756,11 @@ Log Perubahan Tambahan (15 Oktober 2026)
    3. Mengadopsi template pelaporan standar 10 bagian secara penuh pada `audit_report.md`: 1. Audit Metadata, 2. Executive Summary, 3. Scope & Acceptance Criteria (memperbaiki sitasi evidence ke Section 4 dan menyertakan catatan kriteria bukti), 4. Quantitative Results (menyusun urutan baku Setup -> Results -> Definitions and calculations dengan 4 poin format standar serta penjelasan unrounded floats vs display vs simulasi, diikuti DDL skema 47 kolom dan tabel 31 rekor matured), 5. Findings (F1–F6), 6. Files & Data Changed (menyertakan pernyataan penegasan batas task), 7. Verification Evidence (membedakan tes riil, tes di-skip, dan klaim tanpa eksekusi), 8. Known Limitations, 9. Reproducibility, 10. Final Decision & Next Step.
    4. Memverifikasi seluruh rangkaian pengujian (444 tests passed, ruff clean, 0 violations pada audit basis data historis).
 
+50. Penyelarasan Kueri Filter Outcome Status dan Sinkronisasi Penamaan Roadmap Phase 11 (16 Oktober 2026)
+   Masalah:
+   1. Kueri SQL dan skrip Python reproduksi statistik pada `audit_report.md` sebelumnya hanya memfilter `WHERE entry_status = 'FILLED'`, berisiko mencampur posisi yang masih berstatus `OPEN` atau `AMBIGUOUS` ke dalam performa perdagangan jika di masa depan terdapat trade aktif saat evaluasi dijalankan.
+   2. Penamaan tahap roadmap berikutnya pada `audit_report.md` menyebut "Phase 10 — Multi-Horizon Evaluation & Feature Ablation", yang bertentangan dengan `README.md` dan panduan teknis `docs/04_...` di mana Phase 10 adalah Model Evaluation (sudah terimplementasi) dan Phase 11 adalah Model Retraining Pipeline.
+   Solusi:
+   1. Memperbarui seluruh kueri SQL dan skrip Python pada `audit_report.md` dan suite pengujian `tests/unit/test_outcomes.py` agar secara ketat menggunakan klausa filter resmi: `WHERE entry_status = 'FILLED' AND outcome_status IN ('TP', 'SL', 'EXPIRY')`.
+   2. Menyelaraskan seluruh referensi fase selanjutnya pada `audit_report.md` (bagian Final Recommendation, Limitations, dan Final Decision/Next Step) menjadi "Roadmap Phase 11 — Model Remediation & Retraining Pipeline (Feature Ablation & Candidate Training)", menghilangkan ambiguitas bagi coding agent.
+   3. Memvalidasi seluruh test suite (444 tests passed, 100% success rate, ruff clean).

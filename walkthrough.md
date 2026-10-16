@@ -39,8 +39,12 @@ Dokumen ini mencatat rincian perbaikan dokumentasi audit, sinkronisasi metrik pe
   6. `Files and Data Changed` (tabel perubahan berkas, status batasan task, dan pernyataan eksplisit tidak ada pelanggaran)
   7. `Verification Evidence` (tabel pengujian dan pengelompokan eksplisit tes riil yang dijalankan vs tes dilewati vs klaim log agent)
   8. `Known Limitations` (resolusi bar harian, ukuran sampel 27 trade terisi, model friksi statis 50 bps)
-  9. `Reproducibility` (perintah CLI, konfigurasi, snapshot, expected results, evidence files)
-  10. `Final Decision and Next Step` (keputusan tahap, persetujuan Roadmap Phase 10, batasan perubahan terlarang)
+  9. `Reproducibility` (perintah CLI, konfigurasi, snapshot, expected results, evidence files, serta kueri SQL/Python dengan filter resmi `WHERE entry_status = 'FILLED' AND outcome_status IN ('TP', 'SL', 'EXPIRY')`)
+  10. `Final Decision and Next Step` (keputusan tahap, persetujuan Roadmap Phase 11 — Model Remediation & Retraining Pipeline, batasan perubahan terlarang)
+
+### D. Penyelarasan Kueri Filter Outcome Status & Sinkronisasi Penamaan Roadmap Phase 11
+- **Kueri Reproduksi Statistik**: Memperbarui contoh kueri SQL dan skrip Python di `audit_report.md` (dan pengujian regresi `tests/unit/test_outcomes.py`) agar menyertakan klausa `AND outcome_status IN ('TP', 'SL', 'EXPIRY')`. Menjamin posisi berstatus `OPEN` atau `AMBIGUOUS` di masa depan tidak mencemari metrik realized trade.
+- **Penyelarasan Roadmap**: Menyelaraskan seluruh penamaan fase berikutnya pada `audit_report.md` menjadi **Roadmap Phase 11 — Model Remediation & Retraining Pipeline (Feature Ablation & Candidate Training)**, selaras dengan `README.md` dan panduan teknis `docs/04_...`.
 
 ---
 

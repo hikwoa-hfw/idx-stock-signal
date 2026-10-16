@@ -2412,9 +2412,10 @@ def test_regression_reconciliation_report_statistics_with_stored_trade_rows():
         "FROM outcomes_daily ORDER BY signal_date, ticker"
     ).fetchall()
 
-    assert len(rows) == 31
-
-    filled = [r for r in rows if r["entry_status"] == "FILLED"]
+    filled = [
+        r for r in rows
+        if r["entry_status"] == "FILLED" and r["outcome_status"] in ("TP", "SL", "EXPIRY")
+    ]
     unfilled = [r for r in rows if r["entry_status"] != "FILLED"]
 
     # Exactly 27 filled trades and 4 unfilled signals

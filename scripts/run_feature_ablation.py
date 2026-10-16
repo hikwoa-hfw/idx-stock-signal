@@ -98,21 +98,25 @@ def main() -> None:
         df_summary = pd.read_csv(csv_path)
         all_summaries.append(df_summary)
 
-        print(f"\n--- Aggregate Results Summary ({mode}) ---")
+        print(f"\n--- Macro Fold-Aggregated Results Summary ({mode}) ---")
         cols_to_show = [
             "model_name",
             "features_used",
-            "roc_auc",
-            "pr_auc",
-            "log_loss",
-            "brier_score",
-            "ece",
-            "top_10pct_precision",
-            "delta_roc_auc",
-            "delta_pr_auc",
-            "delta_brier_score",
+            "roc_auc_mean",
+            "roc_auc_std",
+            "pr_auc_mean",
+            "daily_top_10pct_prec_mean",
+            "daily_top_10pct_prec_std",
+            "daily_top_5_prec_mean",
+            "brier_score_mean",
+            "delta_macro_roc_auc",
+            "delta_macro_pr_auc",
+            "delta_macro_daily_top_10pct_prec",
+            "pooled_roc_auc",
         ]
-        print(df_summary[cols_to_show].to_string(index=False))
+        # Only select columns that exist in the dataframe
+        available_cols = [c for c in cols_to_show if c in df_summary.columns]
+        print(df_summary[available_cols].to_string(index=False))
         print("\n")
 
     if len(all_summaries) > 1:

@@ -50,19 +50,110 @@
       "excluded_group": null,
       "included_group": null,
       "features_used": 30,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5562,
+          "std": 0.0232,
+          "min": 0.5298,
+          "max": 0.5735
+        },
+        "pr_auc": {
+          "mean": 0.2922,
+          "std": 0.0337,
+          "min": 0.2544,
+          "max": 0.3191
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.3006,
+          "std": 0.0155,
+          "min": 0.2911,
+          "max": 0.3184
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3038,
+          "std": 0.035,
+          "min": 0.2706,
+          "max": 0.3403
+        },
+        "brier_score": {
+          "mean": 0.1919,
+          "std": 0.0045,
+          "min": 0.1873,
+          "max": 0.1963
+        },
+        "log_loss": {
+          "mean": 0.5726,
+          "std": 0.0062,
+          "min": 0.5674,
+          "max": 0.5795
+        },
+        "ece": {
+          "mean": 0.0534,
+          "std": 0.0217,
+          "min": 0.0319,
+          "max": 0.0752
+        },
+        "accuracy": {
+          "mean": 0.7363,
+          "std": 0.016,
+          "min": 0.7204,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.328,
+          "std": 0.0613,
+          "min": 0.2627,
+          "max": 0.3843
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5526,
+        "pooled_pr_auc": 0.28,
+        "pooled_brier_score": 0.1919,
+        "pooled_log_loss": 0.5726,
+        "pooled_ece": 0.0524,
+        "pooled_top_10pct_precision": 0.2999,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5562,
+      "roc_auc_std": 0.0232,
+      "roc_auc_min": 0.5298,
+      "roc_auc_max": 0.5735,
+      "pr_auc_mean": 0.2922,
+      "pr_auc_std": 0.0337,
+      "pr_auc_min": 0.2544,
+      "pr_auc_max": 0.3191,
+      "daily_top_10pct_precision_mean": 0.3006,
+      "daily_top_10pct_precision_std": 0.0155,
+      "daily_top_10pct_precision_min": 0.2911,
+      "daily_top_10pct_precision_max": 0.3184,
+      "daily_top_5_precision_mean": 0.3038,
+      "brier_score_mean": 0.1919,
+      "log_loss_mean": 0.5726,
+      "ece_mean": 0.0534,
       "metrics": {
+        "roc_auc": 0.5562,
+        "pr_auc": 0.2922,
+        "daily_top_10pct_precision": 0.3006,
+        "daily_top_5_precision": 0.3038,
+        "brier_score": 0.1919,
+        "log_loss": 0.5726,
+        "ece": 0.0534,
+        "accuracy": 0.7363,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5526,
-        "pr_auc": 0.28,
-        "log_loss": 0.5726,
-        "brier_score": 0.1919,
-        "ece": 0.0524,
-        "accuracy": 0.7364,
-        "top_10pct_precision": 0.2999
+        "pooled_roc_auc": 0.5526,
+        "pooled_pr_auc": 0.28,
+        "top_10pct_precision": 0.3006
       },
       "deltas_vs_reference": {
+        "delta_macro_roc_auc": 0.0,
+        "delta_macro_pr_auc": 0.0,
+        "delta_macro_daily_top_10pct_precision": 0.0,
+        "delta_macro_daily_top_5_precision": 0.0,
+        "delta_macro_brier_score": 0.0,
+        "delta_macro_log_loss": 0.0,
         "delta_roc_auc": 0.0,
         "delta_pr_auc": 0.0,
         "delta_log_loss": 0.0,
@@ -77,25 +168,116 @@
       "excluded_group": "price_momentum",
       "included_group": null,
       "features_used": 25,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5504,
+          "std": 0.0238,
+          "min": 0.523,
+          "max": 0.5656
+        },
+        "pr_auc": {
+          "mean": 0.2887,
+          "std": 0.0312,
+          "min": 0.2539,
+          "max": 0.3142
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2917,
+          "std": 0.0095,
+          "min": 0.2834,
+          "max": 0.3021
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2829,
+          "std": 0.0285,
+          "min": 0.2579,
+          "max": 0.314
+        },
+        "brier_score": {
+          "mean": 0.1925,
+          "std": 0.0048,
+          "min": 0.1877,
+          "max": 0.1973
+        },
+        "log_loss": {
+          "mean": 0.5741,
+          "std": 0.0073,
+          "min": 0.5679,
+          "max": 0.5821
+        },
+        "ece": {
+          "mean": 0.0544,
+          "std": 0.0212,
+          "min": 0.0342,
+          "max": 0.0765
+        },
+        "accuracy": {
+          "mean": 0.7353,
+          "std": 0.0174,
+          "min": 0.7176,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3135,
+          "std": 0.0595,
+          "min": 0.2475,
+          "max": 0.3629
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5475,
+        "pooled_pr_auc": 0.2769,
+        "pooled_brier_score": 0.1925,
+        "pooled_log_loss": 0.574,
+        "pooled_ece": 0.0537,
+        "pooled_top_10pct_precision": 0.287,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5504,
+      "roc_auc_std": 0.0238,
+      "roc_auc_min": 0.523,
+      "roc_auc_max": 0.5656,
+      "pr_auc_mean": 0.2887,
+      "pr_auc_std": 0.0312,
+      "pr_auc_min": 0.2539,
+      "pr_auc_max": 0.3142,
+      "daily_top_10pct_precision_mean": 0.2917,
+      "daily_top_10pct_precision_std": 0.0095,
+      "daily_top_10pct_precision_min": 0.2834,
+      "daily_top_10pct_precision_max": 0.3021,
+      "daily_top_5_precision_mean": 0.2829,
+      "brier_score_mean": 0.1925,
+      "log_loss_mean": 0.5741,
+      "ece_mean": 0.0544,
       "metrics": {
+        "roc_auc": 0.5504,
+        "pr_auc": 0.2887,
+        "daily_top_10pct_precision": 0.2917,
+        "daily_top_5_precision": 0.2829,
+        "brier_score": 0.1925,
+        "log_loss": 0.5741,
+        "ece": 0.0544,
+        "accuracy": 0.7353,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5475,
-        "pr_auc": 0.2769,
-        "log_loss": 0.574,
-        "brier_score": 0.1925,
-        "ece": 0.0537,
-        "accuracy": 0.7353,
-        "top_10pct_precision": 0.287
+        "pooled_roc_auc": 0.5475,
+        "pooled_pr_auc": 0.2769,
+        "top_10pct_precision": 0.2917
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0051,
-        "delta_pr_auc": -0.0031,
-        "delta_log_loss": 0.0014,
+        "delta_macro_roc_auc": -0.0058,
+        "delta_macro_pr_auc": -0.0035,
+        "delta_macro_daily_top_10pct_precision": -0.0089,
+        "delta_macro_daily_top_5_precision": -0.0209,
+        "delta_macro_brier_score": 0.0006,
+        "delta_macro_log_loss": 0.0015,
+        "delta_roc_auc": -0.0058,
+        "delta_pr_auc": -0.0035,
+        "delta_log_loss": 0.0015,
         "delta_brier_score": 0.0006,
-        "delta_ece": 0.0013,
-        "delta_top_10pct_precision": -0.0129
+        "delta_ece": 0.001,
+        "delta_top_10pct_precision": -0.0089
       }
     },
     {
@@ -104,25 +286,116 @@
       "excluded_group": "trend",
       "included_group": null,
       "features_used": 23,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5561,
+          "std": 0.0255,
+          "min": 0.527,
+          "max": 0.5747
+        },
+        "pr_auc": {
+          "mean": 0.2924,
+          "std": 0.0341,
+          "min": 0.2543,
+          "max": 0.3198
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2996,
+          "std": 0.0198,
+          "min": 0.283,
+          "max": 0.3215
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2999,
+          "std": 0.0281,
+          "min": 0.2706,
+          "max": 0.3267
+        },
+        "brier_score": {
+          "mean": 0.191,
+          "std": 0.0055,
+          "min": 0.185,
+          "max": 0.1956
+        },
+        "log_loss": {
+          "mean": 0.5694,
+          "std": 0.01,
+          "min": 0.5585,
+          "max": 0.5781
+        },
+        "ece": {
+          "mean": 0.0467,
+          "std": 0.025,
+          "min": 0.0298,
+          "max": 0.0754
+        },
+        "accuracy": {
+          "mean": 0.7363,
+          "std": 0.0158,
+          "min": 0.7212,
+          "max": 0.7527
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3221,
+          "std": 0.0655,
+          "min": 0.2513,
+          "max": 0.3805
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5543,
+        "pooled_pr_auc": 0.2827,
+        "pooled_brier_score": 0.191,
+        "pooled_log_loss": 0.5694,
+        "pooled_ece": 0.0452,
+        "pooled_top_10pct_precision": 0.3022,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5561,
+      "roc_auc_std": 0.0255,
+      "roc_auc_min": 0.527,
+      "roc_auc_max": 0.5747,
+      "pr_auc_mean": 0.2924,
+      "pr_auc_std": 0.0341,
+      "pr_auc_min": 0.2543,
+      "pr_auc_max": 0.3198,
+      "daily_top_10pct_precision_mean": 0.2996,
+      "daily_top_10pct_precision_std": 0.0198,
+      "daily_top_10pct_precision_min": 0.283,
+      "daily_top_10pct_precision_max": 0.3215,
+      "daily_top_5_precision_mean": 0.2999,
+      "brier_score_mean": 0.191,
+      "log_loss_mean": 0.5694,
+      "ece_mean": 0.0467,
       "metrics": {
+        "roc_auc": 0.5561,
+        "pr_auc": 0.2924,
+        "daily_top_10pct_precision": 0.2996,
+        "daily_top_5_precision": 0.2999,
+        "brier_score": 0.191,
+        "log_loss": 0.5694,
+        "ece": 0.0467,
+        "accuracy": 0.7363,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5543,
-        "pr_auc": 0.2827,
-        "log_loss": 0.5694,
-        "brier_score": 0.191,
-        "ece": 0.0452,
-        "accuracy": 0.7364,
-        "top_10pct_precision": 0.3022
+        "pooled_roc_auc": 0.5543,
+        "pooled_pr_auc": 0.2827,
+        "top_10pct_precision": 0.2996
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": 0.0017,
-        "delta_pr_auc": 0.0027,
+        "delta_macro_roc_auc": -0.0001,
+        "delta_macro_pr_auc": 0.0002,
+        "delta_macro_daily_top_10pct_precision": -0.001,
+        "delta_macro_daily_top_5_precision": -0.0039,
+        "delta_macro_brier_score": -0.0009,
+        "delta_macro_log_loss": -0.0032,
+        "delta_roc_auc": -0.0001,
+        "delta_pr_auc": 0.0002,
         "delta_log_loss": -0.0032,
         "delta_brier_score": -0.0009,
-        "delta_ece": -0.0072,
-        "delta_top_10pct_precision": 0.0023
+        "delta_ece": -0.0067,
+        "delta_top_10pct_precision": -0.001
       }
     },
     {
@@ -131,25 +404,116 @@
       "excluded_group": "oscillators",
       "included_group": null,
       "features_used": 28,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5544,
+          "std": 0.0237,
+          "min": 0.5276,
+          "max": 0.5728
+        },
+        "pr_auc": {
+          "mean": 0.2914,
+          "std": 0.0322,
+          "min": 0.2551,
+          "max": 0.3167
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2976,
+          "std": 0.0089,
+          "min": 0.291,
+          "max": 0.3077
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3059,
+          "std": 0.0275,
+          "min": 0.2887,
+          "max": 0.3376
+        },
+        "brier_score": {
+          "mean": 0.1918,
+          "std": 0.004,
+          "min": 0.1875,
+          "max": 0.1953
+        },
+        "log_loss": {
+          "mean": 0.5725,
+          "std": 0.0048,
+          "min": 0.5678,
+          "max": 0.5774
+        },
+        "ece": {
+          "mean": 0.0535,
+          "std": 0.0183,
+          "min": 0.0351,
+          "max": 0.0717
+        },
+        "accuracy": {
+          "mean": 0.7366,
+          "std": 0.0148,
+          "min": 0.7228,
+          "max": 0.7523
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3266,
+          "std": 0.0636,
+          "min": 0.2582,
+          "max": 0.384
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5509,
+        "pooled_pr_auc": 0.2799,
+        "pooled_brier_score": 0.1918,
+        "pooled_log_loss": 0.5725,
+        "pooled_ece": 0.052,
+        "pooled_top_10pct_precision": 0.2973,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5544,
+      "roc_auc_std": 0.0237,
+      "roc_auc_min": 0.5276,
+      "roc_auc_max": 0.5728,
+      "pr_auc_mean": 0.2914,
+      "pr_auc_std": 0.0322,
+      "pr_auc_min": 0.2551,
+      "pr_auc_max": 0.3167,
+      "daily_top_10pct_precision_mean": 0.2976,
+      "daily_top_10pct_precision_std": 0.0089,
+      "daily_top_10pct_precision_min": 0.291,
+      "daily_top_10pct_precision_max": 0.3077,
+      "daily_top_5_precision_mean": 0.3059,
+      "brier_score_mean": 0.1918,
+      "log_loss_mean": 0.5725,
+      "ece_mean": 0.0535,
       "metrics": {
+        "roc_auc": 0.5544,
+        "pr_auc": 0.2914,
+        "daily_top_10pct_precision": 0.2976,
+        "daily_top_5_precision": 0.3059,
+        "brier_score": 0.1918,
+        "log_loss": 0.5725,
+        "ece": 0.0535,
+        "accuracy": 0.7366,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5509,
-        "pr_auc": 0.2799,
-        "log_loss": 0.5725,
-        "brier_score": 0.1918,
-        "ece": 0.052,
-        "accuracy": 0.7366,
-        "top_10pct_precision": 0.2973
+        "pooled_roc_auc": 0.5509,
+        "pooled_pr_auc": 0.2799,
+        "top_10pct_precision": 0.2976
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0017,
-        "delta_pr_auc": -0.0001,
+        "delta_macro_roc_auc": -0.0018,
+        "delta_macro_pr_auc": -0.0008,
+        "delta_macro_daily_top_10pct_precision": -0.003,
+        "delta_macro_daily_top_5_precision": 0.0021,
+        "delta_macro_brier_score": -0.0001,
+        "delta_macro_log_loss": -0.0001,
+        "delta_roc_auc": -0.0018,
+        "delta_pr_auc": -0.0008,
         "delta_log_loss": -0.0001,
         "delta_brier_score": -0.0001,
-        "delta_ece": -0.0004,
-        "delta_top_10pct_precision": -0.0026
+        "delta_ece": 0.0001,
+        "delta_top_10pct_precision": -0.003
       }
     },
     {
@@ -158,25 +522,116 @@
       "excluded_group": "volatility",
       "included_group": null,
       "features_used": 25,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5518,
+          "std": 0.0253,
+          "min": 0.5226,
+          "max": 0.567
+        },
+        "pr_auc": {
+          "mean": 0.2913,
+          "std": 0.0359,
+          "min": 0.2507,
+          "max": 0.3189
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.3067,
+          "std": 0.0113,
+          "min": 0.2969,
+          "max": 0.3191
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3098,
+          "std": 0.0095,
+          "min": 0.3005,
+          "max": 0.3195
+        },
+        "brier_score": {
+          "mean": 0.1928,
+          "std": 0.0053,
+          "min": 0.1871,
+          "max": 0.1977
+        },
+        "log_loss": {
+          "mean": 0.5749,
+          "std": 0.0088,
+          "min": 0.5661,
+          "max": 0.5836
+        },
+        "ece": {
+          "mean": 0.0548,
+          "std": 0.0149,
+          "min": 0.045,
+          "max": 0.0719
+        },
+        "accuracy": {
+          "mean": 0.735,
+          "std": 0.0169,
+          "min": 0.7186,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3275,
+          "std": 0.0624,
+          "min": 0.2558,
+          "max": 0.3696
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5473,
+        "pooled_pr_auc": 0.2794,
+        "pooled_brier_score": 0.1928,
+        "pooled_log_loss": 0.5749,
+        "pooled_ece": 0.0481,
+        "pooled_top_10pct_precision": 0.3043,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5518,
+      "roc_auc_std": 0.0253,
+      "roc_auc_min": 0.5226,
+      "roc_auc_max": 0.567,
+      "pr_auc_mean": 0.2913,
+      "pr_auc_std": 0.0359,
+      "pr_auc_min": 0.2507,
+      "pr_auc_max": 0.3189,
+      "daily_top_10pct_precision_mean": 0.3067,
+      "daily_top_10pct_precision_std": 0.0113,
+      "daily_top_10pct_precision_min": 0.2969,
+      "daily_top_10pct_precision_max": 0.3191,
+      "daily_top_5_precision_mean": 0.3098,
+      "brier_score_mean": 0.1928,
+      "log_loss_mean": 0.5749,
+      "ece_mean": 0.0548,
       "metrics": {
+        "roc_auc": 0.5518,
+        "pr_auc": 0.2913,
+        "daily_top_10pct_precision": 0.3067,
+        "daily_top_5_precision": 0.3098,
+        "brier_score": 0.1928,
+        "log_loss": 0.5749,
+        "ece": 0.0548,
+        "accuracy": 0.735,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5473,
-        "pr_auc": 0.2794,
-        "log_loss": 0.5749,
-        "brier_score": 0.1928,
-        "ece": 0.0481,
-        "accuracy": 0.735,
-        "top_10pct_precision": 0.3043
+        "pooled_roc_auc": 0.5473,
+        "pooled_pr_auc": 0.2794,
+        "top_10pct_precision": 0.3067
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0053,
-        "delta_pr_auc": -0.0006,
+        "delta_macro_roc_auc": -0.0044,
+        "delta_macro_pr_auc": -0.0009,
+        "delta_macro_daily_top_10pct_precision": 0.0061,
+        "delta_macro_daily_top_5_precision": 0.006,
+        "delta_macro_brier_score": 0.0009,
+        "delta_macro_log_loss": 0.0023,
+        "delta_roc_auc": -0.0044,
+        "delta_pr_auc": -0.0009,
         "delta_log_loss": 0.0023,
         "delta_brier_score": 0.0009,
-        "delta_ece": -0.0043,
-        "delta_top_10pct_precision": 0.0044
+        "delta_ece": 0.0014,
+        "delta_top_10pct_precision": 0.0061
       }
     },
     {
@@ -185,25 +640,116 @@
       "excluded_group": "volume_liquidity",
       "included_group": null,
       "features_used": 27,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5545,
+          "std": 0.0229,
+          "min": 0.5287,
+          "max": 0.5725
+        },
+        "pr_auc": {
+          "mean": 0.2917,
+          "std": 0.0321,
+          "min": 0.2556,
+          "max": 0.317
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2991,
+          "std": 0.0198,
+          "min": 0.2787,
+          "max": 0.3182
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2962,
+          "std": 0.0313,
+          "min": 0.2688,
+          "max": 0.3303
+        },
+        "brier_score": {
+          "mean": 0.1921,
+          "std": 0.0045,
+          "min": 0.1873,
+          "max": 0.1963
+        },
+        "log_loss": {
+          "mean": 0.5732,
+          "std": 0.0063,
+          "min": 0.5673,
+          "max": 0.5798
+        },
+        "ece": {
+          "mean": 0.055,
+          "std": 0.0196,
+          "min": 0.0368,
+          "max": 0.0758
+        },
+        "accuracy": {
+          "mean": 0.7363,
+          "std": 0.0152,
+          "min": 0.7217,
+          "max": 0.7521
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3253,
+          "std": 0.0558,
+          "min": 0.2663,
+          "max": 0.3772
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5511,
+        "pooled_pr_auc": 0.2804,
+        "pooled_brier_score": 0.1921,
+        "pooled_log_loss": 0.5731,
+        "pooled_ece": 0.0522,
+        "pooled_top_10pct_precision": 0.299,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5545,
+      "roc_auc_std": 0.0229,
+      "roc_auc_min": 0.5287,
+      "roc_auc_max": 0.5725,
+      "pr_auc_mean": 0.2917,
+      "pr_auc_std": 0.0321,
+      "pr_auc_min": 0.2556,
+      "pr_auc_max": 0.317,
+      "daily_top_10pct_precision_mean": 0.2991,
+      "daily_top_10pct_precision_std": 0.0198,
+      "daily_top_10pct_precision_min": 0.2787,
+      "daily_top_10pct_precision_max": 0.3182,
+      "daily_top_5_precision_mean": 0.2962,
+      "brier_score_mean": 0.1921,
+      "log_loss_mean": 0.5732,
+      "ece_mean": 0.055,
       "metrics": {
+        "roc_auc": 0.5545,
+        "pr_auc": 0.2917,
+        "daily_top_10pct_precision": 0.2991,
+        "daily_top_5_precision": 0.2962,
+        "brier_score": 0.1921,
+        "log_loss": 0.5732,
+        "ece": 0.055,
+        "accuracy": 0.7363,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5511,
-        "pr_auc": 0.2804,
-        "log_loss": 0.5731,
-        "brier_score": 0.1921,
-        "ece": 0.0522,
-        "accuracy": 0.7363,
-        "top_10pct_precision": 0.299
+        "pooled_roc_auc": 0.5511,
+        "pooled_pr_auc": 0.2804,
+        "top_10pct_precision": 0.2991
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0015,
-        "delta_pr_auc": 0.0004,
-        "delta_log_loss": 0.0005,
+        "delta_macro_roc_auc": -0.0017,
+        "delta_macro_pr_auc": -0.0005,
+        "delta_macro_daily_top_10pct_precision": -0.0015,
+        "delta_macro_daily_top_5_precision": -0.0076,
+        "delta_macro_brier_score": 0.0002,
+        "delta_macro_log_loss": 0.0006,
+        "delta_roc_auc": -0.0017,
+        "delta_pr_auc": -0.0005,
+        "delta_log_loss": 0.0006,
         "delta_brier_score": 0.0002,
-        "delta_ece": -0.0002,
-        "delta_top_10pct_precision": -0.0009
+        "delta_ece": 0.0016,
+        "delta_top_10pct_precision": -0.0015
       }
     },
     {
@@ -212,25 +758,116 @@
       "excluded_group": "relative_strength",
       "included_group": null,
       "features_used": 28,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5574,
+          "std": 0.0234,
+          "min": 0.5308,
+          "max": 0.575
+        },
+        "pr_auc": {
+          "mean": 0.2938,
+          "std": 0.0332,
+          "min": 0.2565,
+          "max": 0.3203
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2975,
+          "std": 0.0233,
+          "min": 0.2826,
+          "max": 0.3243
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2995,
+          "std": 0.033,
+          "min": 0.2796,
+          "max": 0.3376
+        },
+        "brier_score": {
+          "mean": 0.1915,
+          "std": 0.0041,
+          "min": 0.1871,
+          "max": 0.1952
+        },
+        "log_loss": {
+          "mean": 0.5715,
+          "std": 0.0051,
+          "min": 0.5667,
+          "max": 0.5769
+        },
+        "ece": {
+          "mean": 0.0523,
+          "std": 0.0175,
+          "min": 0.0347,
+          "max": 0.0696
+        },
+        "accuracy": {
+          "mean": 0.7373,
+          "std": 0.0148,
+          "min": 0.7228,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3273,
+          "std": 0.0601,
+          "min": 0.2618,
+          "max": 0.3799
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5532,
+        "pooled_pr_auc": 0.2813,
+        "pooled_brier_score": 0.1915,
+        "pooled_log_loss": 0.5715,
+        "pooled_ece": 0.0501,
+        "pooled_top_10pct_precision": 0.2986,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5574,
+      "roc_auc_std": 0.0234,
+      "roc_auc_min": 0.5308,
+      "roc_auc_max": 0.575,
+      "pr_auc_mean": 0.2938,
+      "pr_auc_std": 0.0332,
+      "pr_auc_min": 0.2565,
+      "pr_auc_max": 0.3203,
+      "daily_top_10pct_precision_mean": 0.2975,
+      "daily_top_10pct_precision_std": 0.0233,
+      "daily_top_10pct_precision_min": 0.2826,
+      "daily_top_10pct_precision_max": 0.3243,
+      "daily_top_5_precision_mean": 0.2995,
+      "brier_score_mean": 0.1915,
+      "log_loss_mean": 0.5715,
+      "ece_mean": 0.0523,
       "metrics": {
+        "roc_auc": 0.5574,
+        "pr_auc": 0.2938,
+        "daily_top_10pct_precision": 0.2975,
+        "daily_top_5_precision": 0.2995,
+        "brier_score": 0.1915,
+        "log_loss": 0.5715,
+        "ece": 0.0523,
+        "accuracy": 0.7373,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5532,
-        "pr_auc": 0.2813,
-        "log_loss": 0.5715,
-        "brier_score": 0.1915,
-        "ece": 0.0501,
-        "accuracy": 0.7373,
-        "top_10pct_precision": 0.2986
+        "pooled_roc_auc": 0.5532,
+        "pooled_pr_auc": 0.2813,
+        "top_10pct_precision": 0.2975
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": 0.0006,
-        "delta_pr_auc": 0.0013,
+        "delta_macro_roc_auc": 0.0012,
+        "delta_macro_pr_auc": 0.0016,
+        "delta_macro_daily_top_10pct_precision": -0.0031,
+        "delta_macro_daily_top_5_precision": -0.0043,
+        "delta_macro_brier_score": -0.0004,
+        "delta_macro_log_loss": -0.0011,
+        "delta_roc_auc": 0.0012,
+        "delta_pr_auc": 0.0016,
         "delta_log_loss": -0.0011,
         "delta_brier_score": -0.0004,
-        "delta_ece": -0.0023,
-        "delta_top_10pct_precision": -0.0013
+        "delta_ece": -0.0011,
+        "delta_top_10pct_precision": -0.0031
       }
     },
     {
@@ -239,25 +876,116 @@
       "excluded_group": "market_regime",
       "included_group": null,
       "features_used": 24,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5735,
+          "std": 0.0111,
+          "min": 0.5621,
+          "max": 0.5842
+        },
+        "pr_auc": {
+          "mean": 0.2887,
+          "std": 0.0153,
+          "min": 0.2797,
+          "max": 0.3064
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.303,
+          "std": 0.0241,
+          "min": 0.2883,
+          "max": 0.3308
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3062,
+          "std": 0.0231,
+          "min": 0.2842,
+          "max": 0.3303
+        },
+        "brier_score": {
+          "mean": 0.1862,
+          "std": 0.0049,
+          "min": 0.1807,
+          "max": 0.19
+        },
+        "log_loss": {
+          "mean": 0.5588,
+          "std": 0.012,
+          "min": 0.545,
+          "max": 0.5664
+        },
+        "ece": {
+          "mean": 0.0281,
+          "std": 0.0192,
+          "min": 0.0125,
+          "max": 0.0496
+        },
+        "accuracy": {
+          "mean": 0.749,
+          "std": 0.0115,
+          "min": 0.7366,
+          "max": 0.7592
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3024,
+          "std": 0.0163,
+          "min": 0.2921,
+          "max": 0.3212
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5694,
+        "pooled_pr_auc": 0.2867,
+        "pooled_brier_score": 0.1862,
+        "pooled_log_loss": 0.5589,
+        "pooled_ece": 0.0207,
+        "pooled_top_10pct_precision": 0.2984,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5735,
+      "roc_auc_std": 0.0111,
+      "roc_auc_min": 0.5621,
+      "roc_auc_max": 0.5842,
+      "pr_auc_mean": 0.2887,
+      "pr_auc_std": 0.0153,
+      "pr_auc_min": 0.2797,
+      "pr_auc_max": 0.3064,
+      "daily_top_10pct_precision_mean": 0.303,
+      "daily_top_10pct_precision_std": 0.0241,
+      "daily_top_10pct_precision_min": 0.2883,
+      "daily_top_10pct_precision_max": 0.3308,
+      "daily_top_5_precision_mean": 0.3062,
+      "brier_score_mean": 0.1862,
+      "log_loss_mean": 0.5588,
+      "ece_mean": 0.0281,
       "metrics": {
+        "roc_auc": 0.5735,
+        "pr_auc": 0.2887,
+        "daily_top_10pct_precision": 0.303,
+        "daily_top_5_precision": 0.3062,
+        "brier_score": 0.1862,
+        "log_loss": 0.5588,
+        "ece": 0.0281,
+        "accuracy": 0.749,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5694,
-        "pr_auc": 0.2867,
-        "log_loss": 0.5589,
-        "brier_score": 0.1862,
-        "ece": 0.0207,
-        "accuracy": 0.7489,
-        "top_10pct_precision": 0.2984
+        "pooled_roc_auc": 0.5694,
+        "pooled_pr_auc": 0.2867,
+        "top_10pct_precision": 0.303
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": 0.0168,
-        "delta_pr_auc": 0.0067,
-        "delta_log_loss": -0.0137,
+        "delta_macro_roc_auc": 0.0173,
+        "delta_macro_pr_auc": -0.0035,
+        "delta_macro_daily_top_10pct_precision": 0.0024,
+        "delta_macro_daily_top_5_precision": 0.0024,
+        "delta_macro_brier_score": -0.0057,
+        "delta_macro_log_loss": -0.0138,
+        "delta_roc_auc": 0.0173,
+        "delta_pr_auc": -0.0035,
+        "delta_log_loss": -0.0138,
         "delta_brier_score": -0.0057,
-        "delta_ece": -0.0317,
-        "delta_top_10pct_precision": -0.0015
+        "delta_ece": -0.0253,
+        "delta_top_10pct_precision": 0.0024
       }
     },
     {
@@ -266,25 +994,116 @@
       "excluded_group": null,
       "included_group": null,
       "features_used": 0,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5,
+          "std": 0.0,
+          "min": 0.5,
+          "max": 0.5
+        },
+        "pr_auc": {
+          "mean": 0.2498,
+          "std": 0.0111,
+          "min": 0.2398,
+          "max": 0.2617
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2602,
+          "std": 0.0017,
+          "min": 0.2584,
+          "max": 0.2617
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2455,
+          "std": 0.02,
+          "min": 0.2235,
+          "max": 0.2624
+        },
+        "brier_score": {
+          "mean": 0.1875,
+          "std": 0.0056,
+          "min": 0.1824,
+          "max": 0.1935
+        },
+        "log_loss": {
+          "mean": 0.5623,
+          "std": 0.0124,
+          "min": 0.5511,
+          "max": 0.5756
+        },
+        "ece": {
+          "mean": 0.0121,
+          "std": 0.0042,
+          "min": 0.0096,
+          "max": 0.0169
+        },
+        "accuracy": {
+          "mean": 0.7502,
+          "std": 0.0111,
+          "min": 0.7383,
+          "max": 0.7602
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.2193,
+          "std": 0.0028,
+          "min": 0.2166,
+          "max": 0.2221
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.4953,
+        "pooled_pr_auc": 0.247,
+        "pooled_brier_score": 0.1875,
+        "pooled_log_loss": 0.5624,
+        "pooled_ece": 0.0056,
+        "pooled_top_10pct_precision": 0.2397,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5,
+      "roc_auc_std": 0.0,
+      "roc_auc_min": 0.5,
+      "roc_auc_max": 0.5,
+      "pr_auc_mean": 0.2498,
+      "pr_auc_std": 0.0111,
+      "pr_auc_min": 0.2398,
+      "pr_auc_max": 0.2617,
+      "daily_top_10pct_precision_mean": 0.2602,
+      "daily_top_10pct_precision_std": 0.0017,
+      "daily_top_10pct_precision_min": 0.2584,
+      "daily_top_10pct_precision_max": 0.2617,
+      "daily_top_5_precision_mean": 0.2455,
+      "brier_score_mean": 0.1875,
+      "log_loss_mean": 0.5623,
+      "ece_mean": 0.0121,
       "metrics": {
+        "roc_auc": 0.5,
+        "pr_auc": 0.2498,
+        "daily_top_10pct_precision": 0.2602,
+        "daily_top_5_precision": 0.2455,
+        "brier_score": 0.1875,
+        "log_loss": 0.5623,
+        "ece": 0.0121,
+        "accuracy": 0.7502,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.4953,
-        "pr_auc": 0.247,
-        "log_loss": 0.5624,
-        "brier_score": 0.1875,
-        "ece": 0.0056,
-        "accuracy": 0.7501,
-        "top_10pct_precision": 0.2397
+        "pooled_roc_auc": 0.4953,
+        "pooled_pr_auc": 0.247,
+        "top_10pct_precision": 0.2602
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0573,
-        "delta_pr_auc": -0.033,
-        "delta_log_loss": -0.0102,
+        "delta_macro_roc_auc": -0.0562,
+        "delta_macro_pr_auc": -0.0424,
+        "delta_macro_daily_top_10pct_precision": -0.0404,
+        "delta_macro_daily_top_5_precision": -0.0583,
+        "delta_macro_brier_score": -0.0044,
+        "delta_macro_log_loss": -0.0103,
+        "delta_roc_auc": -0.0562,
+        "delta_pr_auc": -0.0424,
+        "delta_log_loss": -0.0103,
         "delta_brier_score": -0.0044,
-        "delta_ece": -0.0468,
-        "delta_top_10pct_precision": -0.0602
+        "delta_ece": -0.0413,
+        "delta_top_10pct_precision": -0.0404
       }
     },
     {
@@ -293,25 +1112,116 @@
       "excluded_group": null,
       "included_group": null,
       "features_used": 30,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.56,
+          "std": 0.0431,
+          "min": 0.5304,
+          "max": 0.6095
+        },
+        "pr_auc": {
+          "mean": 0.2962,
+          "std": 0.0466,
+          "min": 0.2644,
+          "max": 0.3497
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2944,
+          "std": 0.025,
+          "min": 0.277,
+          "max": 0.323
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2878,
+          "std": 0.0217,
+          "min": 0.2661,
+          "max": 0.3095
+        },
+        "brier_score": {
+          "mean": 0.1922,
+          "std": 0.0034,
+          "min": 0.1883,
+          "max": 0.1943
+        },
+        "log_loss": {
+          "mean": 0.5738,
+          "std": 0.0037,
+          "min": 0.5695,
+          "max": 0.576
+        },
+        "ece": {
+          "mean": 0.0574,
+          "std": 0.0246,
+          "min": 0.0322,
+          "max": 0.0814
+        },
+        "accuracy": {
+          "mean": 0.7416,
+          "std": 0.0113,
+          "min": 0.7294,
+          "max": 0.7517
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.346,
+          "std": 0.084,
+          "min": 0.2926,
+          "max": 0.4429
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5551,
+        "pooled_pr_auc": 0.2976,
+        "pooled_brier_score": 0.1922,
+        "pooled_log_loss": 0.5738,
+        "pooled_ece": 0.0517,
+        "pooled_top_10pct_precision": 0.3318,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.56,
+      "roc_auc_std": 0.0431,
+      "roc_auc_min": 0.5304,
+      "roc_auc_max": 0.6095,
+      "pr_auc_mean": 0.2962,
+      "pr_auc_std": 0.0466,
+      "pr_auc_min": 0.2644,
+      "pr_auc_max": 0.3497,
+      "daily_top_10pct_precision_mean": 0.2944,
+      "daily_top_10pct_precision_std": 0.025,
+      "daily_top_10pct_precision_min": 0.277,
+      "daily_top_10pct_precision_max": 0.323,
+      "daily_top_5_precision_mean": 0.2878,
+      "brier_score_mean": 0.1922,
+      "log_loss_mean": 0.5738,
+      "ece_mean": 0.0574,
       "metrics": {
+        "roc_auc": 0.56,
+        "pr_auc": 0.2962,
+        "daily_top_10pct_precision": 0.2944,
+        "daily_top_5_precision": 0.2878,
+        "brier_score": 0.1922,
+        "log_loss": 0.5738,
+        "ece": 0.0574,
+        "accuracy": 0.7416,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5551,
-        "pr_auc": 0.2976,
-        "log_loss": 0.5738,
-        "brier_score": 0.1922,
-        "ece": 0.0517,
-        "accuracy": 0.7415,
-        "top_10pct_precision": 0.3318
+        "pooled_roc_auc": 0.5551,
+        "pooled_pr_auc": 0.2976,
+        "top_10pct_precision": 0.2944
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": 0.0025,
-        "delta_pr_auc": 0.0176,
+        "delta_macro_roc_auc": 0.0038,
+        "delta_macro_pr_auc": 0.004,
+        "delta_macro_daily_top_10pct_precision": -0.0062,
+        "delta_macro_daily_top_5_precision": -0.016,
+        "delta_macro_brier_score": 0.0003,
+        "delta_macro_log_loss": 0.0012,
+        "delta_roc_auc": 0.0038,
+        "delta_pr_auc": 0.004,
         "delta_log_loss": 0.0012,
         "delta_brier_score": 0.0003,
-        "delta_ece": -0.0007,
-        "delta_top_10pct_precision": 0.0319
+        "delta_ece": 0.004,
+        "delta_top_10pct_precision": -0.0062
       }
     },
     {
@@ -320,25 +1230,116 @@
       "excluded_group": null,
       "included_group": "price_momentum",
       "features_used": 5,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5582,
+          "std": 0.0152,
+          "min": 0.5449,
+          "max": 0.5748
+        },
+        "pr_auc": {
+          "mean": 0.2844,
+          "std": 0.0229,
+          "min": 0.2671,
+          "max": 0.3104
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.305,
+          "std": 0.0215,
+          "min": 0.2858,
+          "max": 0.3283
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3029,
+          "std": 0.0319,
+          "min": 0.2733,
+          "max": 0.3367
+        },
+        "brier_score": {
+          "mean": 0.1862,
+          "std": 0.0046,
+          "min": 0.1817,
+          "max": 0.1908
+        },
+        "log_loss": {
+          "mean": 0.5586,
+          "std": 0.0099,
+          "min": 0.5485,
+          "max": 0.5683
+        },
+        "ece": {
+          "mean": 0.0178,
+          "std": 0.0023,
+          "min": 0.0158,
+          "max": 0.0203
+        },
+        "accuracy": {
+          "mean": 0.7502,
+          "std": 0.011,
+          "min": 0.7383,
+          "max": 0.76
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3033,
+          "std": 0.0366,
+          "min": 0.275,
+          "max": 0.3447
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5573,
+        "pooled_pr_auc": 0.2833,
+        "pooled_brier_score": 0.1862,
+        "pooled_log_loss": 0.5587,
+        "pooled_ece": 0.012,
+        "pooled_top_10pct_precision": 0.3018,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5582,
+      "roc_auc_std": 0.0152,
+      "roc_auc_min": 0.5449,
+      "roc_auc_max": 0.5748,
+      "pr_auc_mean": 0.2844,
+      "pr_auc_std": 0.0229,
+      "pr_auc_min": 0.2671,
+      "pr_auc_max": 0.3104,
+      "daily_top_10pct_precision_mean": 0.305,
+      "daily_top_10pct_precision_std": 0.0215,
+      "daily_top_10pct_precision_min": 0.2858,
+      "daily_top_10pct_precision_max": 0.3283,
+      "daily_top_5_precision_mean": 0.3029,
+      "brier_score_mean": 0.1862,
+      "log_loss_mean": 0.5586,
+      "ece_mean": 0.0178,
       "metrics": {
+        "roc_auc": 0.5582,
+        "pr_auc": 0.2844,
+        "daily_top_10pct_precision": 0.305,
+        "daily_top_5_precision": 0.3029,
+        "brier_score": 0.1862,
+        "log_loss": 0.5586,
+        "ece": 0.0178,
+        "accuracy": 0.7502,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5573,
-        "pr_auc": 0.2833,
-        "log_loss": 0.5587,
-        "brier_score": 0.1862,
-        "ece": 0.012,
-        "accuracy": 0.7501,
-        "top_10pct_precision": 0.3018
+        "pooled_roc_auc": 0.5573,
+        "pooled_pr_auc": 0.2833,
+        "top_10pct_precision": 0.305
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": 0.0047,
-        "delta_pr_auc": 0.0033,
-        "delta_log_loss": -0.0139,
+        "delta_macro_roc_auc": 0.002,
+        "delta_macro_pr_auc": -0.0078,
+        "delta_macro_daily_top_10pct_precision": 0.0044,
+        "delta_macro_daily_top_5_precision": -0.0009,
+        "delta_macro_brier_score": -0.0057,
+        "delta_macro_log_loss": -0.014,
+        "delta_roc_auc": 0.002,
+        "delta_pr_auc": -0.0078,
+        "delta_log_loss": -0.014,
         "delta_brier_score": -0.0057,
-        "delta_ece": -0.0404,
-        "delta_top_10pct_precision": 0.0019
+        "delta_ece": -0.0356,
+        "delta_top_10pct_precision": 0.0044
       }
     },
     {
@@ -347,25 +1348,116 @@
       "excluded_group": null,
       "included_group": "trend",
       "features_used": 7,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5497,
+          "std": 0.0187,
+          "min": 0.5354,
+          "max": 0.5709
+        },
+        "pr_auc": {
+          "mean": 0.2808,
+          "std": 0.0265,
+          "min": 0.2601,
+          "max": 0.3107
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2946,
+          "std": 0.0338,
+          "min": 0.2695,
+          "max": 0.333
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2977,
+          "std": 0.0509,
+          "min": 0.2525,
+          "max": 0.3529
+        },
+        "brier_score": {
+          "mean": 0.1887,
+          "std": 0.0042,
+          "min": 0.1838,
+          "max": 0.1912
+        },
+        "log_loss": {
+          "mean": 0.567,
+          "std": 0.0124,
+          "min": 0.5536,
+          "max": 0.5779
+        },
+        "ece": {
+          "mean": 0.032,
+          "std": 0.0229,
+          "min": 0.0162,
+          "max": 0.0583
+        },
+        "accuracy": {
+          "mean": 0.7487,
+          "std": 0.0097,
+          "min": 0.7379,
+          "max": 0.7566
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3003,
+          "std": 0.0458,
+          "min": 0.2615,
+          "max": 0.3508
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5473,
+        "pooled_pr_auc": 0.2791,
+        "pooled_brier_score": 0.1887,
+        "pooled_log_loss": 0.5671,
+        "pooled_ece": 0.0306,
+        "pooled_top_10pct_precision": 0.2993,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5497,
+      "roc_auc_std": 0.0187,
+      "roc_auc_min": 0.5354,
+      "roc_auc_max": 0.5709,
+      "pr_auc_mean": 0.2808,
+      "pr_auc_std": 0.0265,
+      "pr_auc_min": 0.2601,
+      "pr_auc_max": 0.3107,
+      "daily_top_10pct_precision_mean": 0.2946,
+      "daily_top_10pct_precision_std": 0.0338,
+      "daily_top_10pct_precision_min": 0.2695,
+      "daily_top_10pct_precision_max": 0.333,
+      "daily_top_5_precision_mean": 0.2977,
+      "brier_score_mean": 0.1887,
+      "log_loss_mean": 0.567,
+      "ece_mean": 0.032,
       "metrics": {
+        "roc_auc": 0.5497,
+        "pr_auc": 0.2808,
+        "daily_top_10pct_precision": 0.2946,
+        "daily_top_5_precision": 0.2977,
+        "brier_score": 0.1887,
+        "log_loss": 0.567,
+        "ece": 0.032,
+        "accuracy": 0.7487,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5473,
-        "pr_auc": 0.2791,
-        "log_loss": 0.5671,
-        "brier_score": 0.1887,
-        "ece": 0.0306,
-        "accuracy": 0.7487,
-        "top_10pct_precision": 0.2993
+        "pooled_roc_auc": 0.5473,
+        "pooled_pr_auc": 0.2791,
+        "top_10pct_precision": 0.2946
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0053,
-        "delta_pr_auc": -0.0009,
-        "delta_log_loss": -0.0055,
+        "delta_macro_roc_auc": -0.0065,
+        "delta_macro_pr_auc": -0.0114,
+        "delta_macro_daily_top_10pct_precision": -0.006,
+        "delta_macro_daily_top_5_precision": -0.0061,
+        "delta_macro_brier_score": -0.0032,
+        "delta_macro_log_loss": -0.0056,
+        "delta_roc_auc": -0.0065,
+        "delta_pr_auc": -0.0114,
+        "delta_log_loss": -0.0056,
         "delta_brier_score": -0.0032,
-        "delta_ece": -0.0218,
-        "delta_top_10pct_precision": -0.0006
+        "delta_ece": -0.0214,
+        "delta_top_10pct_precision": -0.006
       }
     },
     {
@@ -374,25 +1466,116 @@
       "excluded_group": null,
       "included_group": "oscillators",
       "features_used": 2,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.504,
+          "std": 0.0074,
+          "min": 0.4963,
+          "max": 0.511
+        },
+        "pr_auc": {
+          "mean": 0.2565,
+          "std": 0.0212,
+          "min": 0.2392,
+          "max": 0.2802
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2687,
+          "std": 0.0328,
+          "min": 0.2492,
+          "max": 0.3066
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2833,
+          "std": 0.0551,
+          "min": 0.2462,
+          "max": 0.3466
+        },
+        "brier_score": {
+          "mean": 0.188,
+          "std": 0.0053,
+          "min": 0.1829,
+          "max": 0.1935
+        },
+        "log_loss": {
+          "mean": 0.5638,
+          "std": 0.0119,
+          "min": 0.5523,
+          "max": 0.576
+        },
+        "ece": {
+          "mean": 0.0149,
+          "std": 0.0056,
+          "min": 0.0085,
+          "max": 0.0184
+        },
+        "accuracy": {
+          "mean": 0.75,
+          "std": 0.0108,
+          "min": 0.7385,
+          "max": 0.76
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.2631,
+          "std": 0.0315,
+          "min": 0.2445,
+          "max": 0.2995
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5031,
+        "pooled_pr_auc": 0.2554,
+        "pooled_brier_score": 0.188,
+        "pooled_log_loss": 0.5639,
+        "pooled_ece": 0.0105,
+        "pooled_top_10pct_precision": 0.2635,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.504,
+      "roc_auc_std": 0.0074,
+      "roc_auc_min": 0.4963,
+      "roc_auc_max": 0.511,
+      "pr_auc_mean": 0.2565,
+      "pr_auc_std": 0.0212,
+      "pr_auc_min": 0.2392,
+      "pr_auc_max": 0.2802,
+      "daily_top_10pct_precision_mean": 0.2687,
+      "daily_top_10pct_precision_std": 0.0328,
+      "daily_top_10pct_precision_min": 0.2492,
+      "daily_top_10pct_precision_max": 0.3066,
+      "daily_top_5_precision_mean": 0.2833,
+      "brier_score_mean": 0.188,
+      "log_loss_mean": 0.5638,
+      "ece_mean": 0.0149,
       "metrics": {
+        "roc_auc": 0.504,
+        "pr_auc": 0.2565,
+        "daily_top_10pct_precision": 0.2687,
+        "daily_top_5_precision": 0.2833,
+        "brier_score": 0.188,
+        "log_loss": 0.5638,
+        "ece": 0.0149,
+        "accuracy": 0.75,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5031,
-        "pr_auc": 0.2554,
-        "log_loss": 0.5639,
-        "brier_score": 0.188,
-        "ece": 0.0105,
-        "accuracy": 0.7499,
-        "top_10pct_precision": 0.2635
+        "pooled_roc_auc": 0.5031,
+        "pooled_pr_auc": 0.2554,
+        "top_10pct_precision": 0.2687
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0495,
-        "delta_pr_auc": -0.0246,
-        "delta_log_loss": -0.0087,
+        "delta_macro_roc_auc": -0.0522,
+        "delta_macro_pr_auc": -0.0357,
+        "delta_macro_daily_top_10pct_precision": -0.0319,
+        "delta_macro_daily_top_5_precision": -0.0205,
+        "delta_macro_brier_score": -0.0039,
+        "delta_macro_log_loss": -0.0088,
+        "delta_roc_auc": -0.0522,
+        "delta_pr_auc": -0.0357,
+        "delta_log_loss": -0.0088,
         "delta_brier_score": -0.0039,
-        "delta_ece": -0.0419,
-        "delta_top_10pct_precision": -0.0364
+        "delta_ece": -0.0385,
+        "delta_top_10pct_precision": -0.0319
       }
     },
     {
@@ -401,25 +1584,116 @@
       "excluded_group": null,
       "included_group": "volatility",
       "features_used": 5,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5681,
+          "std": 0.0131,
+          "min": 0.5579,
+          "max": 0.5828
+        },
+        "pr_auc": {
+          "mean": 0.2834,
+          "std": 0.0194,
+          "min": 0.2688,
+          "max": 0.3054
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2901,
+          "std": 0.0172,
+          "min": 0.2781,
+          "max": 0.3098
+        },
+        "daily_top_5_precision": {
+          "mean": 0.267,
+          "std": 0.0227,
+          "min": 0.2452,
+          "max": 0.2905
+        },
+        "brier_score": {
+          "mean": 0.1855,
+          "std": 0.0045,
+          "min": 0.181,
+          "max": 0.1899
+        },
+        "log_loss": {
+          "mean": 0.557,
+          "std": 0.0098,
+          "min": 0.5463,
+          "max": 0.5656
+        },
+        "ece": {
+          "mean": 0.0172,
+          "std": 0.0055,
+          "min": 0.0109,
+          "max": 0.0212
+        },
+        "accuracy": {
+          "mean": 0.7498,
+          "std": 0.0108,
+          "min": 0.7381,
+          "max": 0.7594
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.2988,
+          "std": 0.019,
+          "min": 0.2816,
+          "max": 0.3192
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5665,
+        "pooled_pr_auc": 0.2809,
+        "pooled_brier_score": 0.1856,
+        "pooled_log_loss": 0.5571,
+        "pooled_ece": 0.0097,
+        "pooled_top_10pct_precision": 0.2849,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5681,
+      "roc_auc_std": 0.0131,
+      "roc_auc_min": 0.5579,
+      "roc_auc_max": 0.5828,
+      "pr_auc_mean": 0.2834,
+      "pr_auc_std": 0.0194,
+      "pr_auc_min": 0.2688,
+      "pr_auc_max": 0.3054,
+      "daily_top_10pct_precision_mean": 0.2901,
+      "daily_top_10pct_precision_std": 0.0172,
+      "daily_top_10pct_precision_min": 0.2781,
+      "daily_top_10pct_precision_max": 0.3098,
+      "daily_top_5_precision_mean": 0.267,
+      "brier_score_mean": 0.1855,
+      "log_loss_mean": 0.557,
+      "ece_mean": 0.0172,
       "metrics": {
+        "roc_auc": 0.5681,
+        "pr_auc": 0.2834,
+        "daily_top_10pct_precision": 0.2901,
+        "daily_top_5_precision": 0.267,
+        "brier_score": 0.1855,
+        "log_loss": 0.557,
+        "ece": 0.0172,
+        "accuracy": 0.7498,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5665,
-        "pr_auc": 0.2809,
-        "log_loss": 0.5571,
-        "brier_score": 0.1856,
-        "ece": 0.0097,
-        "accuracy": 0.7498,
-        "top_10pct_precision": 0.2849
+        "pooled_roc_auc": 0.5665,
+        "pooled_pr_auc": 0.2809,
+        "top_10pct_precision": 0.2901
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": 0.0139,
-        "delta_pr_auc": 0.0009,
-        "delta_log_loss": -0.0155,
-        "delta_brier_score": -0.0063,
-        "delta_ece": -0.0427,
-        "delta_top_10pct_precision": -0.015
+        "delta_macro_roc_auc": 0.0119,
+        "delta_macro_pr_auc": -0.0088,
+        "delta_macro_daily_top_10pct_precision": -0.0105,
+        "delta_macro_daily_top_5_precision": -0.0368,
+        "delta_macro_brier_score": -0.0064,
+        "delta_macro_log_loss": -0.0156,
+        "delta_roc_auc": 0.0119,
+        "delta_pr_auc": -0.0088,
+        "delta_log_loss": -0.0156,
+        "delta_brier_score": -0.0064,
+        "delta_ece": -0.0362,
+        "delta_top_10pct_precision": -0.0105
       }
     },
     {
@@ -428,25 +1702,116 @@
       "excluded_group": null,
       "included_group": "volume_liquidity",
       "features_used": 3,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5157,
+          "std": 0.0064,
+          "min": 0.5088,
+          "max": 0.5213
+        },
+        "pr_auc": {
+          "mean": 0.2597,
+          "std": 0.0178,
+          "min": 0.2471,
+          "max": 0.28
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.267,
+          "std": 0.0228,
+          "min": 0.2509,
+          "max": 0.2931
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2811,
+          "std": 0.0321,
+          "min": 0.257,
+          "max": 0.3176
+        },
+        "brier_score": {
+          "mean": 0.1875,
+          "std": 0.0056,
+          "min": 0.1822,
+          "max": 0.1933
+        },
+        "log_loss": {
+          "mean": 0.5627,
+          "std": 0.0125,
+          "min": 0.5504,
+          "max": 0.5753
+        },
+        "ece": {
+          "mean": 0.0142,
+          "std": 0.0039,
+          "min": 0.0098,
+          "max": 0.0171
+        },
+        "accuracy": {
+          "mean": 0.7502,
+          "std": 0.0111,
+          "min": 0.7383,
+          "max": 0.7602
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.2663,
+          "std": 0.026,
+          "min": 0.2504,
+          "max": 0.2963
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5146,
+        "pooled_pr_auc": 0.2585,
+        "pooled_brier_score": 0.1876,
+        "pooled_log_loss": 0.5628,
+        "pooled_ece": 0.0085,
+        "pooled_top_10pct_precision": 0.265,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5157,
+      "roc_auc_std": 0.0064,
+      "roc_auc_min": 0.5088,
+      "roc_auc_max": 0.5213,
+      "pr_auc_mean": 0.2597,
+      "pr_auc_std": 0.0178,
+      "pr_auc_min": 0.2471,
+      "pr_auc_max": 0.28,
+      "daily_top_10pct_precision_mean": 0.267,
+      "daily_top_10pct_precision_std": 0.0228,
+      "daily_top_10pct_precision_min": 0.2509,
+      "daily_top_10pct_precision_max": 0.2931,
+      "daily_top_5_precision_mean": 0.2811,
+      "brier_score_mean": 0.1875,
+      "log_loss_mean": 0.5627,
+      "ece_mean": 0.0142,
       "metrics": {
+        "roc_auc": 0.5157,
+        "pr_auc": 0.2597,
+        "daily_top_10pct_precision": 0.267,
+        "daily_top_5_precision": 0.2811,
+        "brier_score": 0.1875,
+        "log_loss": 0.5627,
+        "ece": 0.0142,
+        "accuracy": 0.7502,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5146,
-        "pr_auc": 0.2585,
-        "log_loss": 0.5628,
-        "brier_score": 0.1876,
-        "ece": 0.0085,
-        "accuracy": 0.7501,
-        "top_10pct_precision": 0.265
+        "pooled_roc_auc": 0.5146,
+        "pooled_pr_auc": 0.2585,
+        "top_10pct_precision": 0.267
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.038,
-        "delta_pr_auc": -0.0215,
-        "delta_log_loss": -0.0098,
-        "delta_brier_score": -0.0043,
-        "delta_ece": -0.0439,
-        "delta_top_10pct_precision": -0.0349
+        "delta_macro_roc_auc": -0.0405,
+        "delta_macro_pr_auc": -0.0325,
+        "delta_macro_daily_top_10pct_precision": -0.0336,
+        "delta_macro_daily_top_5_precision": -0.0227,
+        "delta_macro_brier_score": -0.0044,
+        "delta_macro_log_loss": -0.0099,
+        "delta_roc_auc": -0.0405,
+        "delta_pr_auc": -0.0325,
+        "delta_log_loss": -0.0099,
+        "delta_brier_score": -0.0044,
+        "delta_ece": -0.0392,
+        "delta_top_10pct_precision": -0.0336
       }
     },
     {
@@ -455,25 +1820,116 @@
       "excluded_group": null,
       "included_group": "relative_strength",
       "features_used": 2,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5193,
+          "std": 0.0104,
+          "min": 0.5096,
+          "max": 0.5302
+        },
+        "pr_auc": {
+          "mean": 0.2651,
+          "std": 0.0216,
+          "min": 0.2455,
+          "max": 0.2883
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.29,
+          "std": 0.0329,
+          "min": 0.2662,
+          "max": 0.3275
+        },
+        "daily_top_5_precision": {
+          "mean": 0.305,
+          "std": 0.054,
+          "min": 0.2561,
+          "max": 0.3629
+        },
+        "brier_score": {
+          "mean": 0.1875,
+          "std": 0.005,
+          "min": 0.1829,
+          "max": 0.1929
+        },
+        "log_loss": {
+          "mean": 0.5627,
+          "std": 0.0109,
+          "min": 0.5524,
+          "max": 0.5742
+        },
+        "ece": {
+          "mean": 0.0137,
+          "std": 0.0019,
+          "min": 0.0116,
+          "max": 0.0151
+        },
+        "accuracy": {
+          "mean": 0.7502,
+          "std": 0.011,
+          "min": 0.7383,
+          "max": 0.7601
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.285,
+          "std": 0.0331,
+          "min": 0.257,
+          "max": 0.3215
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.519,
+        "pooled_pr_auc": 0.2645,
+        "pooled_brier_score": 0.1876,
+        "pooled_log_loss": 0.5628,
+        "pooled_ece": 0.0075,
+        "pooled_top_10pct_precision": 0.2815,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5193,
+      "roc_auc_std": 0.0104,
+      "roc_auc_min": 0.5096,
+      "roc_auc_max": 0.5302,
+      "pr_auc_mean": 0.2651,
+      "pr_auc_std": 0.0216,
+      "pr_auc_min": 0.2455,
+      "pr_auc_max": 0.2883,
+      "daily_top_10pct_precision_mean": 0.29,
+      "daily_top_10pct_precision_std": 0.0329,
+      "daily_top_10pct_precision_min": 0.2662,
+      "daily_top_10pct_precision_max": 0.3275,
+      "daily_top_5_precision_mean": 0.305,
+      "brier_score_mean": 0.1875,
+      "log_loss_mean": 0.5627,
+      "ece_mean": 0.0137,
       "metrics": {
+        "roc_auc": 0.5193,
+        "pr_auc": 0.2651,
+        "daily_top_10pct_precision": 0.29,
+        "daily_top_5_precision": 0.305,
+        "brier_score": 0.1875,
+        "log_loss": 0.5627,
+        "ece": 0.0137,
+        "accuracy": 0.7502,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.519,
-        "pr_auc": 0.2645,
-        "log_loss": 0.5628,
-        "brier_score": 0.1876,
-        "ece": 0.0075,
-        "accuracy": 0.7501,
-        "top_10pct_precision": 0.2815
+        "pooled_roc_auc": 0.519,
+        "pooled_pr_auc": 0.2645,
+        "top_10pct_precision": 0.29
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0336,
-        "delta_pr_auc": -0.0155,
-        "delta_log_loss": -0.0098,
-        "delta_brier_score": -0.0043,
-        "delta_ece": -0.0449,
-        "delta_top_10pct_precision": -0.0184
+        "delta_macro_roc_auc": -0.0369,
+        "delta_macro_pr_auc": -0.0271,
+        "delta_macro_daily_top_10pct_precision": -0.0106,
+        "delta_macro_daily_top_5_precision": 0.0012,
+        "delta_macro_brier_score": -0.0044,
+        "delta_macro_log_loss": -0.0099,
+        "delta_roc_auc": -0.0369,
+        "delta_pr_auc": -0.0271,
+        "delta_log_loss": -0.0099,
+        "delta_brier_score": -0.0044,
+        "delta_ece": -0.0397,
+        "delta_top_10pct_precision": -0.0106
       }
     },
     {
@@ -482,25 +1938,2124 @@
       "excluded_group": null,
       "included_group": "market_regime",
       "features_used": 6,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5124,
+          "std": 0.0399,
+          "min": 0.4684,
+          "max": 0.5463
+        },
+        "pr_auc": {
+          "mean": 0.2707,
+          "std": 0.0395,
+          "min": 0.2257,
+          "max": 0.3
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2602,
+          "std": 0.0017,
+          "min": 0.2584,
+          "max": 0.2617
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2455,
+          "std": 0.02,
+          "min": 0.2235,
+          "max": 0.2624
+        },
+        "brier_score": {
+          "mean": 0.1951,
+          "std": 0.0071,
+          "min": 0.1877,
+          "max": 0.2019
+        },
+        "log_loss": {
+          "mean": 0.5815,
+          "std": 0.0136,
+          "min": 0.568,
+          "max": 0.5951
+        },
+        "ece": {
+          "mean": 0.0561,
+          "std": 0.031,
+          "min": 0.033,
+          "max": 0.0913
+        },
+        "accuracy": {
+          "mean": 0.7445,
+          "std": 0.0072,
+          "min": 0.7383,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3029,
+          "std": 0.0844,
+          "min": 0.2121,
+          "max": 0.379
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5104,
+        "pooled_pr_auc": 0.2553,
+        "pooled_brier_score": 0.1951,
+        "pooled_log_loss": 0.5814,
+        "pooled_ece": 0.0538,
+        "pooled_top_10pct_precision": 0.2722,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5124,
+      "roc_auc_std": 0.0399,
+      "roc_auc_min": 0.4684,
+      "roc_auc_max": 0.5463,
+      "pr_auc_mean": 0.2707,
+      "pr_auc_std": 0.0395,
+      "pr_auc_min": 0.2257,
+      "pr_auc_max": 0.3,
+      "daily_top_10pct_precision_mean": 0.2602,
+      "daily_top_10pct_precision_std": 0.0017,
+      "daily_top_10pct_precision_min": 0.2584,
+      "daily_top_10pct_precision_max": 0.2617,
+      "daily_top_5_precision_mean": 0.2455,
+      "brier_score_mean": 0.1951,
+      "log_loss_mean": 0.5815,
+      "ece_mean": 0.0561,
       "metrics": {
+        "roc_auc": 0.5124,
+        "pr_auc": 0.2707,
+        "daily_top_10pct_precision": 0.2602,
+        "daily_top_5_precision": 0.2455,
+        "brier_score": 0.1951,
+        "log_loss": 0.5815,
+        "ece": 0.0561,
+        "accuracy": 0.7445,
         "sample_size": 101051,
         "positive_count": 25248,
         "prevalence": 0.2499,
-        "roc_auc": 0.5104,
-        "pr_auc": 0.2553,
-        "log_loss": 0.5814,
-        "brier_score": 0.1951,
-        "ece": 0.0538,
-        "accuracy": 0.7445,
-        "top_10pct_precision": 0.2722
+        "pooled_roc_auc": 0.5104,
+        "pooled_pr_auc": 0.2553,
+        "top_10pct_precision": 0.2602
       },
       "deltas_vs_reference": {
-        "delta_roc_auc": -0.0422,
-        "delta_pr_auc": -0.0247,
-        "delta_log_loss": 0.0088,
+        "delta_macro_roc_auc": -0.0438,
+        "delta_macro_pr_auc": -0.0215,
+        "delta_macro_daily_top_10pct_precision": -0.0404,
+        "delta_macro_daily_top_5_precision": -0.0583,
+        "delta_macro_brier_score": 0.0032,
+        "delta_macro_log_loss": 0.0089,
+        "delta_roc_auc": -0.0438,
+        "delta_pr_auc": -0.0215,
+        "delta_log_loss": 0.0089,
         "delta_brier_score": 0.0032,
+        "delta_ece": 0.0027,
+        "delta_top_10pct_precision": -0.0404
+      }
+    }
+  ],
+  "macro_aggregate_results": [
+    {
+      "model_name": "reference",
+      "model_type": "lightgbm",
+      "excluded_group": null,
+      "included_group": null,
+      "features_used": 30,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5562,
+          "std": 0.0232,
+          "min": 0.5298,
+          "max": 0.5735
+        },
+        "pr_auc": {
+          "mean": 0.2922,
+          "std": 0.0337,
+          "min": 0.2544,
+          "max": 0.3191
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.3006,
+          "std": 0.0155,
+          "min": 0.2911,
+          "max": 0.3184
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3038,
+          "std": 0.035,
+          "min": 0.2706,
+          "max": 0.3403
+        },
+        "brier_score": {
+          "mean": 0.1919,
+          "std": 0.0045,
+          "min": 0.1873,
+          "max": 0.1963
+        },
+        "log_loss": {
+          "mean": 0.5726,
+          "std": 0.0062,
+          "min": 0.5674,
+          "max": 0.5795
+        },
+        "ece": {
+          "mean": 0.0534,
+          "std": 0.0217,
+          "min": 0.0319,
+          "max": 0.0752
+        },
+        "accuracy": {
+          "mean": 0.7363,
+          "std": 0.016,
+          "min": 0.7204,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.328,
+          "std": 0.0613,
+          "min": 0.2627,
+          "max": 0.3843
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5526,
+        "pooled_pr_auc": 0.28,
+        "pooled_brier_score": 0.1919,
+        "pooled_log_loss": 0.5726,
+        "pooled_ece": 0.0524,
+        "pooled_top_10pct_precision": 0.2999,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5562,
+      "roc_auc_std": 0.0232,
+      "roc_auc_min": 0.5298,
+      "roc_auc_max": 0.5735,
+      "pr_auc_mean": 0.2922,
+      "pr_auc_std": 0.0337,
+      "pr_auc_min": 0.2544,
+      "pr_auc_max": 0.3191,
+      "daily_top_10pct_precision_mean": 0.3006,
+      "daily_top_10pct_precision_std": 0.0155,
+      "daily_top_10pct_precision_min": 0.2911,
+      "daily_top_10pct_precision_max": 0.3184,
+      "daily_top_5_precision_mean": 0.3038,
+      "brier_score_mean": 0.1919,
+      "log_loss_mean": 0.5726,
+      "ece_mean": 0.0534,
+      "metrics": {
+        "roc_auc": 0.5562,
+        "pr_auc": 0.2922,
+        "daily_top_10pct_precision": 0.3006,
+        "daily_top_5_precision": 0.3038,
+        "brier_score": 0.1919,
+        "log_loss": 0.5726,
+        "ece": 0.0534,
+        "accuracy": 0.7363,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5526,
+        "pooled_pr_auc": 0.28,
+        "top_10pct_precision": 0.3006
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": 0.0,
+        "delta_macro_pr_auc": 0.0,
+        "delta_macro_daily_top_10pct_precision": 0.0,
+        "delta_macro_daily_top_5_precision": 0.0,
+        "delta_macro_brier_score": 0.0,
+        "delta_macro_log_loss": 0.0,
+        "delta_roc_auc": 0.0,
+        "delta_pr_auc": 0.0,
+        "delta_log_loss": 0.0,
+        "delta_brier_score": 0.0,
+        "delta_ece": 0.0,
+        "delta_top_10pct_precision": 0.0
+      }
+    },
+    {
+      "model_name": "ablation_minus_price_momentum",
+      "model_type": "lightgbm",
+      "excluded_group": "price_momentum",
+      "included_group": null,
+      "features_used": 25,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5504,
+          "std": 0.0238,
+          "min": 0.523,
+          "max": 0.5656
+        },
+        "pr_auc": {
+          "mean": 0.2887,
+          "std": 0.0312,
+          "min": 0.2539,
+          "max": 0.3142
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2917,
+          "std": 0.0095,
+          "min": 0.2834,
+          "max": 0.3021
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2829,
+          "std": 0.0285,
+          "min": 0.2579,
+          "max": 0.314
+        },
+        "brier_score": {
+          "mean": 0.1925,
+          "std": 0.0048,
+          "min": 0.1877,
+          "max": 0.1973
+        },
+        "log_loss": {
+          "mean": 0.5741,
+          "std": 0.0073,
+          "min": 0.5679,
+          "max": 0.5821
+        },
+        "ece": {
+          "mean": 0.0544,
+          "std": 0.0212,
+          "min": 0.0342,
+          "max": 0.0765
+        },
+        "accuracy": {
+          "mean": 0.7353,
+          "std": 0.0174,
+          "min": 0.7176,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3135,
+          "std": 0.0595,
+          "min": 0.2475,
+          "max": 0.3629
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5475,
+        "pooled_pr_auc": 0.2769,
+        "pooled_brier_score": 0.1925,
+        "pooled_log_loss": 0.574,
+        "pooled_ece": 0.0537,
+        "pooled_top_10pct_precision": 0.287,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5504,
+      "roc_auc_std": 0.0238,
+      "roc_auc_min": 0.523,
+      "roc_auc_max": 0.5656,
+      "pr_auc_mean": 0.2887,
+      "pr_auc_std": 0.0312,
+      "pr_auc_min": 0.2539,
+      "pr_auc_max": 0.3142,
+      "daily_top_10pct_precision_mean": 0.2917,
+      "daily_top_10pct_precision_std": 0.0095,
+      "daily_top_10pct_precision_min": 0.2834,
+      "daily_top_10pct_precision_max": 0.3021,
+      "daily_top_5_precision_mean": 0.2829,
+      "brier_score_mean": 0.1925,
+      "log_loss_mean": 0.5741,
+      "ece_mean": 0.0544,
+      "metrics": {
+        "roc_auc": 0.5504,
+        "pr_auc": 0.2887,
+        "daily_top_10pct_precision": 0.2917,
+        "daily_top_5_precision": 0.2829,
+        "brier_score": 0.1925,
+        "log_loss": 0.5741,
+        "ece": 0.0544,
+        "accuracy": 0.7353,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5475,
+        "pooled_pr_auc": 0.2769,
+        "top_10pct_precision": 0.2917
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0058,
+        "delta_macro_pr_auc": -0.0035,
+        "delta_macro_daily_top_10pct_precision": -0.0089,
+        "delta_macro_daily_top_5_precision": -0.0209,
+        "delta_macro_brier_score": 0.0006,
+        "delta_macro_log_loss": 0.0015,
+        "delta_roc_auc": -0.0058,
+        "delta_pr_auc": -0.0035,
+        "delta_log_loss": 0.0015,
+        "delta_brier_score": 0.0006,
+        "delta_ece": 0.001,
+        "delta_top_10pct_precision": -0.0089
+      }
+    },
+    {
+      "model_name": "ablation_minus_trend",
+      "model_type": "lightgbm",
+      "excluded_group": "trend",
+      "included_group": null,
+      "features_used": 23,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5561,
+          "std": 0.0255,
+          "min": 0.527,
+          "max": 0.5747
+        },
+        "pr_auc": {
+          "mean": 0.2924,
+          "std": 0.0341,
+          "min": 0.2543,
+          "max": 0.3198
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2996,
+          "std": 0.0198,
+          "min": 0.283,
+          "max": 0.3215
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2999,
+          "std": 0.0281,
+          "min": 0.2706,
+          "max": 0.3267
+        },
+        "brier_score": {
+          "mean": 0.191,
+          "std": 0.0055,
+          "min": 0.185,
+          "max": 0.1956
+        },
+        "log_loss": {
+          "mean": 0.5694,
+          "std": 0.01,
+          "min": 0.5585,
+          "max": 0.5781
+        },
+        "ece": {
+          "mean": 0.0467,
+          "std": 0.025,
+          "min": 0.0298,
+          "max": 0.0754
+        },
+        "accuracy": {
+          "mean": 0.7363,
+          "std": 0.0158,
+          "min": 0.7212,
+          "max": 0.7527
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3221,
+          "std": 0.0655,
+          "min": 0.2513,
+          "max": 0.3805
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5543,
+        "pooled_pr_auc": 0.2827,
+        "pooled_brier_score": 0.191,
+        "pooled_log_loss": 0.5694,
+        "pooled_ece": 0.0452,
+        "pooled_top_10pct_precision": 0.3022,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5561,
+      "roc_auc_std": 0.0255,
+      "roc_auc_min": 0.527,
+      "roc_auc_max": 0.5747,
+      "pr_auc_mean": 0.2924,
+      "pr_auc_std": 0.0341,
+      "pr_auc_min": 0.2543,
+      "pr_auc_max": 0.3198,
+      "daily_top_10pct_precision_mean": 0.2996,
+      "daily_top_10pct_precision_std": 0.0198,
+      "daily_top_10pct_precision_min": 0.283,
+      "daily_top_10pct_precision_max": 0.3215,
+      "daily_top_5_precision_mean": 0.2999,
+      "brier_score_mean": 0.191,
+      "log_loss_mean": 0.5694,
+      "ece_mean": 0.0467,
+      "metrics": {
+        "roc_auc": 0.5561,
+        "pr_auc": 0.2924,
+        "daily_top_10pct_precision": 0.2996,
+        "daily_top_5_precision": 0.2999,
+        "brier_score": 0.191,
+        "log_loss": 0.5694,
+        "ece": 0.0467,
+        "accuracy": 0.7363,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5543,
+        "pooled_pr_auc": 0.2827,
+        "top_10pct_precision": 0.2996
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0001,
+        "delta_macro_pr_auc": 0.0002,
+        "delta_macro_daily_top_10pct_precision": -0.001,
+        "delta_macro_daily_top_5_precision": -0.0039,
+        "delta_macro_brier_score": -0.0009,
+        "delta_macro_log_loss": -0.0032,
+        "delta_roc_auc": -0.0001,
+        "delta_pr_auc": 0.0002,
+        "delta_log_loss": -0.0032,
+        "delta_brier_score": -0.0009,
+        "delta_ece": -0.0067,
+        "delta_top_10pct_precision": -0.001
+      }
+    },
+    {
+      "model_name": "ablation_minus_oscillators",
+      "model_type": "lightgbm",
+      "excluded_group": "oscillators",
+      "included_group": null,
+      "features_used": 28,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5544,
+          "std": 0.0237,
+          "min": 0.5276,
+          "max": 0.5728
+        },
+        "pr_auc": {
+          "mean": 0.2914,
+          "std": 0.0322,
+          "min": 0.2551,
+          "max": 0.3167
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2976,
+          "std": 0.0089,
+          "min": 0.291,
+          "max": 0.3077
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3059,
+          "std": 0.0275,
+          "min": 0.2887,
+          "max": 0.3376
+        },
+        "brier_score": {
+          "mean": 0.1918,
+          "std": 0.004,
+          "min": 0.1875,
+          "max": 0.1953
+        },
+        "log_loss": {
+          "mean": 0.5725,
+          "std": 0.0048,
+          "min": 0.5678,
+          "max": 0.5774
+        },
+        "ece": {
+          "mean": 0.0535,
+          "std": 0.0183,
+          "min": 0.0351,
+          "max": 0.0717
+        },
+        "accuracy": {
+          "mean": 0.7366,
+          "std": 0.0148,
+          "min": 0.7228,
+          "max": 0.7523
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3266,
+          "std": 0.0636,
+          "min": 0.2582,
+          "max": 0.384
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5509,
+        "pooled_pr_auc": 0.2799,
+        "pooled_brier_score": 0.1918,
+        "pooled_log_loss": 0.5725,
+        "pooled_ece": 0.052,
+        "pooled_top_10pct_precision": 0.2973,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5544,
+      "roc_auc_std": 0.0237,
+      "roc_auc_min": 0.5276,
+      "roc_auc_max": 0.5728,
+      "pr_auc_mean": 0.2914,
+      "pr_auc_std": 0.0322,
+      "pr_auc_min": 0.2551,
+      "pr_auc_max": 0.3167,
+      "daily_top_10pct_precision_mean": 0.2976,
+      "daily_top_10pct_precision_std": 0.0089,
+      "daily_top_10pct_precision_min": 0.291,
+      "daily_top_10pct_precision_max": 0.3077,
+      "daily_top_5_precision_mean": 0.3059,
+      "brier_score_mean": 0.1918,
+      "log_loss_mean": 0.5725,
+      "ece_mean": 0.0535,
+      "metrics": {
+        "roc_auc": 0.5544,
+        "pr_auc": 0.2914,
+        "daily_top_10pct_precision": 0.2976,
+        "daily_top_5_precision": 0.3059,
+        "brier_score": 0.1918,
+        "log_loss": 0.5725,
+        "ece": 0.0535,
+        "accuracy": 0.7366,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5509,
+        "pooled_pr_auc": 0.2799,
+        "top_10pct_precision": 0.2976
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0018,
+        "delta_macro_pr_auc": -0.0008,
+        "delta_macro_daily_top_10pct_precision": -0.003,
+        "delta_macro_daily_top_5_precision": 0.0021,
+        "delta_macro_brier_score": -0.0001,
+        "delta_macro_log_loss": -0.0001,
+        "delta_roc_auc": -0.0018,
+        "delta_pr_auc": -0.0008,
+        "delta_log_loss": -0.0001,
+        "delta_brier_score": -0.0001,
+        "delta_ece": 0.0001,
+        "delta_top_10pct_precision": -0.003
+      }
+    },
+    {
+      "model_name": "ablation_minus_volatility",
+      "model_type": "lightgbm",
+      "excluded_group": "volatility",
+      "included_group": null,
+      "features_used": 25,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5518,
+          "std": 0.0253,
+          "min": 0.5226,
+          "max": 0.567
+        },
+        "pr_auc": {
+          "mean": 0.2913,
+          "std": 0.0359,
+          "min": 0.2507,
+          "max": 0.3189
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.3067,
+          "std": 0.0113,
+          "min": 0.2969,
+          "max": 0.3191
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3098,
+          "std": 0.0095,
+          "min": 0.3005,
+          "max": 0.3195
+        },
+        "brier_score": {
+          "mean": 0.1928,
+          "std": 0.0053,
+          "min": 0.1871,
+          "max": 0.1977
+        },
+        "log_loss": {
+          "mean": 0.5749,
+          "std": 0.0088,
+          "min": 0.5661,
+          "max": 0.5836
+        },
+        "ece": {
+          "mean": 0.0548,
+          "std": 0.0149,
+          "min": 0.045,
+          "max": 0.0719
+        },
+        "accuracy": {
+          "mean": 0.735,
+          "std": 0.0169,
+          "min": 0.7186,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3275,
+          "std": 0.0624,
+          "min": 0.2558,
+          "max": 0.3696
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5473,
+        "pooled_pr_auc": 0.2794,
+        "pooled_brier_score": 0.1928,
+        "pooled_log_loss": 0.5749,
+        "pooled_ece": 0.0481,
+        "pooled_top_10pct_precision": 0.3043,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5518,
+      "roc_auc_std": 0.0253,
+      "roc_auc_min": 0.5226,
+      "roc_auc_max": 0.567,
+      "pr_auc_mean": 0.2913,
+      "pr_auc_std": 0.0359,
+      "pr_auc_min": 0.2507,
+      "pr_auc_max": 0.3189,
+      "daily_top_10pct_precision_mean": 0.3067,
+      "daily_top_10pct_precision_std": 0.0113,
+      "daily_top_10pct_precision_min": 0.2969,
+      "daily_top_10pct_precision_max": 0.3191,
+      "daily_top_5_precision_mean": 0.3098,
+      "brier_score_mean": 0.1928,
+      "log_loss_mean": 0.5749,
+      "ece_mean": 0.0548,
+      "metrics": {
+        "roc_auc": 0.5518,
+        "pr_auc": 0.2913,
+        "daily_top_10pct_precision": 0.3067,
+        "daily_top_5_precision": 0.3098,
+        "brier_score": 0.1928,
+        "log_loss": 0.5749,
+        "ece": 0.0548,
+        "accuracy": 0.735,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5473,
+        "pooled_pr_auc": 0.2794,
+        "top_10pct_precision": 0.3067
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0044,
+        "delta_macro_pr_auc": -0.0009,
+        "delta_macro_daily_top_10pct_precision": 0.0061,
+        "delta_macro_daily_top_5_precision": 0.006,
+        "delta_macro_brier_score": 0.0009,
+        "delta_macro_log_loss": 0.0023,
+        "delta_roc_auc": -0.0044,
+        "delta_pr_auc": -0.0009,
+        "delta_log_loss": 0.0023,
+        "delta_brier_score": 0.0009,
         "delta_ece": 0.0014,
-        "delta_top_10pct_precision": -0.0277
+        "delta_top_10pct_precision": 0.0061
+      }
+    },
+    {
+      "model_name": "ablation_minus_volume_liquidity",
+      "model_type": "lightgbm",
+      "excluded_group": "volume_liquidity",
+      "included_group": null,
+      "features_used": 27,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5545,
+          "std": 0.0229,
+          "min": 0.5287,
+          "max": 0.5725
+        },
+        "pr_auc": {
+          "mean": 0.2917,
+          "std": 0.0321,
+          "min": 0.2556,
+          "max": 0.317
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2991,
+          "std": 0.0198,
+          "min": 0.2787,
+          "max": 0.3182
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2962,
+          "std": 0.0313,
+          "min": 0.2688,
+          "max": 0.3303
+        },
+        "brier_score": {
+          "mean": 0.1921,
+          "std": 0.0045,
+          "min": 0.1873,
+          "max": 0.1963
+        },
+        "log_loss": {
+          "mean": 0.5732,
+          "std": 0.0063,
+          "min": 0.5673,
+          "max": 0.5798
+        },
+        "ece": {
+          "mean": 0.055,
+          "std": 0.0196,
+          "min": 0.0368,
+          "max": 0.0758
+        },
+        "accuracy": {
+          "mean": 0.7363,
+          "std": 0.0152,
+          "min": 0.7217,
+          "max": 0.7521
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3253,
+          "std": 0.0558,
+          "min": 0.2663,
+          "max": 0.3772
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5511,
+        "pooled_pr_auc": 0.2804,
+        "pooled_brier_score": 0.1921,
+        "pooled_log_loss": 0.5731,
+        "pooled_ece": 0.0522,
+        "pooled_top_10pct_precision": 0.299,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5545,
+      "roc_auc_std": 0.0229,
+      "roc_auc_min": 0.5287,
+      "roc_auc_max": 0.5725,
+      "pr_auc_mean": 0.2917,
+      "pr_auc_std": 0.0321,
+      "pr_auc_min": 0.2556,
+      "pr_auc_max": 0.317,
+      "daily_top_10pct_precision_mean": 0.2991,
+      "daily_top_10pct_precision_std": 0.0198,
+      "daily_top_10pct_precision_min": 0.2787,
+      "daily_top_10pct_precision_max": 0.3182,
+      "daily_top_5_precision_mean": 0.2962,
+      "brier_score_mean": 0.1921,
+      "log_loss_mean": 0.5732,
+      "ece_mean": 0.055,
+      "metrics": {
+        "roc_auc": 0.5545,
+        "pr_auc": 0.2917,
+        "daily_top_10pct_precision": 0.2991,
+        "daily_top_5_precision": 0.2962,
+        "brier_score": 0.1921,
+        "log_loss": 0.5732,
+        "ece": 0.055,
+        "accuracy": 0.7363,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5511,
+        "pooled_pr_auc": 0.2804,
+        "top_10pct_precision": 0.2991
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0017,
+        "delta_macro_pr_auc": -0.0005,
+        "delta_macro_daily_top_10pct_precision": -0.0015,
+        "delta_macro_daily_top_5_precision": -0.0076,
+        "delta_macro_brier_score": 0.0002,
+        "delta_macro_log_loss": 0.0006,
+        "delta_roc_auc": -0.0017,
+        "delta_pr_auc": -0.0005,
+        "delta_log_loss": 0.0006,
+        "delta_brier_score": 0.0002,
+        "delta_ece": 0.0016,
+        "delta_top_10pct_precision": -0.0015
+      }
+    },
+    {
+      "model_name": "ablation_minus_relative_strength",
+      "model_type": "lightgbm",
+      "excluded_group": "relative_strength",
+      "included_group": null,
+      "features_used": 28,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5574,
+          "std": 0.0234,
+          "min": 0.5308,
+          "max": 0.575
+        },
+        "pr_auc": {
+          "mean": 0.2938,
+          "std": 0.0332,
+          "min": 0.2565,
+          "max": 0.3203
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2975,
+          "std": 0.0233,
+          "min": 0.2826,
+          "max": 0.3243
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2995,
+          "std": 0.033,
+          "min": 0.2796,
+          "max": 0.3376
+        },
+        "brier_score": {
+          "mean": 0.1915,
+          "std": 0.0041,
+          "min": 0.1871,
+          "max": 0.1952
+        },
+        "log_loss": {
+          "mean": 0.5715,
+          "std": 0.0051,
+          "min": 0.5667,
+          "max": 0.5769
+        },
+        "ece": {
+          "mean": 0.0523,
+          "std": 0.0175,
+          "min": 0.0347,
+          "max": 0.0696
+        },
+        "accuracy": {
+          "mean": 0.7373,
+          "std": 0.0148,
+          "min": 0.7228,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3273,
+          "std": 0.0601,
+          "min": 0.2618,
+          "max": 0.3799
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5532,
+        "pooled_pr_auc": 0.2813,
+        "pooled_brier_score": 0.1915,
+        "pooled_log_loss": 0.5715,
+        "pooled_ece": 0.0501,
+        "pooled_top_10pct_precision": 0.2986,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5574,
+      "roc_auc_std": 0.0234,
+      "roc_auc_min": 0.5308,
+      "roc_auc_max": 0.575,
+      "pr_auc_mean": 0.2938,
+      "pr_auc_std": 0.0332,
+      "pr_auc_min": 0.2565,
+      "pr_auc_max": 0.3203,
+      "daily_top_10pct_precision_mean": 0.2975,
+      "daily_top_10pct_precision_std": 0.0233,
+      "daily_top_10pct_precision_min": 0.2826,
+      "daily_top_10pct_precision_max": 0.3243,
+      "daily_top_5_precision_mean": 0.2995,
+      "brier_score_mean": 0.1915,
+      "log_loss_mean": 0.5715,
+      "ece_mean": 0.0523,
+      "metrics": {
+        "roc_auc": 0.5574,
+        "pr_auc": 0.2938,
+        "daily_top_10pct_precision": 0.2975,
+        "daily_top_5_precision": 0.2995,
+        "brier_score": 0.1915,
+        "log_loss": 0.5715,
+        "ece": 0.0523,
+        "accuracy": 0.7373,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5532,
+        "pooled_pr_auc": 0.2813,
+        "top_10pct_precision": 0.2975
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": 0.0012,
+        "delta_macro_pr_auc": 0.0016,
+        "delta_macro_daily_top_10pct_precision": -0.0031,
+        "delta_macro_daily_top_5_precision": -0.0043,
+        "delta_macro_brier_score": -0.0004,
+        "delta_macro_log_loss": -0.0011,
+        "delta_roc_auc": 0.0012,
+        "delta_pr_auc": 0.0016,
+        "delta_log_loss": -0.0011,
+        "delta_brier_score": -0.0004,
+        "delta_ece": -0.0011,
+        "delta_top_10pct_precision": -0.0031
+      }
+    },
+    {
+      "model_name": "ablation_minus_market_regime",
+      "model_type": "lightgbm",
+      "excluded_group": "market_regime",
+      "included_group": null,
+      "features_used": 24,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5735,
+          "std": 0.0111,
+          "min": 0.5621,
+          "max": 0.5842
+        },
+        "pr_auc": {
+          "mean": 0.2887,
+          "std": 0.0153,
+          "min": 0.2797,
+          "max": 0.3064
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.303,
+          "std": 0.0241,
+          "min": 0.2883,
+          "max": 0.3308
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3062,
+          "std": 0.0231,
+          "min": 0.2842,
+          "max": 0.3303
+        },
+        "brier_score": {
+          "mean": 0.1862,
+          "std": 0.0049,
+          "min": 0.1807,
+          "max": 0.19
+        },
+        "log_loss": {
+          "mean": 0.5588,
+          "std": 0.012,
+          "min": 0.545,
+          "max": 0.5664
+        },
+        "ece": {
+          "mean": 0.0281,
+          "std": 0.0192,
+          "min": 0.0125,
+          "max": 0.0496
+        },
+        "accuracy": {
+          "mean": 0.749,
+          "std": 0.0115,
+          "min": 0.7366,
+          "max": 0.7592
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3024,
+          "std": 0.0163,
+          "min": 0.2921,
+          "max": 0.3212
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5694,
+        "pooled_pr_auc": 0.2867,
+        "pooled_brier_score": 0.1862,
+        "pooled_log_loss": 0.5589,
+        "pooled_ece": 0.0207,
+        "pooled_top_10pct_precision": 0.2984,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5735,
+      "roc_auc_std": 0.0111,
+      "roc_auc_min": 0.5621,
+      "roc_auc_max": 0.5842,
+      "pr_auc_mean": 0.2887,
+      "pr_auc_std": 0.0153,
+      "pr_auc_min": 0.2797,
+      "pr_auc_max": 0.3064,
+      "daily_top_10pct_precision_mean": 0.303,
+      "daily_top_10pct_precision_std": 0.0241,
+      "daily_top_10pct_precision_min": 0.2883,
+      "daily_top_10pct_precision_max": 0.3308,
+      "daily_top_5_precision_mean": 0.3062,
+      "brier_score_mean": 0.1862,
+      "log_loss_mean": 0.5588,
+      "ece_mean": 0.0281,
+      "metrics": {
+        "roc_auc": 0.5735,
+        "pr_auc": 0.2887,
+        "daily_top_10pct_precision": 0.303,
+        "daily_top_5_precision": 0.3062,
+        "brier_score": 0.1862,
+        "log_loss": 0.5588,
+        "ece": 0.0281,
+        "accuracy": 0.749,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5694,
+        "pooled_pr_auc": 0.2867,
+        "top_10pct_precision": 0.303
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": 0.0173,
+        "delta_macro_pr_auc": -0.0035,
+        "delta_macro_daily_top_10pct_precision": 0.0024,
+        "delta_macro_daily_top_5_precision": 0.0024,
+        "delta_macro_brier_score": -0.0057,
+        "delta_macro_log_loss": -0.0138,
+        "delta_roc_auc": 0.0173,
+        "delta_pr_auc": -0.0035,
+        "delta_log_loss": -0.0138,
+        "delta_brier_score": -0.0057,
+        "delta_ece": -0.0253,
+        "delta_top_10pct_precision": 0.0024
+      }
+    },
+    {
+      "model_name": "prevalence_baseline",
+      "model_type": "prevalence",
+      "excluded_group": null,
+      "included_group": null,
+      "features_used": 0,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5,
+          "std": 0.0,
+          "min": 0.5,
+          "max": 0.5
+        },
+        "pr_auc": {
+          "mean": 0.2498,
+          "std": 0.0111,
+          "min": 0.2398,
+          "max": 0.2617
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2602,
+          "std": 0.0017,
+          "min": 0.2584,
+          "max": 0.2617
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2455,
+          "std": 0.02,
+          "min": 0.2235,
+          "max": 0.2624
+        },
+        "brier_score": {
+          "mean": 0.1875,
+          "std": 0.0056,
+          "min": 0.1824,
+          "max": 0.1935
+        },
+        "log_loss": {
+          "mean": 0.5623,
+          "std": 0.0124,
+          "min": 0.5511,
+          "max": 0.5756
+        },
+        "ece": {
+          "mean": 0.0121,
+          "std": 0.0042,
+          "min": 0.0096,
+          "max": 0.0169
+        },
+        "accuracy": {
+          "mean": 0.7502,
+          "std": 0.0111,
+          "min": 0.7383,
+          "max": 0.7602
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.2193,
+          "std": 0.0028,
+          "min": 0.2166,
+          "max": 0.2221
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.4953,
+        "pooled_pr_auc": 0.247,
+        "pooled_brier_score": 0.1875,
+        "pooled_log_loss": 0.5624,
+        "pooled_ece": 0.0056,
+        "pooled_top_10pct_precision": 0.2397,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5,
+      "roc_auc_std": 0.0,
+      "roc_auc_min": 0.5,
+      "roc_auc_max": 0.5,
+      "pr_auc_mean": 0.2498,
+      "pr_auc_std": 0.0111,
+      "pr_auc_min": 0.2398,
+      "pr_auc_max": 0.2617,
+      "daily_top_10pct_precision_mean": 0.2602,
+      "daily_top_10pct_precision_std": 0.0017,
+      "daily_top_10pct_precision_min": 0.2584,
+      "daily_top_10pct_precision_max": 0.2617,
+      "daily_top_5_precision_mean": 0.2455,
+      "brier_score_mean": 0.1875,
+      "log_loss_mean": 0.5623,
+      "ece_mean": 0.0121,
+      "metrics": {
+        "roc_auc": 0.5,
+        "pr_auc": 0.2498,
+        "daily_top_10pct_precision": 0.2602,
+        "daily_top_5_precision": 0.2455,
+        "brier_score": 0.1875,
+        "log_loss": 0.5623,
+        "ece": 0.0121,
+        "accuracy": 0.7502,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.4953,
+        "pooled_pr_auc": 0.247,
+        "top_10pct_precision": 0.2602
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0562,
+        "delta_macro_pr_auc": -0.0424,
+        "delta_macro_daily_top_10pct_precision": -0.0404,
+        "delta_macro_daily_top_5_precision": -0.0583,
+        "delta_macro_brier_score": -0.0044,
+        "delta_macro_log_loss": -0.0103,
+        "delta_roc_auc": -0.0562,
+        "delta_pr_auc": -0.0424,
+        "delta_log_loss": -0.0103,
+        "delta_brier_score": -0.0044,
+        "delta_ece": -0.0413,
+        "delta_top_10pct_precision": -0.0404
+      }
+    },
+    {
+      "model_name": "logistic_baseline",
+      "model_type": "logistic",
+      "excluded_group": null,
+      "included_group": null,
+      "features_used": 30,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.56,
+          "std": 0.0431,
+          "min": 0.5304,
+          "max": 0.6095
+        },
+        "pr_auc": {
+          "mean": 0.2962,
+          "std": 0.0466,
+          "min": 0.2644,
+          "max": 0.3497
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2944,
+          "std": 0.025,
+          "min": 0.277,
+          "max": 0.323
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2878,
+          "std": 0.0217,
+          "min": 0.2661,
+          "max": 0.3095
+        },
+        "brier_score": {
+          "mean": 0.1922,
+          "std": 0.0034,
+          "min": 0.1883,
+          "max": 0.1943
+        },
+        "log_loss": {
+          "mean": 0.5738,
+          "std": 0.0037,
+          "min": 0.5695,
+          "max": 0.576
+        },
+        "ece": {
+          "mean": 0.0574,
+          "std": 0.0246,
+          "min": 0.0322,
+          "max": 0.0814
+        },
+        "accuracy": {
+          "mean": 0.7416,
+          "std": 0.0113,
+          "min": 0.7294,
+          "max": 0.7517
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.346,
+          "std": 0.084,
+          "min": 0.2926,
+          "max": 0.4429
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5551,
+        "pooled_pr_auc": 0.2976,
+        "pooled_brier_score": 0.1922,
+        "pooled_log_loss": 0.5738,
+        "pooled_ece": 0.0517,
+        "pooled_top_10pct_precision": 0.3318,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.56,
+      "roc_auc_std": 0.0431,
+      "roc_auc_min": 0.5304,
+      "roc_auc_max": 0.6095,
+      "pr_auc_mean": 0.2962,
+      "pr_auc_std": 0.0466,
+      "pr_auc_min": 0.2644,
+      "pr_auc_max": 0.3497,
+      "daily_top_10pct_precision_mean": 0.2944,
+      "daily_top_10pct_precision_std": 0.025,
+      "daily_top_10pct_precision_min": 0.277,
+      "daily_top_10pct_precision_max": 0.323,
+      "daily_top_5_precision_mean": 0.2878,
+      "brier_score_mean": 0.1922,
+      "log_loss_mean": 0.5738,
+      "ece_mean": 0.0574,
+      "metrics": {
+        "roc_auc": 0.56,
+        "pr_auc": 0.2962,
+        "daily_top_10pct_precision": 0.2944,
+        "daily_top_5_precision": 0.2878,
+        "brier_score": 0.1922,
+        "log_loss": 0.5738,
+        "ece": 0.0574,
+        "accuracy": 0.7416,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5551,
+        "pooled_pr_auc": 0.2976,
+        "top_10pct_precision": 0.2944
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": 0.0038,
+        "delta_macro_pr_auc": 0.004,
+        "delta_macro_daily_top_10pct_precision": -0.0062,
+        "delta_macro_daily_top_5_precision": -0.016,
+        "delta_macro_brier_score": 0.0003,
+        "delta_macro_log_loss": 0.0012,
+        "delta_roc_auc": 0.0038,
+        "delta_pr_auc": 0.004,
+        "delta_log_loss": 0.0012,
+        "delta_brier_score": 0.0003,
+        "delta_ece": 0.004,
+        "delta_top_10pct_precision": -0.0062
+      }
+    },
+    {
+      "model_name": "group_only_price_momentum",
+      "model_type": "lightgbm",
+      "excluded_group": null,
+      "included_group": "price_momentum",
+      "features_used": 5,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5582,
+          "std": 0.0152,
+          "min": 0.5449,
+          "max": 0.5748
+        },
+        "pr_auc": {
+          "mean": 0.2844,
+          "std": 0.0229,
+          "min": 0.2671,
+          "max": 0.3104
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.305,
+          "std": 0.0215,
+          "min": 0.2858,
+          "max": 0.3283
+        },
+        "daily_top_5_precision": {
+          "mean": 0.3029,
+          "std": 0.0319,
+          "min": 0.2733,
+          "max": 0.3367
+        },
+        "brier_score": {
+          "mean": 0.1862,
+          "std": 0.0046,
+          "min": 0.1817,
+          "max": 0.1908
+        },
+        "log_loss": {
+          "mean": 0.5586,
+          "std": 0.0099,
+          "min": 0.5485,
+          "max": 0.5683
+        },
+        "ece": {
+          "mean": 0.0178,
+          "std": 0.0023,
+          "min": 0.0158,
+          "max": 0.0203
+        },
+        "accuracy": {
+          "mean": 0.7502,
+          "std": 0.011,
+          "min": 0.7383,
+          "max": 0.76
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3033,
+          "std": 0.0366,
+          "min": 0.275,
+          "max": 0.3447
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5573,
+        "pooled_pr_auc": 0.2833,
+        "pooled_brier_score": 0.1862,
+        "pooled_log_loss": 0.5587,
+        "pooled_ece": 0.012,
+        "pooled_top_10pct_precision": 0.3018,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5582,
+      "roc_auc_std": 0.0152,
+      "roc_auc_min": 0.5449,
+      "roc_auc_max": 0.5748,
+      "pr_auc_mean": 0.2844,
+      "pr_auc_std": 0.0229,
+      "pr_auc_min": 0.2671,
+      "pr_auc_max": 0.3104,
+      "daily_top_10pct_precision_mean": 0.305,
+      "daily_top_10pct_precision_std": 0.0215,
+      "daily_top_10pct_precision_min": 0.2858,
+      "daily_top_10pct_precision_max": 0.3283,
+      "daily_top_5_precision_mean": 0.3029,
+      "brier_score_mean": 0.1862,
+      "log_loss_mean": 0.5586,
+      "ece_mean": 0.0178,
+      "metrics": {
+        "roc_auc": 0.5582,
+        "pr_auc": 0.2844,
+        "daily_top_10pct_precision": 0.305,
+        "daily_top_5_precision": 0.3029,
+        "brier_score": 0.1862,
+        "log_loss": 0.5586,
+        "ece": 0.0178,
+        "accuracy": 0.7502,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5573,
+        "pooled_pr_auc": 0.2833,
+        "top_10pct_precision": 0.305
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": 0.002,
+        "delta_macro_pr_auc": -0.0078,
+        "delta_macro_daily_top_10pct_precision": 0.0044,
+        "delta_macro_daily_top_5_precision": -0.0009,
+        "delta_macro_brier_score": -0.0057,
+        "delta_macro_log_loss": -0.014,
+        "delta_roc_auc": 0.002,
+        "delta_pr_auc": -0.0078,
+        "delta_log_loss": -0.014,
+        "delta_brier_score": -0.0057,
+        "delta_ece": -0.0356,
+        "delta_top_10pct_precision": 0.0044
+      }
+    },
+    {
+      "model_name": "group_only_trend",
+      "model_type": "lightgbm",
+      "excluded_group": null,
+      "included_group": "trend",
+      "features_used": 7,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5497,
+          "std": 0.0187,
+          "min": 0.5354,
+          "max": 0.5709
+        },
+        "pr_auc": {
+          "mean": 0.2808,
+          "std": 0.0265,
+          "min": 0.2601,
+          "max": 0.3107
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2946,
+          "std": 0.0338,
+          "min": 0.2695,
+          "max": 0.333
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2977,
+          "std": 0.0509,
+          "min": 0.2525,
+          "max": 0.3529
+        },
+        "brier_score": {
+          "mean": 0.1887,
+          "std": 0.0042,
+          "min": 0.1838,
+          "max": 0.1912
+        },
+        "log_loss": {
+          "mean": 0.567,
+          "std": 0.0124,
+          "min": 0.5536,
+          "max": 0.5779
+        },
+        "ece": {
+          "mean": 0.032,
+          "std": 0.0229,
+          "min": 0.0162,
+          "max": 0.0583
+        },
+        "accuracy": {
+          "mean": 0.7487,
+          "std": 0.0097,
+          "min": 0.7379,
+          "max": 0.7566
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3003,
+          "std": 0.0458,
+          "min": 0.2615,
+          "max": 0.3508
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5473,
+        "pooled_pr_auc": 0.2791,
+        "pooled_brier_score": 0.1887,
+        "pooled_log_loss": 0.5671,
+        "pooled_ece": 0.0306,
+        "pooled_top_10pct_precision": 0.2993,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5497,
+      "roc_auc_std": 0.0187,
+      "roc_auc_min": 0.5354,
+      "roc_auc_max": 0.5709,
+      "pr_auc_mean": 0.2808,
+      "pr_auc_std": 0.0265,
+      "pr_auc_min": 0.2601,
+      "pr_auc_max": 0.3107,
+      "daily_top_10pct_precision_mean": 0.2946,
+      "daily_top_10pct_precision_std": 0.0338,
+      "daily_top_10pct_precision_min": 0.2695,
+      "daily_top_10pct_precision_max": 0.333,
+      "daily_top_5_precision_mean": 0.2977,
+      "brier_score_mean": 0.1887,
+      "log_loss_mean": 0.567,
+      "ece_mean": 0.032,
+      "metrics": {
+        "roc_auc": 0.5497,
+        "pr_auc": 0.2808,
+        "daily_top_10pct_precision": 0.2946,
+        "daily_top_5_precision": 0.2977,
+        "brier_score": 0.1887,
+        "log_loss": 0.567,
+        "ece": 0.032,
+        "accuracy": 0.7487,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5473,
+        "pooled_pr_auc": 0.2791,
+        "top_10pct_precision": 0.2946
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0065,
+        "delta_macro_pr_auc": -0.0114,
+        "delta_macro_daily_top_10pct_precision": -0.006,
+        "delta_macro_daily_top_5_precision": -0.0061,
+        "delta_macro_brier_score": -0.0032,
+        "delta_macro_log_loss": -0.0056,
+        "delta_roc_auc": -0.0065,
+        "delta_pr_auc": -0.0114,
+        "delta_log_loss": -0.0056,
+        "delta_brier_score": -0.0032,
+        "delta_ece": -0.0214,
+        "delta_top_10pct_precision": -0.006
+      }
+    },
+    {
+      "model_name": "group_only_oscillators",
+      "model_type": "lightgbm",
+      "excluded_group": null,
+      "included_group": "oscillators",
+      "features_used": 2,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.504,
+          "std": 0.0074,
+          "min": 0.4963,
+          "max": 0.511
+        },
+        "pr_auc": {
+          "mean": 0.2565,
+          "std": 0.0212,
+          "min": 0.2392,
+          "max": 0.2802
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2687,
+          "std": 0.0328,
+          "min": 0.2492,
+          "max": 0.3066
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2833,
+          "std": 0.0551,
+          "min": 0.2462,
+          "max": 0.3466
+        },
+        "brier_score": {
+          "mean": 0.188,
+          "std": 0.0053,
+          "min": 0.1829,
+          "max": 0.1935
+        },
+        "log_loss": {
+          "mean": 0.5638,
+          "std": 0.0119,
+          "min": 0.5523,
+          "max": 0.576
+        },
+        "ece": {
+          "mean": 0.0149,
+          "std": 0.0056,
+          "min": 0.0085,
+          "max": 0.0184
+        },
+        "accuracy": {
+          "mean": 0.75,
+          "std": 0.0108,
+          "min": 0.7385,
+          "max": 0.76
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.2631,
+          "std": 0.0315,
+          "min": 0.2445,
+          "max": 0.2995
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5031,
+        "pooled_pr_auc": 0.2554,
+        "pooled_brier_score": 0.188,
+        "pooled_log_loss": 0.5639,
+        "pooled_ece": 0.0105,
+        "pooled_top_10pct_precision": 0.2635,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.504,
+      "roc_auc_std": 0.0074,
+      "roc_auc_min": 0.4963,
+      "roc_auc_max": 0.511,
+      "pr_auc_mean": 0.2565,
+      "pr_auc_std": 0.0212,
+      "pr_auc_min": 0.2392,
+      "pr_auc_max": 0.2802,
+      "daily_top_10pct_precision_mean": 0.2687,
+      "daily_top_10pct_precision_std": 0.0328,
+      "daily_top_10pct_precision_min": 0.2492,
+      "daily_top_10pct_precision_max": 0.3066,
+      "daily_top_5_precision_mean": 0.2833,
+      "brier_score_mean": 0.188,
+      "log_loss_mean": 0.5638,
+      "ece_mean": 0.0149,
+      "metrics": {
+        "roc_auc": 0.504,
+        "pr_auc": 0.2565,
+        "daily_top_10pct_precision": 0.2687,
+        "daily_top_5_precision": 0.2833,
+        "brier_score": 0.188,
+        "log_loss": 0.5638,
+        "ece": 0.0149,
+        "accuracy": 0.75,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5031,
+        "pooled_pr_auc": 0.2554,
+        "top_10pct_precision": 0.2687
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0522,
+        "delta_macro_pr_auc": -0.0357,
+        "delta_macro_daily_top_10pct_precision": -0.0319,
+        "delta_macro_daily_top_5_precision": -0.0205,
+        "delta_macro_brier_score": -0.0039,
+        "delta_macro_log_loss": -0.0088,
+        "delta_roc_auc": -0.0522,
+        "delta_pr_auc": -0.0357,
+        "delta_log_loss": -0.0088,
+        "delta_brier_score": -0.0039,
+        "delta_ece": -0.0385,
+        "delta_top_10pct_precision": -0.0319
+      }
+    },
+    {
+      "model_name": "group_only_volatility",
+      "model_type": "lightgbm",
+      "excluded_group": null,
+      "included_group": "volatility",
+      "features_used": 5,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5681,
+          "std": 0.0131,
+          "min": 0.5579,
+          "max": 0.5828
+        },
+        "pr_auc": {
+          "mean": 0.2834,
+          "std": 0.0194,
+          "min": 0.2688,
+          "max": 0.3054
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2901,
+          "std": 0.0172,
+          "min": 0.2781,
+          "max": 0.3098
+        },
+        "daily_top_5_precision": {
+          "mean": 0.267,
+          "std": 0.0227,
+          "min": 0.2452,
+          "max": 0.2905
+        },
+        "brier_score": {
+          "mean": 0.1855,
+          "std": 0.0045,
+          "min": 0.181,
+          "max": 0.1899
+        },
+        "log_loss": {
+          "mean": 0.557,
+          "std": 0.0098,
+          "min": 0.5463,
+          "max": 0.5656
+        },
+        "ece": {
+          "mean": 0.0172,
+          "std": 0.0055,
+          "min": 0.0109,
+          "max": 0.0212
+        },
+        "accuracy": {
+          "mean": 0.7498,
+          "std": 0.0108,
+          "min": 0.7381,
+          "max": 0.7594
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.2988,
+          "std": 0.019,
+          "min": 0.2816,
+          "max": 0.3192
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5665,
+        "pooled_pr_auc": 0.2809,
+        "pooled_brier_score": 0.1856,
+        "pooled_log_loss": 0.5571,
+        "pooled_ece": 0.0097,
+        "pooled_top_10pct_precision": 0.2849,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5681,
+      "roc_auc_std": 0.0131,
+      "roc_auc_min": 0.5579,
+      "roc_auc_max": 0.5828,
+      "pr_auc_mean": 0.2834,
+      "pr_auc_std": 0.0194,
+      "pr_auc_min": 0.2688,
+      "pr_auc_max": 0.3054,
+      "daily_top_10pct_precision_mean": 0.2901,
+      "daily_top_10pct_precision_std": 0.0172,
+      "daily_top_10pct_precision_min": 0.2781,
+      "daily_top_10pct_precision_max": 0.3098,
+      "daily_top_5_precision_mean": 0.267,
+      "brier_score_mean": 0.1855,
+      "log_loss_mean": 0.557,
+      "ece_mean": 0.0172,
+      "metrics": {
+        "roc_auc": 0.5681,
+        "pr_auc": 0.2834,
+        "daily_top_10pct_precision": 0.2901,
+        "daily_top_5_precision": 0.267,
+        "brier_score": 0.1855,
+        "log_loss": 0.557,
+        "ece": 0.0172,
+        "accuracy": 0.7498,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5665,
+        "pooled_pr_auc": 0.2809,
+        "top_10pct_precision": 0.2901
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": 0.0119,
+        "delta_macro_pr_auc": -0.0088,
+        "delta_macro_daily_top_10pct_precision": -0.0105,
+        "delta_macro_daily_top_5_precision": -0.0368,
+        "delta_macro_brier_score": -0.0064,
+        "delta_macro_log_loss": -0.0156,
+        "delta_roc_auc": 0.0119,
+        "delta_pr_auc": -0.0088,
+        "delta_log_loss": -0.0156,
+        "delta_brier_score": -0.0064,
+        "delta_ece": -0.0362,
+        "delta_top_10pct_precision": -0.0105
+      }
+    },
+    {
+      "model_name": "group_only_volume_liquidity",
+      "model_type": "lightgbm",
+      "excluded_group": null,
+      "included_group": "volume_liquidity",
+      "features_used": 3,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5157,
+          "std": 0.0064,
+          "min": 0.5088,
+          "max": 0.5213
+        },
+        "pr_auc": {
+          "mean": 0.2597,
+          "std": 0.0178,
+          "min": 0.2471,
+          "max": 0.28
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.267,
+          "std": 0.0228,
+          "min": 0.2509,
+          "max": 0.2931
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2811,
+          "std": 0.0321,
+          "min": 0.257,
+          "max": 0.3176
+        },
+        "brier_score": {
+          "mean": 0.1875,
+          "std": 0.0056,
+          "min": 0.1822,
+          "max": 0.1933
+        },
+        "log_loss": {
+          "mean": 0.5627,
+          "std": 0.0125,
+          "min": 0.5504,
+          "max": 0.5753
+        },
+        "ece": {
+          "mean": 0.0142,
+          "std": 0.0039,
+          "min": 0.0098,
+          "max": 0.0171
+        },
+        "accuracy": {
+          "mean": 0.7502,
+          "std": 0.0111,
+          "min": 0.7383,
+          "max": 0.7602
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.2663,
+          "std": 0.026,
+          "min": 0.2504,
+          "max": 0.2963
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5146,
+        "pooled_pr_auc": 0.2585,
+        "pooled_brier_score": 0.1876,
+        "pooled_log_loss": 0.5628,
+        "pooled_ece": 0.0085,
+        "pooled_top_10pct_precision": 0.265,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5157,
+      "roc_auc_std": 0.0064,
+      "roc_auc_min": 0.5088,
+      "roc_auc_max": 0.5213,
+      "pr_auc_mean": 0.2597,
+      "pr_auc_std": 0.0178,
+      "pr_auc_min": 0.2471,
+      "pr_auc_max": 0.28,
+      "daily_top_10pct_precision_mean": 0.267,
+      "daily_top_10pct_precision_std": 0.0228,
+      "daily_top_10pct_precision_min": 0.2509,
+      "daily_top_10pct_precision_max": 0.2931,
+      "daily_top_5_precision_mean": 0.2811,
+      "brier_score_mean": 0.1875,
+      "log_loss_mean": 0.5627,
+      "ece_mean": 0.0142,
+      "metrics": {
+        "roc_auc": 0.5157,
+        "pr_auc": 0.2597,
+        "daily_top_10pct_precision": 0.267,
+        "daily_top_5_precision": 0.2811,
+        "brier_score": 0.1875,
+        "log_loss": 0.5627,
+        "ece": 0.0142,
+        "accuracy": 0.7502,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5146,
+        "pooled_pr_auc": 0.2585,
+        "top_10pct_precision": 0.267
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0405,
+        "delta_macro_pr_auc": -0.0325,
+        "delta_macro_daily_top_10pct_precision": -0.0336,
+        "delta_macro_daily_top_5_precision": -0.0227,
+        "delta_macro_brier_score": -0.0044,
+        "delta_macro_log_loss": -0.0099,
+        "delta_roc_auc": -0.0405,
+        "delta_pr_auc": -0.0325,
+        "delta_log_loss": -0.0099,
+        "delta_brier_score": -0.0044,
+        "delta_ece": -0.0392,
+        "delta_top_10pct_precision": -0.0336
+      }
+    },
+    {
+      "model_name": "group_only_relative_strength",
+      "model_type": "lightgbm",
+      "excluded_group": null,
+      "included_group": "relative_strength",
+      "features_used": 2,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5193,
+          "std": 0.0104,
+          "min": 0.5096,
+          "max": 0.5302
+        },
+        "pr_auc": {
+          "mean": 0.2651,
+          "std": 0.0216,
+          "min": 0.2455,
+          "max": 0.2883
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.29,
+          "std": 0.0329,
+          "min": 0.2662,
+          "max": 0.3275
+        },
+        "daily_top_5_precision": {
+          "mean": 0.305,
+          "std": 0.054,
+          "min": 0.2561,
+          "max": 0.3629
+        },
+        "brier_score": {
+          "mean": 0.1875,
+          "std": 0.005,
+          "min": 0.1829,
+          "max": 0.1929
+        },
+        "log_loss": {
+          "mean": 0.5627,
+          "std": 0.0109,
+          "min": 0.5524,
+          "max": 0.5742
+        },
+        "ece": {
+          "mean": 0.0137,
+          "std": 0.0019,
+          "min": 0.0116,
+          "max": 0.0151
+        },
+        "accuracy": {
+          "mean": 0.7502,
+          "std": 0.011,
+          "min": 0.7383,
+          "max": 0.7601
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.285,
+          "std": 0.0331,
+          "min": 0.257,
+          "max": 0.3215
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.519,
+        "pooled_pr_auc": 0.2645,
+        "pooled_brier_score": 0.1876,
+        "pooled_log_loss": 0.5628,
+        "pooled_ece": 0.0075,
+        "pooled_top_10pct_precision": 0.2815,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5193,
+      "roc_auc_std": 0.0104,
+      "roc_auc_min": 0.5096,
+      "roc_auc_max": 0.5302,
+      "pr_auc_mean": 0.2651,
+      "pr_auc_std": 0.0216,
+      "pr_auc_min": 0.2455,
+      "pr_auc_max": 0.2883,
+      "daily_top_10pct_precision_mean": 0.29,
+      "daily_top_10pct_precision_std": 0.0329,
+      "daily_top_10pct_precision_min": 0.2662,
+      "daily_top_10pct_precision_max": 0.3275,
+      "daily_top_5_precision_mean": 0.305,
+      "brier_score_mean": 0.1875,
+      "log_loss_mean": 0.5627,
+      "ece_mean": 0.0137,
+      "metrics": {
+        "roc_auc": 0.5193,
+        "pr_auc": 0.2651,
+        "daily_top_10pct_precision": 0.29,
+        "daily_top_5_precision": 0.305,
+        "brier_score": 0.1875,
+        "log_loss": 0.5627,
+        "ece": 0.0137,
+        "accuracy": 0.7502,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.519,
+        "pooled_pr_auc": 0.2645,
+        "top_10pct_precision": 0.29
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0369,
+        "delta_macro_pr_auc": -0.0271,
+        "delta_macro_daily_top_10pct_precision": -0.0106,
+        "delta_macro_daily_top_5_precision": 0.0012,
+        "delta_macro_brier_score": -0.0044,
+        "delta_macro_log_loss": -0.0099,
+        "delta_roc_auc": -0.0369,
+        "delta_pr_auc": -0.0271,
+        "delta_log_loss": -0.0099,
+        "delta_brier_score": -0.0044,
+        "delta_ece": -0.0397,
+        "delta_top_10pct_precision": -0.0106
+      }
+    },
+    {
+      "model_name": "group_only_market_regime",
+      "model_type": "lightgbm",
+      "excluded_group": null,
+      "included_group": "market_regime",
+      "features_used": 6,
+      "macro_metrics": {
+        "roc_auc": {
+          "mean": 0.5124,
+          "std": 0.0399,
+          "min": 0.4684,
+          "max": 0.5463
+        },
+        "pr_auc": {
+          "mean": 0.2707,
+          "std": 0.0395,
+          "min": 0.2257,
+          "max": 0.3
+        },
+        "daily_top_10pct_precision": {
+          "mean": 0.2602,
+          "std": 0.0017,
+          "min": 0.2584,
+          "max": 0.2617
+        },
+        "daily_top_5_precision": {
+          "mean": 0.2455,
+          "std": 0.02,
+          "min": 0.2235,
+          "max": 0.2624
+        },
+        "brier_score": {
+          "mean": 0.1951,
+          "std": 0.0071,
+          "min": 0.1877,
+          "max": 0.2019
+        },
+        "log_loss": {
+          "mean": 0.5815,
+          "std": 0.0136,
+          "min": 0.568,
+          "max": 0.5951
+        },
+        "ece": {
+          "mean": 0.0561,
+          "std": 0.031,
+          "min": 0.033,
+          "max": 0.0913
+        },
+        "accuracy": {
+          "mean": 0.7445,
+          "std": 0.0072,
+          "min": 0.7383,
+          "max": 0.7524
+        },
+        "global_top_10pct_precision": {
+          "mean": 0.3029,
+          "std": 0.0844,
+          "min": 0.2121,
+          "max": 0.379
+        }
+      },
+      "pooled_diagnostics": {
+        "pooled_roc_auc": 0.5104,
+        "pooled_pr_auc": 0.2553,
+        "pooled_brier_score": 0.1951,
+        "pooled_log_loss": 0.5814,
+        "pooled_ece": 0.0538,
+        "pooled_top_10pct_precision": 0.2722,
+        "disclaimer": "Pooled ranking metrics concatenate out-of-sample predictions across folds with shifting prevalence and different calibration baselines. They are secondary diagnostics and must NOT be used as the sole criteria for model/feature selection."
+      },
+      "roc_auc_mean": 0.5124,
+      "roc_auc_std": 0.0399,
+      "roc_auc_min": 0.4684,
+      "roc_auc_max": 0.5463,
+      "pr_auc_mean": 0.2707,
+      "pr_auc_std": 0.0395,
+      "pr_auc_min": 0.2257,
+      "pr_auc_max": 0.3,
+      "daily_top_10pct_precision_mean": 0.2602,
+      "daily_top_10pct_precision_std": 0.0017,
+      "daily_top_10pct_precision_min": 0.2584,
+      "daily_top_10pct_precision_max": 0.2617,
+      "daily_top_5_precision_mean": 0.2455,
+      "brier_score_mean": 0.1951,
+      "log_loss_mean": 0.5815,
+      "ece_mean": 0.0561,
+      "metrics": {
+        "roc_auc": 0.5124,
+        "pr_auc": 0.2707,
+        "daily_top_10pct_precision": 0.2602,
+        "daily_top_5_precision": 0.2455,
+        "brier_score": 0.1951,
+        "log_loss": 0.5815,
+        "ece": 0.0561,
+        "accuracy": 0.7445,
+        "sample_size": 101051,
+        "positive_count": 25248,
+        "prevalence": 0.2499,
+        "pooled_roc_auc": 0.5104,
+        "pooled_pr_auc": 0.2553,
+        "top_10pct_precision": 0.2602
+      },
+      "deltas_vs_reference": {
+        "delta_macro_roc_auc": -0.0438,
+        "delta_macro_pr_auc": -0.0215,
+        "delta_macro_daily_top_10pct_precision": -0.0404,
+        "delta_macro_daily_top_5_precision": -0.0583,
+        "delta_macro_brier_score": 0.0032,
+        "delta_macro_log_loss": 0.0089,
+        "delta_roc_auc": -0.0438,
+        "delta_pr_auc": -0.0215,
+        "delta_log_loss": 0.0089,
+        "delta_brier_score": 0.0032,
+        "delta_ece": 0.0027,
+        "delta_top_10pct_precision": -0.0404
       }
     }
   ],
@@ -528,7 +4083,18 @@
         "brier_score": 0.1873,
         "ece": 0.053,
         "accuracy": 0.7524,
-        "top_10pct_precision": 0.337
+        "top_10pct_precision": 0.337,
+        "daily_top_10pct_precision": 0.2922,
+        "daily_top_10pct_precision_std": 0.1698,
+        "daily_top_10pct_micro_precision": 0.2913,
+        "daily_top_5_precision": 0.3005,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.337
       }
     },
     {
@@ -554,7 +4120,18 @@
         "brier_score": 0.1877,
         "ece": 0.0525,
         "accuracy": 0.7524,
-        "top_10pct_precision": 0.3302
+        "top_10pct_precision": 0.3302,
+        "daily_top_10pct_precision": 0.2834,
+        "daily_top_10pct_precision_std": 0.1544,
+        "daily_top_10pct_micro_precision": 0.283,
+        "daily_top_5_precision": 0.2579,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3302
       }
     },
     {
@@ -580,7 +4157,18 @@
         "brier_score": 0.185,
         "ece": 0.0298,
         "accuracy": 0.7527,
-        "top_10pct_precision": 0.3346
+        "top_10pct_precision": 0.3346,
+        "daily_top_10pct_precision": 0.283,
+        "daily_top_10pct_precision_std": 0.1621,
+        "daily_top_10pct_micro_precision": 0.2821,
+        "daily_top_5_precision": 0.2706,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3346
       }
     },
     {
@@ -606,7 +4194,18 @@
         "brier_score": 0.1875,
         "ece": 0.0538,
         "accuracy": 0.7523,
-        "top_10pct_precision": 0.3376
+        "top_10pct_precision": 0.3376,
+        "daily_top_10pct_precision": 0.294,
+        "daily_top_10pct_precision_std": 0.1665,
+        "daily_top_10pct_micro_precision": 0.2931,
+        "daily_top_5_precision": 0.2914,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3376
       }
     },
     {
@@ -632,7 +4231,18 @@
         "brier_score": 0.1871,
         "ece": 0.0474,
         "accuracy": 0.7524,
-        "top_10pct_precision": 0.3572
+        "top_10pct_precision": 0.3572,
+        "daily_top_10pct_precision": 0.3041,
+        "daily_top_10pct_precision_std": 0.1584,
+        "daily_top_10pct_micro_precision": 0.3032,
+        "daily_top_5_precision": 0.3005,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3572
       }
     },
     {
@@ -658,7 +4268,18 @@
         "brier_score": 0.1873,
         "ece": 0.0523,
         "accuracy": 0.7521,
-        "top_10pct_precision": 0.3325
+        "top_10pct_precision": 0.3325,
+        "daily_top_10pct_precision": 0.3003,
+        "daily_top_10pct_precision_std": 0.1706,
+        "daily_top_10pct_micro_precision": 0.2993,
+        "daily_top_5_precision": 0.2896,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3325
       }
     },
     {
@@ -684,7 +4305,18 @@
         "brier_score": 0.1871,
         "ece": 0.0527,
         "accuracy": 0.7524,
-        "top_10pct_precision": 0.3403
+        "top_10pct_precision": 0.3403,
+        "daily_top_10pct_precision": 0.2826,
+        "daily_top_10pct_precision_std": 0.1571,
+        "daily_top_10pct_micro_precision": 0.2821,
+        "daily_top_5_precision": 0.2796,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3403
       }
     },
     {
@@ -710,7 +4342,18 @@
         "brier_score": 0.1878,
         "ece": 0.0496,
         "accuracy": 0.7513,
-        "top_10pct_precision": 0.2938
+        "top_10pct_precision": 0.2938,
+        "daily_top_10pct_precision": 0.2898,
+        "daily_top_10pct_precision_std": 0.1637,
+        "daily_top_10pct_micro_precision": 0.2895,
+        "daily_top_5_precision": 0.3041,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2938
       }
     },
     {
@@ -736,7 +4379,18 @@
         "brier_score": 0.1865,
         "ece": 0.0096,
         "accuracy": 0.7522,
-        "top_10pct_precision": 0.2221
+        "top_10pct_precision": 0.2221,
+        "daily_top_10pct_precision": 0.2605,
+        "daily_top_10pct_precision_std": 0.151,
+        "daily_top_10pct_micro_precision": 0.2597,
+        "daily_top_5_precision": 0.2624,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2221
       }
     },
     {
@@ -762,7 +4416,18 @@
         "brier_score": 0.1883,
         "ece": 0.0322,
         "accuracy": 0.7517,
-        "top_10pct_precision": 0.2926
+        "top_10pct_precision": 0.2926,
+        "daily_top_10pct_precision": 0.2832,
+        "daily_top_10pct_precision_std": 0.1582,
+        "daily_top_10pct_micro_precision": 0.2827,
+        "daily_top_5_precision": 0.2878,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2926
       }
     },
     {
@@ -788,7 +4453,18 @@
         "brier_score": 0.1861,
         "ece": 0.0203,
         "accuracy": 0.7522,
-        "top_10pct_precision": 0.2903
+        "top_10pct_precision": 0.2903,
+        "daily_top_10pct_precision": 0.301,
+        "daily_top_10pct_precision_std": 0.1635,
+        "daily_top_10pct_micro_precision": 0.3002,
+        "daily_top_5_precision": 0.2986,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2903
       }
     },
     {
@@ -814,7 +4490,18 @@
         "brier_score": 0.1911,
         "ece": 0.0583,
         "accuracy": 0.7516,
-        "top_10pct_precision": 0.2885
+        "top_10pct_precision": 0.2885,
+        "daily_top_10pct_precision": 0.2814,
+        "daily_top_10pct_precision_std": 0.1487,
+        "daily_top_10pct_micro_precision": 0.2809,
+        "daily_top_5_precision": 0.2878,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2885
       }
     },
     {
@@ -840,7 +4527,18 @@
         "brier_score": 0.1876,
         "ece": 0.0184,
         "accuracy": 0.7515,
-        "top_10pct_precision": 0.2453
+        "top_10pct_precision": 0.2453,
+        "daily_top_10pct_precision": 0.2492,
+        "daily_top_10pct_precision_std": 0.1416,
+        "daily_top_10pct_micro_precision": 0.2484,
+        "daily_top_5_precision": 0.257,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2453
       }
     },
     {
@@ -866,7 +4564,18 @@
         "brier_score": 0.1856,
         "ece": 0.0194,
         "accuracy": 0.752,
-        "top_10pct_precision": 0.2956
+        "top_10pct_precision": 0.2956,
+        "daily_top_10pct_precision": 0.2823,
+        "daily_top_10pct_precision_std": 0.1583,
+        "daily_top_10pct_micro_precision": 0.2818,
+        "daily_top_5_precision": 0.2452,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2956
       }
     },
     {
@@ -892,7 +4601,18 @@
         "brier_score": 0.1871,
         "ece": 0.0158,
         "accuracy": 0.7522,
-        "top_10pct_precision": 0.2522
+        "top_10pct_precision": 0.2522,
+        "daily_top_10pct_precision": 0.2509,
+        "daily_top_10pct_precision_std": 0.151,
+        "daily_top_10pct_micro_precision": 0.2502,
+        "daily_top_5_precision": 0.257,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2522
       }
     },
     {
@@ -918,7 +4638,18 @@
         "brier_score": 0.1868,
         "ece": 0.0144,
         "accuracy": 0.7523,
-        "top_10pct_precision": 0.2766
+        "top_10pct_precision": 0.2766,
+        "daily_top_10pct_precision": 0.2762,
+        "daily_top_10pct_precision_std": 0.1563,
+        "daily_top_10pct_micro_precision": 0.2755,
+        "daily_top_5_precision": 0.2959,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2766
       }
     },
     {
@@ -944,7 +4675,18 @@
         "brier_score": 0.1877,
         "ece": 0.033,
         "accuracy": 0.7524,
-        "top_10pct_precision": 0.3177
+        "top_10pct_precision": 0.3177,
+        "daily_top_10pct_precision": 0.2605,
+        "daily_top_10pct_precision_std": 0.151,
+        "daily_top_10pct_micro_precision": 0.2597,
+        "daily_top_5_precision": 0.2624,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 153.0,
+        "candidates_per_date_mean": 151.98,
+        "candidates_per_date_min": 145,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3177
       }
     },
     {
@@ -970,7 +4712,18 @@
         "brier_score": 0.1921,
         "ece": 0.0319,
         "accuracy": 0.7362,
-        "top_10pct_precision": 0.3843
+        "top_10pct_precision": 0.3843,
+        "daily_top_10pct_precision": 0.3184,
+        "daily_top_10pct_precision_std": 0.2036,
+        "daily_top_10pct_micro_precision": 0.317,
+        "daily_top_5_precision": 0.3403,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3843
       }
     },
     {
@@ -996,7 +4749,18 @@
         "brier_score": 0.1926,
         "ece": 0.0342,
         "accuracy": 0.7358,
-        "top_10pct_precision": 0.3629
+        "top_10pct_precision": 0.3629,
+        "daily_top_10pct_precision": 0.3021,
+        "daily_top_10pct_precision_std": 0.1873,
+        "daily_top_10pct_micro_precision": 0.3009,
+        "daily_top_5_precision": 0.314,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3629
       }
     },
     {
@@ -1022,7 +4786,18 @@
         "brier_score": 0.1925,
         "ece": 0.0348,
         "accuracy": 0.735,
-        "top_10pct_precision": 0.3805
+        "top_10pct_precision": 0.3805,
+        "daily_top_10pct_precision": 0.3215,
+        "daily_top_10pct_precision_std": 0.2048,
+        "daily_top_10pct_micro_precision": 0.3208,
+        "daily_top_5_precision": 0.3267,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3805
       }
     },
     {
@@ -1048,7 +4823,18 @@
         "brier_score": 0.1926,
         "ece": 0.0351,
         "accuracy": 0.7346,
-        "top_10pct_precision": 0.384
+        "top_10pct_precision": 0.384,
+        "daily_top_10pct_precision": 0.3077,
+        "daily_top_10pct_precision_std": 0.2009,
+        "daily_top_10pct_micro_precision": 0.3064,
+        "daily_top_5_precision": 0.3376,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.384
       }
     },
     {
@@ -1074,7 +4860,18 @@
         "brier_score": 0.1935,
         "ece": 0.045,
         "accuracy": 0.734,
-        "top_10pct_precision": 0.3696
+        "top_10pct_precision": 0.3696,
+        "daily_top_10pct_precision": 0.3191,
+        "daily_top_10pct_precision_std": 0.2003,
+        "daily_top_10pct_micro_precision": 0.3179,
+        "daily_top_5_precision": 0.3195,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3696
       }
     },
     {
@@ -1100,7 +4897,18 @@
         "brier_score": 0.1927,
         "ece": 0.0368,
         "accuracy": 0.735,
-        "top_10pct_precision": 0.3772
+        "top_10pct_precision": 0.3772,
+        "daily_top_10pct_precision": 0.3182,
+        "daily_top_10pct_precision_std": 0.2007,
+        "daily_top_10pct_micro_precision": 0.3167,
+        "daily_top_5_precision": 0.3303,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3772
       }
     },
     {
@@ -1126,7 +4934,18 @@
         "brier_score": 0.1921,
         "ece": 0.0347,
         "accuracy": 0.7366,
-        "top_10pct_precision": 0.3799
+        "top_10pct_precision": 0.3799,
+        "daily_top_10pct_precision": 0.3243,
+        "daily_top_10pct_precision_std": 0.2012,
+        "daily_top_10pct_micro_precision": 0.3232,
+        "daily_top_5_precision": 0.3376,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3799
       }
     },
     {
@@ -1152,7 +4971,18 @@
         "brier_score": 0.19,
         "ece": 0.0125,
         "accuracy": 0.7366,
-        "top_10pct_precision": 0.3212
+        "top_10pct_precision": 0.3212,
+        "daily_top_10pct_precision": 0.3308,
+        "daily_top_10pct_precision_std": 0.1859,
+        "daily_top_10pct_micro_precision": 0.3296,
+        "daily_top_5_precision": 0.3303,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3212
       }
     },
     {
@@ -1178,7 +5008,18 @@
         "brier_score": 0.1935,
         "ece": 0.0169,
         "accuracy": 0.7383,
-        "top_10pct_precision": 0.2191
+        "top_10pct_precision": 0.2191,
+        "daily_top_10pct_precision": 0.2584,
+        "daily_top_10pct_precision_std": 0.1821,
+        "daily_top_10pct_micro_precision": 0.2574,
+        "daily_top_5_precision": 0.2235,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2191
       }
     },
     {
@@ -1204,7 +5045,18 @@
         "brier_score": 0.1943,
         "ece": 0.0586,
         "accuracy": 0.7294,
-        "top_10pct_precision": 0.4429
+        "top_10pct_precision": 0.4429,
+        "daily_top_10pct_precision": 0.323,
+        "daily_top_10pct_precision_std": 0.1747,
+        "daily_top_10pct_micro_precision": 0.3229,
+        "daily_top_5_precision": 0.3095,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.4429
       }
     },
     {
@@ -1230,7 +5082,18 @@
         "brier_score": 0.1908,
         "ece": 0.0158,
         "accuracy": 0.7383,
-        "top_10pct_precision": 0.3447
+        "top_10pct_precision": 0.3447,
+        "daily_top_10pct_precision": 0.3283,
+        "daily_top_10pct_precision_std": 0.1784,
+        "daily_top_10pct_micro_precision": 0.3281,
+        "daily_top_5_precision": 0.3367,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3447
       }
     },
     {
@@ -1256,7 +5119,18 @@
         "brier_score": 0.1912,
         "ece": 0.0162,
         "accuracy": 0.7379,
-        "top_10pct_precision": 0.3508
+        "top_10pct_precision": 0.3508,
+        "daily_top_10pct_precision": 0.333,
+        "daily_top_10pct_precision_std": 0.1937,
+        "daily_top_10pct_micro_precision": 0.3323,
+        "daily_top_5_precision": 0.3529,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3508
       }
     },
     {
@@ -1282,7 +5156,18 @@
         "brier_score": 0.1935,
         "ece": 0.0179,
         "accuracy": 0.7385,
-        "top_10pct_precision": 0.2995
+        "top_10pct_precision": 0.2995,
+        "daily_top_10pct_precision": 0.3066,
+        "daily_top_10pct_precision_std": 0.1792,
+        "daily_top_10pct_micro_precision": 0.3067,
+        "daily_top_5_precision": 0.3466,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2995
       }
     },
     {
@@ -1308,7 +5193,18 @@
         "brier_score": 0.1899,
         "ece": 0.0109,
         "accuracy": 0.7381,
-        "top_10pct_precision": 0.3192
+        "top_10pct_precision": 0.3192,
+        "daily_top_10pct_precision": 0.3098,
+        "daily_top_10pct_precision_std": 0.2038,
+        "daily_top_10pct_micro_precision": 0.3088,
+        "daily_top_5_precision": 0.2905,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3192
       }
     },
     {
@@ -1334,7 +5230,18 @@
         "brier_score": 0.1933,
         "ece": 0.0171,
         "accuracy": 0.7383,
-        "top_10pct_precision": 0.2963
+        "top_10pct_precision": 0.2963,
+        "daily_top_10pct_precision": 0.2931,
+        "daily_top_10pct_precision_std": 0.1747,
+        "daily_top_10pct_micro_precision": 0.2929,
+        "daily_top_5_precision": 0.3176,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.2963
       }
     },
     {
@@ -1360,7 +5267,18 @@
         "brier_score": 0.1929,
         "ece": 0.0151,
         "accuracy": 0.7383,
-        "top_10pct_precision": 0.3215
+        "top_10pct_precision": 0.3215,
+        "daily_top_10pct_precision": 0.3275,
+        "daily_top_10pct_precision_std": 0.1873,
+        "daily_top_10pct_micro_precision": 0.3273,
+        "daily_top_5_precision": 0.3629,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.3215
       }
     },
     {
@@ -1386,7 +5304,18 @@
         "brier_score": 0.1957,
         "ece": 0.0441,
         "accuracy": 0.7383,
-        "top_10pct_precision": 0.379
+        "top_10pct_precision": 0.379,
+        "daily_top_10pct_precision": 0.2584,
+        "daily_top_10pct_precision_std": 0.1821,
+        "daily_top_10pct_micro_precision": 0.2574,
+        "daily_top_5_precision": 0.2235,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 154.24,
+        "candidates_per_date_min": 142,
+        "candidates_per_date_max": 161,
+        "global_top_10pct_precision": 0.379
       }
     },
     {
@@ -1412,7 +5341,18 @@
         "brier_score": 0.1963,
         "ece": 0.0752,
         "accuracy": 0.7204,
-        "top_10pct_precision": 0.2627
+        "top_10pct_precision": 0.2627,
+        "daily_top_10pct_precision": 0.2911,
+        "daily_top_10pct_precision_std": 0.2059,
+        "daily_top_10pct_micro_precision": 0.2915,
+        "daily_top_5_precision": 0.2706,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2627
       }
     },
     {
@@ -1438,7 +5378,18 @@
         "brier_score": 0.1973,
         "ece": 0.0765,
         "accuracy": 0.7176,
-        "top_10pct_precision": 0.2475
+        "top_10pct_precision": 0.2475,
+        "daily_top_10pct_precision": 0.2896,
+        "daily_top_10pct_precision_std": 0.2147,
+        "daily_top_10pct_micro_precision": 0.2909,
+        "daily_top_5_precision": 0.2769,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2475
       }
     },
     {
@@ -1464,7 +5415,18 @@
         "brier_score": 0.1956,
         "ece": 0.0754,
         "accuracy": 0.7212,
-        "top_10pct_precision": 0.2513
+        "top_10pct_precision": 0.2513,
+        "daily_top_10pct_precision": 0.2942,
+        "daily_top_10pct_precision_std": 0.2074,
+        "daily_top_10pct_micro_precision": 0.2945,
+        "daily_top_5_precision": 0.3023,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2513
       }
     },
     {
@@ -1490,7 +5452,18 @@
         "brier_score": 0.1953,
         "ece": 0.0717,
         "accuracy": 0.7228,
-        "top_10pct_precision": 0.2582
+        "top_10pct_precision": 0.2582,
+        "daily_top_10pct_precision": 0.291,
+        "daily_top_10pct_precision_std": 0.207,
+        "daily_top_10pct_micro_precision": 0.2921,
+        "daily_top_5_precision": 0.2887,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2582
       }
     },
     {
@@ -1516,7 +5489,18 @@
         "brier_score": 0.1977,
         "ece": 0.0719,
         "accuracy": 0.7186,
-        "top_10pct_precision": 0.2558
+        "top_10pct_precision": 0.2558,
+        "daily_top_10pct_precision": 0.2969,
+        "daily_top_10pct_precision_std": 0.1982,
+        "daily_top_10pct_micro_precision": 0.2978,
+        "daily_top_5_precision": 0.3095,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2558
       }
     },
     {
@@ -1542,7 +5526,18 @@
         "brier_score": 0.1963,
         "ece": 0.0758,
         "accuracy": 0.7217,
-        "top_10pct_precision": 0.2663
+        "top_10pct_precision": 0.2663,
+        "daily_top_10pct_precision": 0.2787,
+        "daily_top_10pct_precision_std": 0.2087,
+        "daily_top_10pct_micro_precision": 0.2798,
+        "daily_top_5_precision": 0.2688,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2663
       }
     },
     {
@@ -1568,7 +5563,18 @@
         "brier_score": 0.1952,
         "ece": 0.0696,
         "accuracy": 0.7228,
-        "top_10pct_precision": 0.2618
+        "top_10pct_precision": 0.2618,
+        "daily_top_10pct_precision": 0.2855,
+        "daily_top_10pct_precision_std": 0.212,
+        "daily_top_10pct_micro_precision": 0.2864,
+        "daily_top_5_precision": 0.2814,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2618
       }
     },
     {
@@ -1594,7 +5600,18 @@
         "brier_score": 0.1807,
         "ece": 0.0223,
         "accuracy": 0.7592,
-        "top_10pct_precision": 0.2921
+        "top_10pct_precision": 0.2921,
+        "daily_top_10pct_precision": 0.2883,
+        "daily_top_10pct_precision_std": 0.2043,
+        "daily_top_10pct_micro_precision": 0.2894,
+        "daily_top_5_precision": 0.2842,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2921
       }
     },
     {
@@ -1620,7 +5637,18 @@
         "brier_score": 0.1824,
         "ece": 0.0098,
         "accuracy": 0.7602,
-        "top_10pct_precision": 0.2166
+        "top_10pct_precision": 0.2166,
+        "daily_top_10pct_precision": 0.2617,
+        "daily_top_10pct_precision_std": 0.1972,
+        "daily_top_10pct_micro_precision": 0.2618,
+        "daily_top_5_precision": 0.2507,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2166
       }
     },
     {
@@ -1646,7 +5674,18 @@
         "brier_score": 0.194,
         "ece": 0.0814,
         "accuracy": 0.7436,
-        "top_10pct_precision": 0.3026
+        "top_10pct_precision": 0.3026,
+        "daily_top_10pct_precision": 0.277,
+        "daily_top_10pct_precision_std": 0.1989,
+        "daily_top_10pct_micro_precision": 0.2738,
+        "daily_top_5_precision": 0.2661,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.3026
       }
     },
     {
@@ -1672,7 +5711,18 @@
         "brier_score": 0.1817,
         "ece": 0.0172,
         "accuracy": 0.76,
-        "top_10pct_precision": 0.275
+        "top_10pct_precision": 0.275,
+        "daily_top_10pct_precision": 0.2858,
+        "daily_top_10pct_precision_std": 0.1973,
+        "daily_top_10pct_micro_precision": 0.2861,
+        "daily_top_5_precision": 0.2733,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.275
       }
     },
     {
@@ -1698,7 +5748,18 @@
         "brier_score": 0.1838,
         "ece": 0.0215,
         "accuracy": 0.7566,
-        "top_10pct_precision": 0.2615
+        "top_10pct_precision": 0.2615,
+        "daily_top_10pct_precision": 0.2695,
+        "daily_top_10pct_precision_std": 0.1802,
+        "daily_top_10pct_micro_precision": 0.2702,
+        "daily_top_5_precision": 0.2525,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2615
       }
     },
     {
@@ -1724,7 +5785,18 @@
         "brier_score": 0.1829,
         "ece": 0.0085,
         "accuracy": 0.76,
-        "top_10pct_precision": 0.2445
+        "top_10pct_precision": 0.2445,
+        "daily_top_10pct_precision": 0.2503,
+        "daily_top_10pct_precision_std": 0.1634,
+        "daily_top_10pct_micro_precision": 0.2516,
+        "daily_top_5_precision": 0.2462,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2445
       }
     },
     {
@@ -1750,7 +5822,18 @@
         "brier_score": 0.181,
         "ece": 0.0212,
         "accuracy": 0.7594,
-        "top_10pct_precision": 0.2816
+        "top_10pct_precision": 0.2816,
+        "daily_top_10pct_precision": 0.2781,
+        "daily_top_10pct_precision_std": 0.1973,
+        "daily_top_10pct_micro_precision": 0.2792,
+        "daily_top_5_precision": 0.2652,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2816
       }
     },
     {
@@ -1776,7 +5859,18 @@
         "brier_score": 0.1822,
         "ece": 0.0098,
         "accuracy": 0.7602,
-        "top_10pct_precision": 0.2504
+        "top_10pct_precision": 0.2504,
+        "daily_top_10pct_precision": 0.2571,
+        "daily_top_10pct_precision_std": 0.1909,
+        "daily_top_10pct_micro_precision": 0.2531,
+        "daily_top_5_precision": 0.2688,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2504
       }
     },
     {
@@ -1802,7 +5896,18 @@
         "brier_score": 0.1829,
         "ece": 0.0116,
         "accuracy": 0.7601,
-        "top_10pct_precision": 0.257
+        "top_10pct_precision": 0.257,
+        "daily_top_10pct_precision": 0.2662,
+        "daily_top_10pct_precision_std": 0.1734,
+        "daily_top_10pct_micro_precision": 0.2669,
+        "daily_top_5_precision": 0.2561,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.257
       }
     },
     {
@@ -1828,7 +5933,18 @@
         "brier_score": 0.2019,
         "ece": 0.0913,
         "accuracy": 0.7429,
-        "top_10pct_precision": 0.2121
+        "top_10pct_precision": 0.2121,
+        "daily_top_10pct_precision": 0.2617,
+        "daily_top_10pct_precision_std": 0.1972,
+        "daily_top_10pct_micro_precision": 0.2618,
+        "daily_top_5_precision": 0.2507,
+        "daily_evaluated_dates": 221,
+        "daily_insufficient_dates": 0,
+        "candidates_per_date_median": 154.0,
+        "candidates_per_date_mean": 151.02,
+        "candidates_per_date_min": 14,
+        "candidates_per_date_max": 166,
+        "global_top_10pct_precision": 0.2121
       }
     }
   ]

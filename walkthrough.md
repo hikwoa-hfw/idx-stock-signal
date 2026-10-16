@@ -64,8 +64,10 @@ Pada sesi pekerjaan ini, kami mengoreksi dan memvalidasi metodologi evaluasi met
   * Laporan audit lengkap 8 bagian mencakup metadata, executive summary, metodologi metrik harian & macro, tabel hasil komparasi, validasi hipotesis fitur, verifikasi semantik label & target, dan artefak reproduktibilitas.
 - **`audit_report.md`:**
   * Diformat menggunakan template standar governance 10 bagian resmi yang diisi dengan seluruh temuan, hasil kuantitatif agregasi makro & presisi harian, serta verifikasi Phase 11A.1.
+- **`agent_report_template.md`:**
+  * Template standar 11 bagian untuk pelaporan tugas agen mandiri pada setiap prompt/task.
 - **`summary.md`:**
-  * Menambahkan Log Entry 52 (strictly append-only).
+  * Menambahkan Log Entry 52 dan 53 (strictly append-only).
 
 ---
 
@@ -124,3 +126,5 @@ Setelah perubahan di-deploy, verifikasi hal-hal berikut:
   * Periksa kolom `roc_auc_mean` dan `roc_auc_std` untuk baris `prevalence_baseline` pada CSV hasil; pastikan nilainya tepat `0.5000` dan `0.0000`.
 - [ ] **Flag Review Anchor Harga Entri Sebelum Phase 11B:**
   * Sebelum memulai pelatihan model kandidat challenger pada Phase 11B, pastikan tim/koordinator telah mereview implikasi anchor harga entri label (Close $t$ pada `labels_daily`) versus eksekusi operasional (Open $t+1$ pada `SignalEngine`).
+- [ ] **Ketersediaan Template Laporan Tugas Agen:**
+  * Pastikan file `agent_report_template.md` tersedia di root repositori dengan 11 bagian standar pelaporan tugas.

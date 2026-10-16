@@ -1,130 +1,93 @@
-# Walkthrough — Phase 11A.1: Validasi Agregasi Fold & Metrik Pemeringkatan Cross-Sectional Harian
+# Walkthrough — Phase 11B.0: Final Target Contract Audit
 
-## 1. Ringkasan Sesi Pekerjaan
+## 1. Work Session Summary
 
-Pada sesi pekerjaan ini, kami mengoreksi dan memvalidasi metodologi evaluasi metrik untuk eksperimen ablasi fitur Phase 11A pada sistem sinyal saham BEI dual-mode.
-
-### Masalah Utama yang Diselesaikan:
-1. **Bias Agregasi Cross-Fold (Pooled Metric Artifact):** Penggabungan prediksi out-of-sample lintas walk-forward folds mendistorsi metrik ranking karena adanya pergeseran prevalensi dan kalibrasi probabilitas antar-epoch. Kasus nyata: *prevalence baseline* yang memiliki ROC-AUC 0.5000 di dalam tiap fold terdistorsi menjadi 0.5066 pada `LOW_PRICE` dan 0.4953 pada `HIGHER_PRICE`.
-2. **Ketiadaan Evaluasi Cross-Sectional Harian:** Metrik `compute_top_k_precision` sebelumnya memeringkat seluruh baris evaluasi pooled multi-tahun, bukan menyeleksi 10% kandidat saham terbaik pada setiap tanggal keputusan perdagangan bursa.
-3. **Persistensi Prediksi Out-of-Sample Lengkap:** Belum tersimpannya probabilitas per baris dan penanda seleksi harian (`is_top10_{model}`) secara menyeluruh untuk seluruh 17 model yang dievaluasi.
-4. **Proteksi Integritas Objek Hasil Eksperimen:** Metode `export_artifacts` sebelumnya menghapus kunci `oos_predictions_df` dari kamus hasil pemanggil menggunakan `pop()`, yang memutasi status data runtime secara in-place.
+In this work session, we resolved the target-label versus executable-entry contract discrepancy prior to candidate model retraining in Phase 11B. We migrated the task report template to `docs/AGENT_REPORT_TEMPLATE.md`, developed a comprehensive target audit engine (`scripts/audit_target_contract_runner.py`), quantified differences across 186,291 daily bars and 185,515 production labels in `datasets/stock_signals.db`, exported structured research artifacts to `artifacts/target_contract/`, added targeted unit tests in `tests/unit/test_target_contract.py`, authored the audit report `docs/12_phase_11b_target_contract_audit_report.md`, updated the root `audit_report.md` into a concise status index, and updated `summary.md`.
 
 ---
 
-## 2. Rincian Perubahan File dan Kode
+## 2. Detailed Task Breakdown & Code Modifications
 
-### A. `python/experiments/ablation.py`
-- **Baris 357–471 (`compute_daily_cross_sectional_top_k_precision`):**
-  * Mengimplementasikan ranking terisolasi per tanggal perdagangan (`date`).
-  * Menerapkan aturan batas sampel minimum ($N_d \ge 10$). Tanggal dengan kandidat $< 10$ dieksklusikan dari agregasi presisi dan dicatat pada `insufficient_dates`.
-  * Menerapkan tie-breaking deterministik stabil: `-probability` descending, kemudian `ticker` ascending.
-  * Menghitung kuota seleksi harian $K_d = \min(N_d, \max(1, \text{int}(\text{round}(N_d \times 0.10))))$.
-  * Menghasilkan array `selection_mask` berukuran $N$ yang menandai indeks baris saham terpilih (1) dan tidak terpilih (0).
-  * Menghitung macro-average daily precision (rata-rata nilai presisi harian), standar deviasi presisi harian, dan micro-average (total true positives terpilih / total picks terpilih).
-- **Baris 473–544 (`compute_daily_top_n_precision`):**
-  * Mengimplementasikan diagnostik sekunder seleksi Top-N tetap ($N=5$) untuk mencocokkan kebijakan produksi `SignalConfig(top_n=5)`.
-  * Menambahkan proteksi fail-closed terhadap `top_n <= 0` untuk mencegah `ZeroDivisionError`.
-- **Baris 750–860 (`FeatureAblationRunner.run_experiment`):**
-  * Menghitung metrik per-fold: ROC-AUC, PR-AUC, Daily Top-10% Precision, Daily Top-5 Precision, Brier Score, Log Loss, ECE, dan Accuracy.
-  * Mengumpulkan prediksi out-of-sample per baris (`date`, `ticker`, `mode`, `binary_target`, probabilitas 17 model, dan penanda seleksi `is_top10_{model}` untuk seluruh model tanpa duplikasi kode seleksi).
-- **Baris 862–990 (`FeatureAblationRunner.run_experiment` - Macro Aggregation):**
-  * Mengimplementasikan agregasi macro lintas 3 folds: menghitung `mean`, `std`, `min`, `max` untuk setiap metrik.
-  * Menghitung delta performa terhadap model referensi berbasis macro-mean.
-  * Menyertakan metrik pooled sebagai diagnostik sekunder disertai label disclaimer limitasi.
-- **Baris 992–1085 (`FeatureAblationRunner.export_artifacts`):**
-  * Mengambil `oos_predictions_df` secara non-destruktif (`get()` alih-alih `pop()`), mencegah mutasi dictionary caller.
-  * Menambahkan kolom `sample_size`, `positive_count`, dan `prevalence` pada `ablation_results_{mode}.csv`.
-  * Mengekspor `ablation_fold_details_{mode}.csv` (rincian performa per-fold).
-  * Mengekspor `oos_predictions_{mode}.csv` (prediksi out-of-sample per baris dengan bendera seleksi lengkap).
-  * Mengekspor `feature_inventory.json`.
+### A. Template Governance Setup
+- **File:** `docs/AGENT_REPORT_TEMPLATE.md` (and `docs/agent_report_template.md` for case insensitivity).
+- **Description:** Copied from root `agent_report_template.md` as the mandatory repository standard for all future agent tasks.
 
-### B. `scripts/run_feature_ablation.py`
-- **Baris 101–120:**
-  * Memperbarui tabel output terminal untuk menampilkan kolom metrik macro fold-aggregated (`roc_auc_mean`, `roc_auc_std`, `pr_auc_mean`, `daily_top_10pct_prec_mean`, `daily_top_10pct_prec_std`, `daily_top_5_prec_mean`, `brier_score_mean`, `delta_macro_roc_auc`, `delta_macro_pr_auc`, `delta_macro_daily_top_10pct_prec`, `pooled_roc_auc`).
+### B. Target Contract Audit Engine
+- **File:** `scripts/audit_target_contract_runner.py`
+- **Lines 28–66 (`load_all_bars`):**
+  * Loads all 186,291 daily price bars from SQLite `daily_bars`, grouped by canonical ticker and sorted chronologically.
+- **Lines 69–238 (`evaluate_variant_b`):**
+  * Implements the operational next-session execution contract:
+    - Pre-entry gap-down invalidation: $Open_{t+1} \le Close_t \times (1 - 0.02) \rightarrow$ `INVALIDATED_GAP` (`GAP_BELOW_SL`).
+    - Pre-entry gap-up invalidation: $Open_{t+1} \ge Close_t \times (1 + 0.05) \rightarrow$ `INVALIDATED_GAP` (`GAP_ABOVE_TP`).
+    - Excessive open deviation check: $|Open_{t+1} - Close_t| / Close_t > 0.05 \rightarrow$ `INVALIDATED_GAP` (`EXCESSIVE_DEV`).
+    - Zero volume / suspended trading check: $Volume_{t+1} \le 0 \rightarrow$ `UNFILLED_SUSPENDED`.
+    - Barrier re-anchoring to actual fill price: $TP = Open_{t+1} \times 1.05$, $SL = Open_{t+1} \times 0.98$.
+    - Holding horizon: Exactly 10 trading bars starting from the entry day $t+1$ to $t+10$.
+    - Ambiguity resolution on entry bar: Day 1 open cannot trigger barriers, but if candle touches both TP and SL, conservative policy resolves to SL.
+- **Lines 241–567 (`run_full_contract_audit`):**
+  * Reconciles Variant A against `labels_daily` (185,510 exact matches).
+  * Computes Variant B for all 186,291 bars.
+  * Quantifies valid entries, invalidations, and common-cohort transitions for `LOW_PRICE` and `HIGHER_PRICE`.
+  * Exports machine-readable artifacts to `artifacts/target_contract/`.
 
-### C. `tests/unit/test_ablation.py`
-- **`test_daily_cross_sectional_top_k_precision`:**
-  * Menguji seleksi harian top 10% pada beberapa tanggal perdagangan serta aturan batas ambang minimum kandidat ($N < 5$ atau $N < 10$).
-- **`test_deterministic_tie_breaking_by_ticker`:**
-  * Menguji stabilitas tie-breaking deterministik berdasarkan abjad ticker saat probabilitas identik.
-- **`test_prevalence_baseline_fold_auc_and_pooled_effect`:**
-  * Membuktikan secara matematis bahwa prediksi konstan menghasilkan ROC-AUC tepat 0.5000 di dalam tiap fold, namun menyimpang dari 0.5000 saat dipooling antar-fold dengan prevalensi berbeda.
-- **`test_daily_top_n_precision`:**
-  * Menguji kalkulasi diagnostik Top-N tetap harian.
-- **`test_daily_top_k_selection_mask`:**
-  * Menguji akurasi array `selection_mask` harian terhadap baris data kandidat terpilih.
-- **`test_daily_top_n_precision_edge_cases`:**
-  * Menguji ketahanan fungsi saat menerima input `top_n <= 0` atau DataFrame kosong.
-- **`test_export_artifacts_preserves_results_dict`:**
-  * Menguji bahwa `export_artifacts` tidak menghapus kunci `oos_predictions_df` dari kamus input.
+### C. Targeted Unit Tests
+- **File:** `tests/unit/test_target_contract.py`
+- **Lines 29–43 (`test_variant_b_gap_below_sl_invalidation`):** Tests pre-entry gap down below SL barrier ($Open_{t+1} = 97.5$ vs decision 100.0).
+- **Lines 45–58 (`test_variant_b_gap_above_tp_invalidation`):** Tests pre-entry gap up at or above TP barrier ($Open_{t+1} = 105.5$ vs decision 100.0).
+- **Lines 60–79 (`test_variant_b_valid_entry_and_tp_hit`):** Tests valid entry at $Open_{t+1} = 101.0$, re-anchoring TP to $106.05$, hitting TP on Day 2.
+- **Lines 81–96 (`test_variant_b_valid_entry_and_sl_hit`):** Tests valid entry at $Open_{t+1} = 99.5$, re-anchoring SL to $97.51$, hitting SL on Day 2.
+- **Lines 98–112 (`test_variant_b_expiry_after_10_days`):** Tests 10-day holding horizon expiry without barrier hits.
 
-### D. Dokumentasi & Laporan Audit
-- **`docs/11_feature_ablation_metric_validation_report.md`:**
-  * Laporan audit lengkap 8 bagian mencakup metadata, executive summary, metodologi metrik harian & macro, tabel hasil komparasi, validasi hipotesis fitur, verifikasi semantik label & target, dan artefak reproduktibilitas.
-- **`audit_report.md`:**
-  * Diformat menggunakan template standar governance 10 bagian resmi yang diisi dengan seluruh temuan, hasil kuantitatif agregasi makro & presisi harian, serta verifikasi Phase 11A.1.
-- **`agent_report_template.md`:**
-  * Template standar 11 bagian untuk pelaporan tugas agen mandiri pada setiap prompt/task.
-- **`summary.md`:**
-  * Menambahkan Log Entry 52 dan 53 (strictly append-only).
+### D. Governance & Reporting Documentation
+- **File:** `docs/12_phase_11b_target_contract_audit_report.md`
+  * Complete 11-section report using universal template, detailing empirical numbers, comparison tables, flip analysis, and design decision tradeoffs.
+- **File:** `audit_report.md`
+  * Refactored as a concise status index linking to reports 09, 10, 11, and 12 using repository-relative Markdown links.
+- **File:** `summary.md`
+  * Cumulative append-only log entry 54 added.
 
 ---
 
-## 3. Hasil Validasi Empiris Utama
+## 3. Key Quantitative Results
 
-### Mode `LOW_PRICE` ($\le 300$)
-- **Model Referensi (30 Fitur):** Macro ROC-AUC = 0.5739 ($\pm 0.0254$), Daily Top-10% Precision = 31.89% ($\pm 4.11\%$).
-- **Tanpa Kelompok `trend` (`ablation_minus_trend`, 23 Fitur):**
-  * Macro ROC-AUC meningkat menjadi **0.5817** ($\Delta = +0.0078$).
-  * Macro PR-AUC meningkat menjadi **0.3238** ($\Delta = +0.0095$).
-  * Daily Top-10% Precision meningkat menjadi **33.93%** ($\Delta = +0.0204$ / $+2.04\%$), unggul di Fold 1 (+3.51%), Fold 2 (+0.97%), dan Fold 3 (+1.63%).
-  * Brier score membaik dari 0.1970 menjadi **0.1945**.
-  * **Kesimpulan:** Mengonfirmasi secara konsisten bahwa fitur trend moving average jangka panjang bersifat noise untuk saham penny/small-cap BEI.
-- **Tanpa Kelompok `market_regime` (`ablation_minus_market_regime`, 24 Fitur):**
-  * Macro ROC-AUC jatuh ke **0.5588** ($\Delta = -0.0151$).
-  * Fold 1 ROC-AUC anjlok ke 0.5350.
-  * **Kesimpulan:** Fitur makro IHSG dan market breadth sangat esensial untuk `LOW_PRICE`.
-- **Prevalence Baseline:**
-  * Macro ROC-AUC = tepat **0.5000** (std 0.0000). Terbukti bebas dari bias agregasi pooled (sebelumnya 0.5066).
+1. **Eligible Decision Rows ($N = 183,184$):**
+   - `LOW_PRICE` ($\le 300$): 45,763 rows.
+   - `HIGHER_PRICE` ($> 300$): 137,421 rows.
 
-### Mode `HIGHER_PRICE` ($> 300$)
-- **Model Referensi (30 Fitur):** Macro ROC-AUC = 0.5562 ($\pm 0.0232$), Daily Top-10% Precision = 30.06% ($\pm 1.55\%$).
-- **Tanpa Kelompok `market_regime` (`ablation_minus_market_regime`, 24 Fitur):**
-  * Menunjukkan divergensi temporal antarfolds: di Fold 1 (2024), menghapus regime makro merugikan performa ($\Delta \text{AUC} = -0.0114$, $\Delta \text{PR-AUC} = -0.0233$). Namun di Fold 2 (2025) dan Fold 3 (2026), menghapus regime makro meningkatkan ROC-AUC secara signifikan ($+0.0189$ dan $+0.0443$).
-  * Macro Daily Top-10% Precision hanya meningkat tipis $+0.24\%$ ($30.06\% \rightarrow 30.30\%$).
-- **Kelompok Inti `price_momentum` dan `volatility`:**
-  * Menghapus `price_momentum` menurunkan Daily Top-10% Precision sebesar $-0.89\%$. Model group-only `volatility` sendiri mencapai Macro ROC-AUC 0.5681.
-- **Prevalence Baseline:**
-  * Macro ROC-AUC = tepat **0.5000** (std 0.0000). Terbukti bebas dari bias agregasi pooled (sebelumnya 0.4953).
+2. **Pre-Entry Invalidations in Variant B:**
+   - `LOW_PRICE`: 3,404 rows ($7.44\%$) invalidated before entry (1,532 gap-downs, 1,421 zero-volume/suspended, 451 gap-ups).
+   - `HIGHER_PRICE`: 5,051 rows ($3.68\%$) invalidated before entry (3,116 gap-downs, 1,287 zero-volume/suspended, 648 gap-ups).
+
+3. **Prevalence Shift on Valid Modeled Entries:**
+   - `LOW_PRICE`: Drops from **25.80%** (Variant A) down to **23.35%** (Variant B) ($\Delta = -2.45\%$).
+   - `HIGHER_PRICE`: Drops from **24.72%** (Variant A) down to **22.06%** (Variant B) ($\Delta = -2.66\%$).
+
+4. **Common Cohort Label Flips ($N = 174,688$):**
+   - Agreement: 94.07% in `LOW_PRICE` (39,840 rows) and 95.11% in `HIGHER_PRICE` (125,862 rows).
+   - Label Flips: 5.93% in `LOW_PRICE` (2,511 rows) and 4.89% in `HIGHER_PRICE` (6,475 rows).
+   - False Positives in Variant A ($y_A = 1, y_B = 0$): 1,977 in `LOW_PRICE`, 5,213 in `HIGHER_PRICE` ($4:1$ asymmetry ratio vs false negatives).
+
+5. **Entry Band Sensitivity ($\pm 0.5\%$):**
+   - 42.31% of `LOW_PRICE` and 34.08% of `HIGHER_PRICE` open prices exceed $\pm 0.5\%$, confirming that strict bands on daily bars would drop over a third of trading opportunities.
 
 ---
 
 ## 4. Testing Checklist
 
-Setelah perubahan di-deploy, verifikasi hal-hal berikut:
+Before deploying or proceeding to Phase 11B.1, verify the following items:
 
-- [ ] **Integritas Model Produksi:**
-  * Pastikan model champion produksi (`lightgbm_classification_20261014_093522` dan `lightgbm_classification_20261014_093607`) di `models/registry/` tidak mengalami mutasi file, timestamp, maupun status.
-- [ ] **Kelulusan Pengujian Unit & Integrasi:**
-  * Jalankan `pytest tests/unit/test_ablation.py` dan pastikan seluruh 11 tests lulus 100%.
-  * Jalankan suite tes penuh `pytest` dan pastikan seluruh 455 tests lulus 100%.
-- [ ] **Kepatuhan Linter:**
-  * Jalankan `ruff check python/ experiments/ scripts/ tests/` dan pastikan 0 error/warning.
-- [ ] **Kelengkapan Artefak Hasil Eksperimen:**
-  * Verifikasi keberadaan file ringkasan agregat:
-    - `artifacts/ablation/ablation_results_LOW_PRICE.csv` & `.json` (termasuk kolom sample_size & prevalence)
-    - `artifacts/ablation/ablation_results_HIGHER_PRICE.csv` & `.json` (termasuk kolom sample_size & prevalence)
-    - `artifacts/ablation/ablation_summary_aggregate.csv` & `.json`
-  * Verifikasi keberadaan file detail per-fold:
-    - `artifacts/ablation/ablation_fold_details_LOW_PRICE.csv`
-    - `artifacts/ablation/ablation_fold_details_HIGHER_PRICE.csv`
-  * Verifikasi keberadaan file prediksi out-of-sample baris-per-baris:
-    - `artifacts/ablation/oos_predictions_LOW_PRICE.csv` (33.962 baris, 17 pasang prob & is_top10)
-    - `artifacts/ablation/oos_predictions_HIGHER_PRICE.csv` (101.051 baris, 17 pasang prob & is_top10)
-- [ ] **Verifikasi Prevalence Baseline 0.5000:**
-  * Periksa kolom `roc_auc_mean` dan `roc_auc_std` untuk baris `prevalence_baseline` pada CSV hasil; pastikan nilainya tepat `0.5000` dan `0.0000`.
-- [ ] **Flag Review Anchor Harga Entri Sebelum Phase 11B:**
-  * Sebelum memulai pelatihan model kandidat challenger pada Phase 11B, pastikan tim/koordinator telah mereview implikasi anchor harga entri label (Close $t$ pada `labels_daily`) versus eksekusi operasional (Open $t+1$ pada `SignalEngine`).
-- [ ] **Ketersediaan Template Laporan Tugas Agen:**
-  * Pastikan file `agent_report_template.md` tersedia di root repositori dengan 11 bagian standar pelaporan tugas.
+- [ ] **Universal Report Template:** Confirm `docs/AGENT_REPORT_TEMPLATE.md` exists and is formatted correctly.
+- [ ] **Phase 12 Report Integrity:** Inspect `docs/12_phase_11b_target_contract_audit_report.md` for section completeness and repository-relative links.
+- [ ] **Audit Index Integrity:** Verify root `audit_report.md` is a concise index linking to reports 09, 10, 11, and 12 with valid repository-relative links.
+- [ ] **Target Contract Audit Runner:** Run `& ".venv\Scripts\python.exe" scripts/audit_target_contract_runner.py` and ensure it runs to completion with 0 errors.
+- [ ] **Artifact Verification:** Check `artifacts/target_contract/` contains:
+  - [ ] `target_contract_summary.csv`
+  - [ ] `target_contract_summary.json`
+  - [ ] `target_transitions_by_mode.csv`
+  - [ ] `target_contract_samples.csv`
+- [ ] **Target Contract Unit Tests:** Run `& ".venv\Scripts\python.exe" -m pytest tests/unit/test_target_contract.py` (5 tests must pass).
+- [ ] **Full Repository Test Suite:** Run `& ".venv\Scripts\python.exe" -m pytest` (all 460 tests must pass).
+- [ ] **Code Formatting & Linter:** Run `& ".venv\Scripts\python.exe" -m ruff check .` (0 errors reported).
+- [ ] **Production Model Safeguards:** Verify `models/registry/` was untouched and champion models remain unchanged.
+- [ ] **Cumulative Log:** Confirm `summary.md` preserved all previous entries and appended entry 54.

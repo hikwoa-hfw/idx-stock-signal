@@ -798,3 +798,22 @@ Log Perubahan Tambahan (15 Oktober 2026)
 53. Pembuatan Template Laporan Tugas Agen Mandiri (agent_report_template.md) (16 Oktober 2026)
    - Menambahkan file template pelaporan tugas agen `agent_report_template.md` di root repositori dengan struktur 11 bagian (Metadata, Executive Summary, Scope & Acceptance Criteria, Implementation Summary, Results & Evidence, Findings/Risks/Limitations, Verification, Files/Artifacts/Data Changes, Safeguards & Backward Compatibility, Reproducibility, Final Decision) beserta 10 aturan pelaporan baku.
    - Template ini difungsikan sebagai wadah standar untuk pelaporan per-task yang dapat ditimpa/diperbarui pada setiap prompt kerja agen.
+
+54. Phase 11B.0 — Final Target Contract Audit & Template Standard Governance (16 Oktober 2026)
+   Masalah:
+   1. Terjadi diskrepansi mendasar antara target label supervised learning saat ini (Variant A: Close-Anchor, $P_{\text{entry}} = Close_t$) dengan kebijakan eksekusi riil (Market-On-Open, $P_{\text{entry}} = Open_{t+1}$). Pada Variant A, lonjakan harga gap up semalam $\ge +5\%$ dicatat sebagai kemenangan instan (lookahead phantom profit), sedangkan gap down $\le -2\%$ dicatat sebagai kerugian perdagangan padahal kebijakan operasional membatalkan order sebelum terisi (`INVALIDATED_GAP`).
+   2. Belum ada kuantifikasi empiris level basis data mengenai berapa persen sinyal yang terinvalidasi oleh gap pembukaan, berapa pergeseran prevalensi kelas positif, dan berapa banyak label yang berbalik (flip) antara Close-Anchor vs Executable-Entry pada semesta data historis BEI.
+   3. File `agent_report_template.md` di root perlu disalin/dipindahkan ke `docs/AGENT_REPORT_TEMPLATE.md` (dan `docs/agent_report_template.md`), dan `audit_report.md` di root harus diselaraskan menjadi indeks ringkas status terkini yang menautkan laporan audit detail dengan format repositori-relatif.
+   Solusi:
+   1. Menyalin `agent_report_template.md` ke `docs/AGENT_REPORT_TEMPLATE.md` dan `docs/agent_report_template.md` sesuai tata kelola universal template repositori.
+   2. Mengembangkan engine audit target contract `scripts/audit_target_contract_runner.py` untuk mengaudit seluruh 186.291 bar harian dan 185.515 label produksi di `datasets/stock_signals.db` tanpa memutasi data produksi:
+      - Memvalidasi Variant A (Close-Anchor) dengan 185.510 kecocokan identik terhadap `labels_daily`.
+      - Memodelkan Variant B (Executable-Entry Market-On-Open) dengan penegakan pembatalan pra-entri (`GAP_BELOW_SL`, `GAP_ABOVE_TP`, `EXCESSIVE_DEV`, `ZERO_VOLUME_SUSPENDED`) dan re-anchoring barrier TP/SL ke harga Open $t+1$.
+   3. Menghasilkan temuan empiris kuantitatif pada 183.184 baris keputusan:
+      - Valid Modeled Entries: 92,54% pada `LOW_PRICE` (42.351 baris) dan 96,30% pada `HIGHER_PRICE` (132.337 baris).
+      - Invalidated Entries: 7,44% pada `LOW_PRICE` (1.532 gap down, 1.421 suspended, 451 gap up) dan 3,68% pada `HIGHER_PRICE` (3.116 gap down, 1.287 suspended, 648 gap up).
+      - Prevalensi positif riil pada kohort tereksekusi turun sebesar $-2,45\%$ pada `LOW_PRICE` ($25,80\% \rightarrow 23,35\%$) dan $-2,66\%$ pada `HIGHER_PRICE` ($24,72\% \rightarrow 22,06\%$).
+      - Pada Common Valid Cohort, 5,93% (`LOW_PRICE`) dan 4,89% (`HIGHER_PRICE`) label berbalik arah, didominasi oleh false positives Variant A (rasio asimetri $4:1$, 7.190 phantom wins vs 1.796 recovered wins).
+      - Sensitivitas batas rentang ketat $\pm 0,5\%$ mendiskualifikasi 42,31% (`LOW_PRICE`) dan 34,08% (`HIGHER_PRICE`), mengonfirmasi desain `enforce_entry_band=False` pada `OutcomeEngine`.
+   4. Mengekspor artefak terstruktur ke `artifacts/target_contract/` (`target_contract_summary.csv/.json`, `target_transitions_by_mode.csv`, dan `target_contract_samples.csv` 30 kasus representatif).
+   5. Menyusun laporan audit komprehensif pada `docs/12_phase_11b_target_contract_audit_report.md` menggunakan universal template, memperbarui root `audit_report.md` sebagai indeks status ringkas, menambahkan unit test `tests/unit/test_target_contract.py` (5 passed), dan memvalidasi seluruh test suite (460 passed, ruff clean).

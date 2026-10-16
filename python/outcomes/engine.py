@@ -138,6 +138,8 @@ class OutcomeEngine:
         commission_buy: float = 0.0015,
         commission_sell: float = 0.0025,
         slippage_bps: float = 10.0,
+        enforce_entry_band: bool = False,
+        max_entry_deviation_pct: Optional[float] = None,
     ) -> None:
         self.bar_repo = bar_repo
         self.signal_repo = signal_repo
@@ -146,6 +148,8 @@ class OutcomeEngine:
         self.commission_buy = commission_buy
         self.commission_sell = commission_sell
         self.slippage_bps = slippage_bps
+        self.enforce_entry_band = enforce_entry_band
+        self.max_entry_deviation_pct = max_entry_deviation_pct
 
     def _get_bar_repo(self) -> DailyBarRepository:
         if self.bar_repo is None:
@@ -173,6 +177,8 @@ class OutcomeEngine:
         commission_buy: Optional[float] = None,
         commission_sell: Optional[float] = None,
         slippage_bps: Optional[float] = None,
+        enforce_entry_band: Optional[bool] = None,
+        max_entry_deviation_pct: Optional[float] = None,
     ) -> tuple[Optional[SignalOutcomeRecord], list[SignalDailySnapshot]]:
         """Evaluate a signal across forward trading bars using triple barrier rules."""
         policy = (
@@ -222,6 +228,36 @@ class OutcomeEngine:
             getattr(signal, "status", None) or getattr(signal, "signal", None) or "BUY"
         ).strip().upper()
         is_breakout = policy_str == "BREAKOUT" or signal_status == "WAIT_FOR_BREAKOUT"
+
+        eff_enforce_band = (
+            self.enforce_entry_band
+            if enforce_entry_band is None
+            else enforce_entry_band
+        )
+        eff_max_dev = (
+            max_entry_deviation_pct
+            if max_entry_deviation_pct is not None
+            else (
+                self.max_entry_deviation_pct
+                if self.max_entry_deviation_pct is not None
+                else (getattr(signal, "max_entry_deviation_pct", 0.05) or 0.05)
+            )
+        )
+
+        ref_p = getattr(signal, "reference_price", None)
+        if ref_p is not None and math.isfinite(ref_p) and ref_p > 0:
+            anchor_px = float(ref_p)
+        elif (
+            signal.entry_low is not None
+            and signal.entry_high is not None
+            and math.isfinite(signal.entry_low)
+            and math.isfinite(signal.entry_high)
+        ):
+            anchor_px = float((signal.entry_low + signal.entry_high) / 2.0)
+        elif signal.entry_low is not None and math.isfinite(signal.entry_low):
+            anchor_px = float(signal.entry_low)
+        else:
+            anchor_px = float(deduped_bars[0].open)
 
         if is_breakout and entry_price is None:
             trigger_level = float(signal.entry_low)
@@ -306,6 +342,7 @@ class OutcomeEngine:
             first_bar = eval_bars[0]
             entry_date = first_bar.date
             tp_price = float(signal.tp_price)
+            sl_price = float(signal.sl_price)
             if first_bar.open >= tp_price:
                 gap_note = (
                     f"Pre-entry gap-through above TP barrier on trigger day: "
@@ -320,18 +357,14 @@ class OutcomeEngine:
                     outcome_id=outcome_id,
                     notes=notes,
                 )
-            ep = float(first_bar.open) if first_bar.open >= trigger_level else trigger_level
-        else:
-            eval_bars = deduped_bars[: signal.max_holding_days]
-            first_bar = eval_bars[0]
-            entry_date = first_bar.date
-            tp_price = float(signal.tp_price)
-            sl_price = float(signal.sl_price)
-            if entry_price is None:
-                if first_bar.open <= sl_price:
+
+            if first_bar.open >= trigger_level:
+                dev = (first_bar.open - trigger_level) / trigger_level
+                if dev > eff_max_dev:
                     gap_note = (
-                        f"Pre-entry gap-through below SL barrier: "
-                        f"Day 1 open {first_bar.open:,.1f} <= sl_price {sl_price:,.1f}. "
+                        f"Pre-entry breakout gap-through above max deviation: "
+                        f"open {first_bar.open:,.1f} exceeds trigger {trigger_level:,.1f} by "
+                        f"{dev * 100:.2f}% (> {eff_max_dev * 100:.1f}%). "
                         f"Order invalidated before execution."
                     )
                     return _create_invalidated_gap_outcome(
@@ -342,10 +375,13 @@ class OutcomeEngine:
                         outcome_id=outcome_id,
                         notes=notes,
                     )
-                elif first_bar.open >= tp_price:
+                if eff_enforce_band and (
+                    first_bar.open < signal.entry_low or first_bar.open > signal.entry_high
+                ):
                     gap_note = (
-                        f"Pre-entry gap-through above TP barrier: "
-                        f"Day 1 open {first_bar.open:,.1f} >= tp_price {tp_price:,.1f}. "
+                        f"Pre-entry breakout open outside band "
+                        f"[{signal.entry_low:,.1f}, {signal.entry_high:,.1f}]: "
+                        f"trigger day open {first_bar.open:,.1f}. "
                         f"Order invalidated before execution."
                     )
                     return _create_invalidated_gap_outcome(
@@ -357,6 +393,80 @@ class OutcomeEngine:
                         notes=notes,
                     )
                 ep = float(first_bar.open)
+                entry_deviation_pct = dev
+            else:
+                ep = trigger_level
+                entry_deviation_pct = 0.0
+        else:
+            eval_bars = deduped_bars[: signal.max_holding_days]
+            first_bar = eval_bars[0]
+            entry_date = first_bar.date
+            tp_price = float(signal.tp_price)
+            sl_price = float(signal.sl_price)
+            if entry_price is None:
+                cand_px = float(first_bar.open)
+                if cand_px <= sl_price:
+                    gap_note = (
+                        f"Pre-entry gap-through below SL barrier: "
+                        f"Day 1 open {cand_px:,.1f} <= sl_price {sl_price:,.1f}. "
+                        f"Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
+                elif cand_px >= tp_price:
+                    gap_note = (
+                        f"Pre-entry gap-through above TP barrier: "
+                        f"Day 1 open {cand_px:,.1f} >= tp_price {tp_price:,.1f}. "
+                        f"Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
+                dev = abs(cand_px - anchor_px) / anchor_px
+                if dev > eff_max_dev:
+                    gap_note = (
+                        f"Pre-entry open deviation excessive: "
+                        f"Day 1 open {cand_px:,.1f} deviates {dev * 100:.2f}% from reference "
+                        f"{anchor_px:,.1f} (> {eff_max_dev * 100:.1f}%). "
+                        f"Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
+                if eff_enforce_band and (
+                    cand_px < signal.entry_low or cand_px > signal.entry_high
+                ):
+                    gap_note = (
+                        f"Pre-entry open outside band "
+                        f"[{signal.entry_low:,.1f}, {signal.entry_high:,.1f}]: "
+                        f"Day 1 open {cand_px:,.1f}. Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
+                ep = cand_px
+                entry_deviation_pct = (ep - anchor_px) / anchor_px
             else:
                 ep = float(entry_price)
                 if ep <= sl_price or ep >= tp_price:
@@ -373,6 +483,37 @@ class OutcomeEngine:
                         outcome_id=outcome_id,
                         notes=notes,
                     )
+                dev = abs(ep - anchor_px) / anchor_px
+                if dev > eff_max_dev:
+                    gap_note = (
+                        f"Pre-entry price deviation excessive: "
+                        f"entry_price {ep:,.1f} deviates {dev * 100:.2f}% from reference "
+                        f"{anchor_px:,.1f} (> {eff_max_dev * 100:.1f}%). "
+                        f"Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
+                if eff_enforce_band and (ep < signal.entry_low or ep > signal.entry_high):
+                    gap_note = (
+                        f"Pre-entry price outside band "
+                        f"[{signal.entry_low:,.1f}, {signal.entry_high:,.1f}]: "
+                        f"entry_price {ep:,.1f}. Order invalidated before execution."
+                    )
+                    return _create_invalidated_gap_outcome(
+                        signal=signal,
+                        clean_ticker=clean_ticker,
+                        deduped_bars=deduped_bars,
+                        gap_reason=gap_note,
+                        outcome_id=outcome_id,
+                        notes=notes,
+                    )
+                entry_deviation_pct = (ep - anchor_px) / anchor_px
 
         if not math.isfinite(ep) or ep <= 0:
             return None, []
@@ -403,8 +544,12 @@ class OutcomeEngine:
 
         snapshots: list[SignalDailySnapshot] = []
         path_bars: list[DailyBar] = []
-        in_trade_highs: list[float] = []
-        in_trade_lows: list[float] = []
+        in_trade_highs_lower: list[float] = []
+        in_trade_highs_upper: list[float] = []
+        in_trade_highs_proxy: list[float] = []
+        in_trade_lows_lower: list[float] = []
+        in_trade_lows_upper: list[float] = []
+        in_trade_lows_proxy: list[float] = []
 
         outcome_status: Optional[str] = None
         exit_price_val: Optional[float] = None
@@ -419,8 +564,12 @@ class OutcomeEngine:
             is_entry_bar_breakout = k == 1 and is_intraday_breakout_entry
 
             is_exit = False
-            bar_in_trade_high = bar.high
-            bar_in_trade_low = bar.low
+            bar_high_lower = bar.high
+            bar_high_upper = bar.high
+            bar_high_proxy = bar.high
+            bar_low_lower = bar.low
+            bar_low_upper = bar.low
+            bar_low_proxy = bar.low
 
             if is_entry_bar_breakout:
                 if tp_hit and sl_hit:
@@ -429,20 +578,32 @@ class OutcomeEngine:
                         outcome_status = "SL"
                         exit_price_val = sl_price
                         exit_reason_val = "SL"
-                        bar_in_trade_high = ep
-                        bar_in_trade_low = sl_price
+                        bar_high_lower = ep
+                        bar_high_upper = bar.high
+                        bar_high_proxy = ep
+                        bar_low_lower = sl_price
+                        bar_low_upper = sl_price
+                        bar_low_proxy = sl_price
                     elif policy == "optimistic":
                         outcome_status = "TP"
                         exit_price_val = tp_price
                         exit_reason_val = "TP"
-                        bar_in_trade_high = tp_price
-                        bar_in_trade_low = ep
+                        bar_high_lower = tp_price
+                        bar_high_upper = tp_price
+                        bar_high_proxy = tp_price
+                        bar_low_lower = bar.low
+                        bar_low_upper = ep
+                        bar_low_proxy = ep
                     else:
                         outcome_status = "AMBIGUOUS"
                         exit_price_val = float(bar.close)
                         exit_reason_val = "AMBIGUOUS"
-                        bar_in_trade_high = min(bar.high, tp_price)
-                        bar_in_trade_low = max(bar.low, sl_price)
+                        bar_high_lower = min(bar.high, tp_price)
+                        bar_high_upper = min(bar.high, tp_price)
+                        bar_high_proxy = min(bar.high, tp_price)
+                        bar_low_lower = max(bar.low, sl_price)
+                        bar_low_upper = max(bar.low, sl_price)
+                        bar_low_proxy = max(bar.low, sl_price)
                     exit_date_val = bar.date
                     resolved_holding_days = k
 
@@ -453,8 +614,12 @@ class OutcomeEngine:
                     exit_reason_val = "TP"
                     exit_date_val = bar.date
                     resolved_holding_days = k
-                    bar_in_trade_high = tp_price
-                    bar_in_trade_low = ep
+                    bar_high_lower = tp_price
+                    bar_high_upper = tp_price
+                    bar_high_proxy = tp_price
+                    bar_low_lower = bar.low
+                    bar_low_upper = ep
+                    bar_low_proxy = ep
 
                 elif sl_hit:
                     if bar.close <= sl_price:
@@ -464,8 +629,12 @@ class OutcomeEngine:
                         exit_reason_val = "SL"
                         exit_date_val = bar.date
                         resolved_holding_days = k
-                        bar_in_trade_high = bar.high
-                        bar_in_trade_low = sl_price
+                        bar_high_lower = ep
+                        bar_high_upper = bar.high
+                        bar_high_proxy = bar.high
+                        bar_low_lower = sl_price
+                        bar_low_upper = sl_price
+                        bar_low_proxy = sl_price
                     else:
                         if policy == "conservative":
                             is_exit = True
@@ -474,8 +643,12 @@ class OutcomeEngine:
                             exit_reason_val = "SL"
                             exit_date_val = bar.date
                             resolved_holding_days = k
-                            bar_in_trade_high = bar.high
-                            bar_in_trade_low = sl_price
+                            bar_high_lower = ep
+                            bar_high_upper = bar.high
+                            bar_high_proxy = bar.high
+                            bar_low_lower = sl_price
+                            bar_low_upper = sl_price
+                            bar_low_proxy = sl_price
                         elif policy == "ambiguous":
                             is_exit = True
                             outcome_status = "AMBIGUOUS"
@@ -483,12 +656,20 @@ class OutcomeEngine:
                             exit_reason_val = "AMBIGUOUS"
                             exit_date_val = bar.date
                             resolved_holding_days = k
-                            bar_in_trade_high = bar.high
-                            bar_in_trade_low = sl_price
+                            bar_high_lower = min(bar.high, tp_price)
+                            bar_high_upper = min(bar.high, tp_price)
+                            bar_high_proxy = bar.high
+                            bar_low_lower = max(bar.low, sl_price)
+                            bar_low_upper = max(bar.low, sl_price)
+                            bar_low_proxy = sl_price
                         elif policy == "optimistic":
                             is_exit = False
-                            bar_in_trade_high = bar.high
-                            bar_in_trade_low = min(ep, bar.close)
+                            bar_high_lower = max(ep, bar.close)
+                            bar_high_upper = bar.high
+                            bar_high_proxy = bar.high
+                            bar_low_lower = bar.low
+                            bar_low_upper = min(ep, bar.close)
+                            bar_low_proxy = min(ep, bar.close)
 
                 elif k == signal.max_holding_days:
                     is_exit = True
@@ -497,12 +678,20 @@ class OutcomeEngine:
                     exit_reason_val = "EXPIRY"
                     exit_date_val = bar.date
                     resolved_holding_days = k
-                    bar_in_trade_high = bar.high
-                    bar_in_trade_low = min(ep, bar.close)
+                    bar_high_lower = max(ep, bar.close)
+                    bar_high_upper = bar.high
+                    bar_high_proxy = bar.high
+                    bar_low_lower = bar.low
+                    bar_low_upper = min(ep, bar.close)
+                    bar_low_proxy = min(ep, bar.close)
                 else:
                     is_exit = False
-                    bar_in_trade_high = bar.high
-                    bar_in_trade_low = min(ep, bar.close)
+                    bar_high_lower = max(ep, bar.close)
+                    bar_high_upper = bar.high
+                    bar_high_proxy = bar.high
+                    bar_low_lower = bar.low
+                    bar_low_upper = min(ep, bar.close)
+                    bar_low_proxy = min(ep, bar.close)
 
             else:
                 if tp_hit and sl_hit:
@@ -512,34 +701,54 @@ class OutcomeEngine:
                         outcome_status = "TP"
                         exit_price_val = float(bar.open)
                         exit_reason_val = "TP"
-                        bar_in_trade_high = float(bar.open)
-                        bar_in_trade_low = float(bar.open)
+                        bar_high_lower = float(bar.open)
+                        bar_high_upper = float(bar.open)
+                        bar_high_proxy = float(bar.open)
+                        bar_low_lower = float(bar.open)
+                        bar_low_upper = float(bar.open)
+                        bar_low_proxy = float(bar.open)
                     elif bar.open <= sl_price:
                         # Gap-through SL at open
                         outcome_status = "SL"
                         exit_price_val = float(bar.open)
                         exit_reason_val = "SL"
-                        bar_in_trade_high = float(bar.open)
-                        bar_in_trade_low = float(bar.open)
+                        bar_high_lower = float(bar.open)
+                        bar_high_upper = float(bar.open)
+                        bar_high_proxy = float(bar.open)
+                        bar_low_lower = float(bar.open)
+                        bar_low_upper = float(bar.open)
+                        bar_low_proxy = float(bar.open)
                     else:
                         if policy == "conservative":
                             outcome_status = "SL"
                             exit_price_val = sl_price
                             exit_reason_val = "SL"
-                            bar_in_trade_high = float(bar.open)
-                            bar_in_trade_low = sl_price
+                            bar_high_lower = float(bar.open)
+                            bar_high_upper = bar.high
+                            bar_high_proxy = float(bar.open)
+                            bar_low_lower = sl_price
+                            bar_low_upper = sl_price
+                            bar_low_proxy = sl_price
                         elif policy == "optimistic":
                             outcome_status = "TP"
                             exit_price_val = tp_price
                             exit_reason_val = "TP"
-                            bar_in_trade_high = tp_price
-                            bar_in_trade_low = float(bar.open)
+                            bar_high_lower = tp_price
+                            bar_high_upper = tp_price
+                            bar_high_proxy = tp_price
+                            bar_low_lower = bar.low
+                            bar_low_upper = float(bar.open)
+                            bar_low_proxy = float(bar.open)
                         else:
                             outcome_status = "AMBIGUOUS"
                             exit_price_val = float(bar.close)
                             exit_reason_val = "AMBIGUOUS"
-                            bar_in_trade_high = min(bar.high, tp_price)
-                            bar_in_trade_low = max(bar.low, sl_price)
+                            bar_high_lower = min(bar.high, tp_price)
+                            bar_high_upper = min(bar.high, tp_price)
+                            bar_high_proxy = min(bar.high, tp_price)
+                            bar_low_lower = max(bar.low, sl_price)
+                            bar_low_upper = max(bar.low, sl_price)
+                            bar_low_proxy = max(bar.low, sl_price)
                     exit_date_val = bar.date
                     resolved_holding_days = k
 
@@ -550,14 +759,22 @@ class OutcomeEngine:
                         outcome_status = "TP"
                         exit_price_val = float(bar.open)
                         exit_reason_val = "TP"
-                        bar_in_trade_high = float(bar.open)
-                        bar_in_trade_low = float(bar.open)
+                        bar_high_lower = float(bar.open)
+                        bar_high_upper = float(bar.open)
+                        bar_high_proxy = float(bar.open)
+                        bar_low_lower = float(bar.open)
+                        bar_low_upper = float(bar.open)
+                        bar_low_proxy = float(bar.open)
                     else:
                         outcome_status = "TP"
                         exit_price_val = tp_price
                         exit_reason_val = "TP"
-                        bar_in_trade_high = tp_price
-                        bar_in_trade_low = bar.low
+                        bar_high_lower = tp_price
+                        bar_high_upper = tp_price
+                        bar_high_proxy = tp_price
+                        bar_low_lower = bar.low
+                        bar_low_upper = float(bar.open)
+                        bar_low_proxy = bar.low
                     exit_date_val = bar.date
                     resolved_holding_days = k
 
@@ -568,14 +785,22 @@ class OutcomeEngine:
                         outcome_status = "SL"
                         exit_price_val = float(bar.open)
                         exit_reason_val = "SL"
-                        bar_in_trade_high = float(bar.open)
-                        bar_in_trade_low = float(bar.open)
+                        bar_high_lower = float(bar.open)
+                        bar_high_upper = float(bar.open)
+                        bar_high_proxy = float(bar.open)
+                        bar_low_lower = float(bar.open)
+                        bar_low_upper = float(bar.open)
+                        bar_low_proxy = float(bar.open)
                     else:
                         outcome_status = "SL"
                         exit_price_val = sl_price
                         exit_reason_val = "SL"
-                        bar_in_trade_high = bar.high
-                        bar_in_trade_low = sl_price
+                        bar_high_lower = float(bar.open)
+                        bar_high_upper = bar.high
+                        bar_high_proxy = bar.high
+                        bar_low_lower = sl_price
+                        bar_low_upper = sl_price
+                        bar_low_proxy = sl_price
                     exit_date_val = bar.date
                     resolved_holding_days = k
 
@@ -586,20 +811,42 @@ class OutcomeEngine:
                     exit_reason_val = "EXPIRY"
                     exit_date_val = bar.date
                     resolved_holding_days = k
-                    bar_in_trade_high = bar.high
-                    bar_in_trade_low = bar.low
+                    bar_high_lower = bar.high
+                    bar_high_upper = bar.high
+                    bar_high_proxy = bar.high
+                    bar_low_lower = bar.low
+                    bar_low_upper = bar.low
+                    bar_low_proxy = bar.low
                 else:
                     is_exit = False
-                    bar_in_trade_high = bar.high
-                    bar_in_trade_low = bar.low
+                    bar_high_lower = bar.high
+                    bar_high_upper = bar.high
+                    bar_high_proxy = bar.high
+                    bar_low_lower = bar.low
+                    bar_low_upper = bar.low
+                    bar_low_proxy = bar.low
 
-            in_trade_highs.append(bar_in_trade_high)
-            in_trade_lows.append(bar_in_trade_low)
+            in_trade_highs_lower.append(bar_high_lower)
+            in_trade_highs_upper.append(bar_high_upper)
+            in_trade_highs_proxy.append(bar_high_proxy)
+            in_trade_lows_lower.append(bar_low_lower)
+            in_trade_lows_upper.append(bar_low_upper)
+            in_trade_lows_proxy.append(bar_low_proxy)
 
-            highest_in_trade = max(in_trade_highs)
-            lowest_in_trade = min(in_trade_lows)
-            mfe_so_far = max(0.0, (highest_in_trade - ep) / ep)
-            mae_so_far = min(0.0, (lowest_in_trade - ep) / ep)
+            highest_in_trade_proxy = max(in_trade_highs_proxy)
+            lowest_in_trade_proxy = min(in_trade_lows_proxy)
+            mfe_so_far = max(0.0, (highest_in_trade_proxy - ep) / ep)
+            mae_so_far = min(0.0, (lowest_in_trade_proxy - ep) / ep)
+
+            highest_in_trade_lower = max(in_trade_highs_lower)
+            highest_in_trade_upper = max(in_trade_highs_upper)
+            lowest_in_trade_lower = min(in_trade_lows_lower)
+            lowest_in_trade_upper = min(in_trade_lows_upper)
+            mfe_min_so_far = max(0.0, (highest_in_trade_lower - ep) / ep)
+            mfe_max_so_far = max(0.0, (highest_in_trade_upper - ep) / ep)
+            mae_min_so_far = min(0.0, (lowest_in_trade_lower - ep) / ep)
+            mae_max_so_far = min(0.0, (lowest_in_trade_upper - ep) / ep)
+
             return_from_entry = (
                 (exit_price_val - ep) / ep
                 if is_exit and exit_price_val is not None
@@ -618,22 +865,41 @@ class OutcomeEngine:
                     low_price=float(bar.low),
                     mfe_so_far=float(mfe_so_far),
                     mae_so_far=float(mae_so_far),
+                    mfe_min_so_far=float(mfe_min_so_far),
+                    mfe_max_so_far=float(mfe_max_so_far),
+                    mae_min_so_far=float(mae_min_so_far),
+                    mae_max_so_far=float(mae_max_so_far),
                 )
             )
 
             if is_exit:
                 break
 
-        highest_high = max(in_trade_highs)
-        lowest_low = min(in_trade_lows)
-        mfe = max(0.0, (highest_high - ep) / ep)
-        mae = min(0.0, (lowest_low - ep) / ep)
-        mfe_price = max(0.0, highest_high - ep)
-        mae_price = min(0.0, lowest_low - ep)
+        highest_high_proxy = max(in_trade_highs_proxy)
+        lowest_low_proxy = min(in_trade_lows_proxy)
+        mfe = max(0.0, (highest_high_proxy - ep) / ep)
+        mae = min(0.0, (lowest_low_proxy - ep) / ep)
+        mfe_price = max(0.0, highest_high_proxy - ep)
+        mae_price = min(0.0, lowest_low_proxy - ep)
+
+        highest_high_lower = max(in_trade_highs_lower)
+        highest_high_upper = max(in_trade_highs_upper)
+        lowest_low_lower = min(in_trade_lows_lower)
+        lowest_low_upper = min(in_trade_lows_upper)
+
+        mfe_min = max(0.0, (highest_high_lower - ep) / ep)
+        mfe_max = max(0.0, (highest_high_upper - ep) / ep)
+        mae_min = min(0.0, (lowest_low_lower - ep) / ep)
+        mae_max = min(0.0, (lowest_low_upper - ep) / ep)
+
+        mfe_price_min = max(0.0, highest_high_lower - ep)
+        mfe_price_max = max(0.0, highest_high_upper - ep)
+        mae_price_min = min(0.0, lowest_low_lower - ep)
+        mae_price_max = min(0.0, lowest_low_upper - ep)
 
         # Time-to-peak: 1-based holding day index when in-trade peak occurred
         time_to_peak = next(
-            i for i, h in enumerate(in_trade_highs, start=1) if h == highest_high
+            i for i, h in enumerate(in_trade_highs_proxy, start=1) if h == highest_high_proxy
         )
         time_to_tp = resolved_holding_days if outcome_status == "TP" else None
         time_to_sl = resolved_holding_days if outcome_status == "SL" else None
@@ -652,6 +918,15 @@ class OutcomeEngine:
             "mae": mae,
             "mfe_price": mfe_price,
             "mae_price": mae_price,
+            "mfe_min": mfe_min,
+            "mfe_max": mfe_max,
+            "mae_min": mae_min,
+            "mae_max": mae_max,
+            "mfe_price_min": mfe_price_min,
+            "mfe_price_max": mfe_price_max,
+            "mae_price_min": mae_price_min,
+            "mae_price_max": mae_price_max,
+            "entry_deviation_pct": entry_deviation_pct,
             "time_to_peak": time_to_peak,
             "time_to_tp": time_to_tp,
             "time_to_sl": time_to_sl,
@@ -726,6 +1001,8 @@ class OutcomeEngine:
         save: bool = False,
         ambiguity_policy: Optional[Union[str, AmbiguityPolicy]] = None,
         force_recompute: bool = False,
+        enforce_entry_band: Optional[bool] = None,
+        max_entry_deviation_pct: Optional[float] = None,
     ) -> tuple[Optional[SignalOutcomeRecord], list[SignalDailySnapshot]]:
         """Resolve a specific signal from database repositories."""
         sig_repo = self._get_signal_repo()
@@ -763,6 +1040,8 @@ class OutcomeEngine:
             ambiguity_policy=ambiguity_policy,
             outcome_id=outcome_id,
             notes=existing_notes,
+            enforce_entry_band=enforce_entry_band,
+            max_entry_deviation_pct=max_entry_deviation_pct,
         )
 
         if outcome is not None and save:
@@ -782,6 +1061,8 @@ class OutcomeEngine:
         save: bool = True,
         ambiguity_policy: Optional[Union[str, AmbiguityPolicy]] = None,
         force_recompute: bool = False,
+        enforce_entry_band: Optional[bool] = None,
+        max_entry_deviation_pct: Optional[float] = None,
     ) -> list[tuple[SignalOutcomeRecord, list[SignalDailySnapshot]]]:
         """Resolve all active and un-evaluated signals against market bars."""
         sig_repo = self._get_signal_repo()
@@ -826,6 +1107,8 @@ class OutcomeEngine:
                 ambiguity_policy=ambiguity_policy,
                 outcome_id=outcome_id,
                 notes=existing_notes,
+                enforce_entry_band=enforce_entry_band,
+                max_entry_deviation_pct=max_entry_deviation_pct,
             )
 
             if outcome is not None:

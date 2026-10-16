@@ -218,6 +218,15 @@ class OutcomeRepository:
                     ("horizon_end_price", "REAL"),
                     ("horizon_end_return", "REAL"),
                     ("is_full_horizon_complete", "INTEGER DEFAULT 0"),
+                    ("mfe_min", "REAL"),
+                    ("mfe_max", "REAL"),
+                    ("mae_min", "REAL"),
+                    ("mae_max", "REAL"),
+                    ("mfe_price_min", "REAL"),
+                    ("mfe_price_max", "REAL"),
+                    ("mae_price_min", "REAL"),
+                    ("mae_price_max", "REAL"),
+                    ("entry_deviation_pct", "REAL"),
                 ]
                 for c_name, c_type in new_cols:
                     if c_name not in cols_info:
@@ -261,10 +270,31 @@ class OutcomeRepository:
                         low_price REAL NOT NULL,
                         mfe_so_far REAL NOT NULL,
                         mae_so_far REAL NOT NULL,
+                        mfe_min_so_far REAL,
+                        mfe_max_so_far REAL,
+                        mae_min_so_far REAL,
+                        mae_max_so_far REAL,
                         UNIQUE (signal_id, snapshot_date)
                     );
                     """
                 )
+                snap_cols = {
+                    row[1]: row
+                    for row in conn.execute(
+                        "PRAGMA table_info(signal_snapshots_daily);"
+                    ).fetchall()
+                }
+                new_snap_cols = [
+                    ("mfe_min_so_far", "REAL"),
+                    ("mfe_max_so_far", "REAL"),
+                    ("mae_min_so_far", "REAL"),
+                    ("mae_max_so_far", "REAL"),
+                ]
+                for sc_name, sc_type in new_snap_cols:
+                    if sc_name not in snap_cols:
+                        conn.execute(
+                            f"ALTER TABLE signal_snapshots_daily ADD COLUMN {sc_name} {sc_type};"
+                        )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_snapshots_signal_date "
                     "ON signal_snapshots_daily(signal_id, snapshot_date);"
@@ -349,6 +379,15 @@ class OutcomeRepository:
             horizon_end_price=_get_float("horizon_end_price"),
             horizon_end_return=_get_float("horizon_end_return"),
             is_full_horizon_complete=is_fhc,
+            mfe_min=_get_float("mfe_min"),
+            mfe_max=_get_float("mfe_max"),
+            mae_min=_get_float("mae_min"),
+            mae_max=_get_float("mae_max"),
+            mfe_price_min=_get_float("mfe_price_min"),
+            mfe_price_max=_get_float("mfe_price_max"),
+            mae_price_min=_get_float("mae_price_min"),
+            mae_price_max=_get_float("mae_price_max"),
+            entry_deviation_pct=_get_float("entry_deviation_pct"),
         )
 
     @staticmethod
@@ -392,6 +431,15 @@ class OutcomeRepository:
             rec.horizon_end_price,
             rec.horizon_end_return,
             1 if rec.is_full_horizon_complete else 0,
+            rec.mfe_min,
+            rec.mfe_max,
+            rec.mae_min,
+            rec.mae_max,
+            rec.mfe_price_min,
+            rec.mfe_price_max,
+            rec.mae_price_min,
+            rec.mae_price_max,
+            rec.entry_deviation_pct,
         )
 
     _UPSERT_OUTCOME_SQL = """
@@ -405,12 +453,14 @@ class OutcomeRepository:
             observation_end_date, full_horizon_mfe, full_horizon_mae,
             full_horizon_mfe_price, full_horizon_mae_price, full_horizon_time_to_peak,
             horizon_end_date, horizon_end_price, horizon_end_return,
-            is_full_horizon_complete
+            is_full_horizon_complete, mfe_min, mfe_max, mae_min, mae_max,
+            mfe_price_min, mfe_price_max, mae_price_min, mae_price_max,
+            entry_deviation_pct
         ) VALUES (
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-            ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
         ON CONFLICT(signal_id) DO UPDATE SET
             entry_date = excluded.entry_date,
@@ -446,10 +496,20 @@ class OutcomeRepository:
             horizon_end_date = excluded.horizon_end_date,
             horizon_end_price = excluded.horizon_end_price,
             horizon_end_return = excluded.horizon_end_return,
-            is_full_horizon_complete = excluded.is_full_horizon_complete;
+            is_full_horizon_complete = excluded.is_full_horizon_complete,
+            mfe_min = excluded.mfe_min,
+            mfe_max = excluded.mfe_max,
+            mae_min = excluded.mae_min,
+            mae_max = excluded.mae_max,
+            mfe_price_min = excluded.mfe_price_min,
+            mfe_price_max = excluded.mfe_price_max,
+            mae_price_min = excluded.mae_price_min,
+            mae_price_max = excluded.mae_price_max,
+            entry_deviation_pct = excluded.entry_deviation_pct;
     """
 
     def _row_to_snapshot(self, row: sqlite3.Row) -> SignalDailySnapshot:
+        keys = set(row.keys())
         return SignalDailySnapshot(
             snapshot_id=row["snapshot_id"],
             signal_id=row["signal_id"],
@@ -461,6 +521,26 @@ class OutcomeRepository:
             low_price=float(row["low_price"]),
             mfe_so_far=float(row["mfe_so_far"]),
             mae_so_far=float(row["mae_so_far"]),
+            mfe_min_so_far=(
+                float(row["mfe_min_so_far"])
+                if "mfe_min_so_far" in keys and row["mfe_min_so_far"] is not None
+                else None
+            ),
+            mfe_max_so_far=(
+                float(row["mfe_max_so_far"])
+                if "mfe_max_so_far" in keys and row["mfe_max_so_far"] is not None
+                else None
+            ),
+            mae_min_so_far=(
+                float(row["mae_min_so_far"])
+                if "mae_min_so_far" in keys and row["mae_min_so_far"] is not None
+                else None
+            ),
+            mae_max_so_far=(
+                float(row["mae_max_so_far"])
+                if "mae_max_so_far" in keys and row["mae_max_so_far"] is not None
+                else None
+            ),
         )
 
     def delete_snapshots_by_signal_id(self, signal_id: str) -> None:
@@ -645,8 +725,9 @@ class OutcomeRepository:
                         INSERT INTO signal_snapshots_daily (
                             snapshot_id, signal_id, snapshot_date, holding_day,
                             close_price, return_from_entry, high_price, low_price,
-                            mfe_so_far, mae_so_far
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            mfe_so_far, mae_so_far, mfe_min_so_far, mfe_max_so_far,
+                            mae_min_so_far, mae_max_so_far
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(signal_id, snapshot_date) DO UPDATE SET
                             holding_day = excluded.holding_day,
                             close_price = excluded.close_price,
@@ -654,7 +735,11 @@ class OutcomeRepository:
                             high_price = excluded.high_price,
                             low_price = excluded.low_price,
                             mfe_so_far = excluded.mfe_so_far,
-                            mae_so_far = excluded.mae_so_far;
+                            mae_so_far = excluded.mae_so_far,
+                            mfe_min_so_far = excluded.mfe_min_so_far,
+                            mfe_max_so_far = excluded.mfe_max_so_far,
+                            mae_min_so_far = excluded.mae_min_so_far,
+                            mae_max_so_far = excluded.mae_max_so_far;
                         """,
                         (
                             s.snapshot_id,
@@ -667,6 +752,10 @@ class OutcomeRepository:
                             s.low_price,
                             s.mfe_so_far,
                             s.mae_so_far,
+                            s.mfe_min_so_far,
+                            s.mfe_max_so_far,
+                            s.mae_min_so_far,
+                            s.mae_max_so_far,
                         ),
                     )
         finally:

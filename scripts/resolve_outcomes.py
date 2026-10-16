@@ -80,6 +80,8 @@ def run_resolve_outcomes(
     exclude_ambiguous: bool = False,
     exclude_unfilled: bool = False,
     force_recompute: bool = False,
+    enforce_entry_band: bool = False,
+    max_entry_deviation_pct: Optional[float] = None,
 ) -> int:
     db_url = database_url or settings.database_url
     bar_repo = DailyBarRepository(db_url)
@@ -91,6 +93,8 @@ def run_resolve_outcomes(
         signal_repo=sig_repo,
         outcome_repo=out_repo,
         ambiguity_policy=ambiguity_policy,
+        enforce_entry_band=enforce_entry_band,
+        max_entry_deviation_pct=max_entry_deviation_pct,
     )
 
     results = engine.resolve_all_signals(
@@ -100,6 +104,8 @@ def run_resolve_outcomes(
         save=save_db,
         ambiguity_policy=ambiguity_policy,
         force_recompute=force_recompute,
+        enforce_entry_band=enforce_entry_band,
+        max_entry_deviation_pct=max_entry_deviation_pct,
     )
 
     outcomes = [r[0] for r in results]
@@ -210,6 +216,17 @@ def main() -> None:
         action="store_true",
         help="Recompute all outcomes even if previously resolved.",
     )
+    parser.add_argument(
+        "--enforce-entry-band",
+        action="store_true",
+        help="Strictly enforce that open must be within [entry_low, entry_high].",
+    )
+    parser.add_argument(
+        "--max-entry-deviation-pct",
+        type=float,
+        default=None,
+        help="Max allowable deviation percentage of open price from anchor (default 0.05).",
+    )
 
     args = parser.parse_args()
     parsed_date = _parse_date(args.as_of_date)
@@ -227,6 +244,8 @@ def main() -> None:
             exclude_ambiguous=args.exclude_ambiguous,
             exclude_unfilled=args.exclude_unfilled,
             force_recompute=args.force_recompute,
+            enforce_entry_band=args.enforce_entry_band,
+            max_entry_deviation_pct=args.max_entry_deviation_pct,
         )
     )
 

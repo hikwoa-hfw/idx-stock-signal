@@ -79,7 +79,38 @@ CREATE TABLE IF NOT EXISTS outcomes_daily (
     horizon_end_price REAL,
     horizon_end_return REAL,
     is_full_horizon_complete INTEGER DEFAULT 0,
+    mfe_min REAL,
+    mfe_max REAL,
+    mae_min REAL,
+    mae_max REAL,
+    mfe_price_min REAL,
+    mfe_price_max REAL,
+    mae_price_min REAL,
+    mae_price_max REAL,
+    entry_deviation_pct REAL,
     UNIQUE (signal_id)
+);
+```
+
+### Schema Definition (`signal_snapshots_daily`)
+
+```sql
+CREATE TABLE IF NOT EXISTS signal_snapshots_daily (
+    snapshot_id TEXT PRIMARY KEY,
+    signal_id TEXT NOT NULL,
+    snapshot_date TEXT NOT NULL,
+    holding_day INTEGER NOT NULL,
+    close_price REAL NOT NULL,
+    return_from_entry REAL NOT NULL,
+    high_price REAL NOT NULL,
+    low_price REAL NOT NULL,
+    mfe_so_far REAL NOT NULL,
+    mae_so_far REAL NOT NULL,
+    mfe_min_so_far REAL,
+    mfe_max_so_far REAL,
+    mae_min_so_far REAL,
+    mae_max_so_far REAL,
+    UNIQUE (signal_id, snapshot_date)
 );
 ```
 
@@ -98,11 +129,20 @@ CREATE TABLE IF NOT EXISTS outcomes_daily (
 | `realized_return` | `REAL` | `Optional[float]` | Scope A | Gross realized return: `(exit_price - entry_price) / entry_price` |
 | `gross_return` | `REAL` | `Optional[float]` | Scope A | Synonymous with `realized_return` |
 | `holding_days` | `INTEGER` | `int` | Scope A | Trading days held; strictly `0` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
-| `mfe` | `REAL` | `Optional[float]` | Scope A | In-trade MFE clamped `[0.0, inf)`; `NULL` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
-| `mae` | `REAL` | `Optional[float]` | Scope A | In-trade MAE clamped `(-inf, 0.0]`; `NULL` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` |
+| `mfe` | `REAL` | `Optional[float]` | Scope A | Deterministic conservative in-trade MFE proxy clamped `[0.0, inf)` |
+| `mae` | `REAL` | `Optional[float]` | Scope A | Deterministic conservative in-trade MAE proxy clamped `(-inf, 0.0]` |
 | `mfe_price` | `REAL` | `Optional[float]` | Scope A | In-trade MFE in points: `max(0.0, max(High) - P_entry)` |
 | `mae_price` | `REAL` | `Optional[float]` | Scope A | In-trade MAE in points: `min(0.0, min(Low) - P_entry)` |
-| `time_to_peak` | `INTEGER` | `Optional[int]` | Scope A | Holding day index of in-trade peak high |
+| `mfe_min` | `REAL` | `Optional[float]` | Scope A | Rigorous lower bound of in-trade MFE (assuming exit barrier touched before daily extreme) |
+| `mfe_max` | `REAL` | `Optional[float]` | Scope A | Rigorous upper bound of in-trade MFE (assuming daily extreme touched before exit barrier) |
+| `mae_min` | `REAL` | `Optional[float]` | Scope A | Rigorous lower bound of in-trade MAE (worst-case adverse excursion before exit) |
+| `mae_max` | `REAL` | `Optional[float]` | Scope A | Rigorous upper bound of in-trade MAE (best-case adverse excursion, exit barrier touched first) |
+| `mfe_price_min` | `REAL` | `Optional[float]` | Scope A | In-trade MFE lower bound in price points |
+| `mfe_price_max` | `REAL` | `Optional[float]` | Scope A | In-trade MFE upper bound in price points |
+| `mae_price_min` | `REAL` | `Optional[float]` | Scope A | In-trade MAE lower bound in price points |
+| `mae_price_max` | `REAL` | `Optional[float]` | Scope A | In-trade MAE upper bound in price points |
+| `entry_deviation_pct` | `REAL` | `Optional[float]` | Scope A | Percentage deviation of fill price from planned anchor price: `(ep - anchor) / anchor` |
+| `time_to_peak` | `INTEGER` | `Optional[int]` | Scope A | Holding day index of in-trade peak high under conservative proxy |
 | `time_to_tp` | `INTEGER` | `Optional[int]` | Scope A | Holding day TP was touched (`NULL` if not `TP`) |
 | `time_to_sl` | `INTEGER` | `Optional[int]` | Scope A | Holding day SL was touched (`NULL` if not `SL`) |
 | `return_after_fees` | `REAL` | `Optional[float]` | Scope A | Realized return after brokerage fees (buy 0.15%, sell 0.25%) |
@@ -235,11 +275,42 @@ When a position hits Take Profit or Stop Loss intraday, the daily candle continu
   - *Remediated In-Trade MAE*: **-6.67%** (strictly bounded by SL exit).
   - *Scope B Horizon MAE*: **-35.00%** (captured post-exit collapse across full horizon).
 
-#### Deterministic Conservative Daily-Bar Proxy Semantics
-Because daily OHLC bars lack tick-by-tick timestamp ordering, the engine implements a clear, deterministic conservative daily-bar proxy:
-1. **Take-Profit Exit**: In-trade MFE is strictly bounded at $P_{\text{TP}}$. MAE conservatively reflects the candle low ($Low_N$) as a potential intra-candle adverse excursion prior to hitting TP. Realized return is strictly determined by $P_{\text{TP}}$, decoupled from any subsequent post-barrier movement.
-2. **Stop-Loss Exit**: In-trade MAE is strictly bounded at $P_{\text{SL}}$. MFE reflects the candle high ($High_N$) as a potential favorable excursion prior to stopping out. Realized return is strictly determined by $P_{\text{SL}}$, decoupled from any subsequent post-barrier movement.
-3. Sub-daily tick ordering is not claimed; the proxy guarantees conservative risk measurement while keeping trading metrics strictly isolated from post-exit drift.
+#### Deterministic Conservative Daily-Bar Proxy Semantics & Explicit Excursion Bounds
+Because daily OHLC bars lack tick-by-tick timestamp ordering, the engine avoids claiming false tick precision and establishes mathematically bounded intervals alongside a deterministic conservative proxy:
+
+1. **Explicit Excursion Bounds (`[min, max]`)**:
+   - **Take-Profit Exit**:
+     - $\text{MFE}_{\min} = \text{MFE}_{\max} = (P_{\text{TP}} - P_{\text{entry}}) / P_{\text{entry}}$ (exact, because position terminated at TP barrier).
+     - $\text{MAE}_{\min} = (\min(Low_{1\dots N}) - P_{\text{entry}}) / P_{\text{entry}}$ (worst-case: low visited before TP).
+     - $\text{MAE}_{\max} = (\min(Low_{1\dots N-1} \cup \{Open_N\}) - P_{\text{entry}}) / P_{\text{entry}}$ (best-case: TP visited before candle low).
+   - **Stop-Loss Exit**:
+     - $\text{MAE}_{\min} = \text{MAE}_{\max} = (P_{\text{SL}} - P_{\text{entry}}) / P_{\text{entry}}$ (exact, because position terminated at SL barrier).
+     - $\text{MFE}_{\min} = (\max(High_{1\dots N-1} \cup \{Open_N\}) - P_{\text{entry}}) / P_{\text{entry}}$ (conservative: SL visited before candle high).
+     - $\text{MFE}_{\max} = (\max(High_{1\dots N}) - P_{\text{entry}}) / P_{\text{entry}}$ (optimistic: high visited before SL).
+   - **Gap Exit at Open**:
+     - On opening gap exit, trading occurred at $Open_N$, so exit-day in-trade high and low are identically $Open_N$. Both MFE and MAE bounds collapse to exact values ($\text{MFE}_{\min} = \text{MFE}_{\max}$, $\text{MAE}_{\min} = \text{MAE}_{\max}$).
+   - **Full Expiry**:
+     - Position held through close of day $N$, so $\text{MFE}_{\min} = \text{MFE}_{\max}$ and $\text{MAE}_{\min} = \text{MAE}_{\max}$.
+
+2. **Deterministic Conservative Proxy**:
+   - `mfe` and `mae` store the conservative deterministic proxy values without claiming sub-daily tick precision.
+   - `time_to_peak` records the 1-based holding day index when the proxy peak occurred.
+   - Exact invariant maintained: $\text{MFE}_{\min} \le \text{MFE} \le \text{MFE}_{\max}$ and $\text{MAE}_{\min} \le \text{MAE} \le \text{MAE}_{\max}$.
+
+3. **Daily Snapshot Parity**:
+   - `signal_snapshots_daily` tracks `mfe_so_far`, `mae_so_far`, `mfe_min_so_far`, `mfe_max_so_far`, `mae_min_so_far`, and `mae_max_so_far`.
+   - On the terminal holding day ($k = N$), snapshot metrics identically match the final outcome record, eliminating any discrepancy between daily snapshots and final stored outcomes.
+
+4. **Market-On-Open (MOO) Execution & Entry Price Validation Contract**:
+   - Standard execution contract defines Market-On-Open (MOO) entry at Day 1 $Open$, provided $Open$ is within `max_entry_deviation_pct` (default 5.0%) of the planned anchor price ($P_{\text{ref}}$ or entry band midpoint).
+   - Optional strict band enforcement (`enforce_entry_band = False` by default; when `True`, requires $Open \in [P_{\text{entry\_low}}, P_{\text{entry\_high}}]$).
+   - If Day 1 open exceeds `max_entry_deviation_pct` from anchor, or breaches protective barriers ($Open \le SL$ or $Open \ge TP$), the order is immediately cancelled before execution as `INVALIDATED_GAP` with NULL Scope A trade metrics.
+   - For breakout orders, trigger day opening at or above TP ($Open \ge P_{\text{TP}}$), or opening above trigger level with excess deviation ($dev > eff\_max\_dev$), or opening outside entry band when `enforce_entry_band = True`, is similarly invalidated as `INVALIDATED_GAP`.
+   - Filled trades record `entry_deviation_pct = (ep - anchor) / anchor` for execution quality analysis.
+   - **Historical Impact Analysis across 31 Matured Signals**:
+     - *Baseline MOO Policy (`enforce_entry_band = False`)*: 27 filled trades, 0 invalidated for deviation, 3 invalidated for barrier breach (`BYAN`, `ASII`, `BBCA`), 1 `UNFILLED_EXPIRED` (`BBCA`). All 27 filled trades had Day 1 open within $\pm 0.88\%$ of anchor.
+     - *Strict Band Enforcement (`enforce_entry_band = True`)*: Exactly 4 historical records are affected because Day 1 open deviated by 1 tick outside the recommended band: `DEWA` 2026-09-15 (-0.50%), `BMTR` 2026-09-01 (-0.88%), `ADHI` 2026-08-18 (-0.71%), and `BMTR` 2026-08-03 (+0.88%). Under strict enforcement, these 4 records convert to `INVALIDATED_GAP`, reducing filled sample size from 27 to 23. Under baseline production MOO, they remain filled with recorded deviation.
+
 
 ### Defect 3: Unfilled Breakout Signal Semantics
 - **`BBCA` (Signal Date: 2026-08-03)**:
@@ -334,8 +405,8 @@ Every record below has been recomputed and verified against underlying price bar
 ## 7. Verification Record & Test Suite Results
 
 - **Linter (`ruff check .`)**: 100% clean, 0 errors, all lines under 100 characters.
-- **Pytest Suite**: Complete test suite passed (430 passing tests, 100% success rate).
-- **Audit Verification (`scripts/audit_historical_outcomes.py`)**: 31 records independently recomputed and verified against underlying price bars. 0 violations.
+- **Pytest Suite**: Complete test suite passed (437 passing tests, 100% success rate).
+- **Audit Verification (`scripts/audit_historical_outcomes.py`)**: 31 records independently recomputed and verified against underlying price bars. Invariants, dual-bound excursions (`mfe_min <= mfe <= mfe_max`, `mae_min <= mae <= mae_max`), entry deviation metrics, snapshot parity, and fees/slippage all passed 100% with 0 violations.
 - **Replay Idempotency**: `scripts/resolve_outcomes.py --force-recompute --save-db` executed repeatedly yields identical DB state without duplicates or unexpected mutations.
 
 ---
@@ -343,47 +414,35 @@ Every record below has been recomputed and verified against underlying price bar
 ## 8. Summary of Files Changed & Schema Migrations
 
 1. `python/common/types.py`:
-   - Added `INVALIDATED_GAP` to permitted `outcome_status` literal.
-   - Added fields: `gross_return`, `return_after_fees`, `return_after_fees_and_slippage`, `trigger_price`, `observation_end_date`, `full_horizon_mfe`, `full_horizon_mae`, `full_horizon_mfe_price`, `full_horizon_mae_price`, `full_horizon_time_to_peak`, `horizon_end_date`, `horizon_end_price`, `horizon_end_return`, `is_full_horizon_complete`.
-   - Made `entry_date`, `entry_price`, `mfe`, `mae` Optional (strictly nullable for `UNFILLED_EXPIRED` and `INVALIDATED_GAP`).
-   - Updated lifecycle validators to enforce `NULL` trade performance metrics and `holding_days = 0` for `UNFILLED_EXPIRED` and `INVALIDATED_GAP` while allowing populated trigger and opportunity metrics.
+   - Added explicit excursion bound fields to `SignalOutcomeRecord`: `mfe_min`, `mfe_max`, `mae_min`, `mae_max`, `mfe_price_min`, `mfe_price_max`, `mae_price_min`, `mae_price_max`, `entry_deviation_pct`.
+   - Added snapshot excursion bound fields to `SignalDailySnapshot`: `mfe_min_so_far`, `mfe_max_so_far`, `mae_min_so_far`, `mae_max_so_far`.
+   - Updated lifecycle validators to enforce NULL excursion bounds for `INVALIDATED_GAP` and validate finite floats.
 2. `python/outcomes/repository.py`:
-   - Implemented automated SQLite table migration recreating table if legacy columns had `NOT NULL` on `entry_date`, `entry_price`, `mfe`, or `mae`, and added all 14 new columns.
-   - Updated `_init_db` constraint and `_row_to_outcome` fallback to incorporate `INVALIDATED_GAP`.
-   - Added automatic snapshot cleanup in `save_outcome` and `save_outcomes` when `rec.outcome_status in ("UNFILLED_EXPIRED", "INVALIDATED_GAP")`, and exposed `delete_snapshots_by_signal_id`.
-   - Updated `_outcome_to_db_params` and `_row_to_outcome` for full 38-column SQLite mapping.
+   - Updated SQLite migrations for `outcomes_daily` and `signal_snapshots_daily` to add all excursion bound columns and `entry_deviation_pct`.
+   - Updated row-to-model and model-to-params mapping in `_UPSERT_OUTCOME_SQL`, `_row_to_outcome`, `_row_to_snapshot`, and `save_snapshots`.
 3. `python/outcomes/engine.py`:
-   - Decoupled Scope A (in-trade bounded) from Scope B (full horizon opportunity).
-   - Bounded post-entry gap exits at open to `bar.open` and intraday TP/SL to barriers, eliminating post-exit price extreme leakage.
-   - Implemented pre-entry gap invalidation: Day 1 open beyond SL ($Open \le SL$) or TP ($Open \ge TP$) produces `INVALIDATED_GAP` with `entry_status='UNFILLED'`, `holding_days=0`, and `NULL` trade fields, while preserving Scope B counterfactual trajectory anchored to planned reference price.
-   - For breakout orders: opening between trigger and TP fills at open; opening at or above TP invalidates as `INVALIDATED_GAP`.
-   - Clarified deterministic conservative daily-bar proxy semantics for intraday TP/SL excursions.
-   - Reconciled execution fees (0.15% buy, 0.25% sell) and 10 bps round-trip slippage (5 bps per side), unifying friction with EV Gate (50 bps).
-   - Added `force_recompute` option to `resolve_all_signals` and ensured snapshot cleanup.
-4. `python/models/evaluation.py`:
-   - Updated `compute_trading_metrics` and `evaluate_from_outcomes` to exclude `INVALIDATED_GAP` outcomes from trade sample size, win rate, and expectancy.
-5. `python/outcomes/dataset.py`:
-   - Guarded date formatting on `entry_date` and exported all new opportunity and cost fields.
-   - Excluded `INVALIDATED_GAP` when `exclude_unfilled=True`.
-6. `scripts/resolve_outcomes.py`:
-   - Added `--force-recompute` option and guarded string formatting for nullable trade metrics.
-   - Added `INVALIDATED_GAP` to resolved outcome distribution summary.
-7. `scripts/audit_historical_outcomes.py`:
-   - Comprehensive audit script validating bounded in-trade excursions, gap open exits, NULL unfilled trade metrics (both `UNFILLED_EXPIRED` and `INVALIDATED_GAP`), snapshot counts (0 for unfilled, holding_days for filled), and fee/slippage alignment across all 31 historical records.
-8. `tests/unit/test_outcomes.py` & `tests/integration/test_outcome_pipeline.py`:
-   - Updated existing tests to reflect bounded in-trade excursions.
-   - Added comprehensive regression tests for pre-entry gap invalidations, evaluation metric exclusions, lifecycle validation, exit proxy excursions, post-entry Day 2 gap downs, and exact recomputations for historical ASII, BBCA, and BYAN. (431 project tests passing).
+   - Added `enforce_entry_band: bool = False` and `max_entry_deviation_pct` to `OutcomeEngine.__init__`, `evaluate_signal`, `resolve_signal_by_id`, and `resolve_all_signals`.
+   - Implemented Market-On-Open (MOO) entry validation against anchor price: opens exceeding `max_entry_deviation_pct` (5%) or breaching barriers are cancelled as `INVALIDATED_GAP`.
+   - Added optional strict entry band enforcement (`enforce_entry_band`).
+   - Implemented dual-bound excursion tracking (`in_trade_highs_lower`, `in_trade_highs_upper`, `in_trade_lows_lower`, `in_trade_lows_upper`) across all exit types (TP, SL, open gaps, collisions, expiry).
+   - Populated `mfe_min_so_far`, `mfe_max_so_far`, `mae_min_so_far`, `mae_max_so_far` in daily snapshots guaranteeing exact parity with final outcome records.
+4. `scripts/resolve_outcomes.py`:
+   - Added `--enforce-entry-band` and `--max-entry-deviation-pct` CLI options.
+5. `scripts/audit_historical_outcomes.py`:
+   - Added comprehensive assertions for `mfe_min <= mfe <= mfe_max`, `mae_min <= mae <= mae_max`, presence of `entry_deviation_pct` on filled trades, and exact snapshot-to-outcome metric parity on final holding days.
+6. `tests/unit/test_outcomes.py`:
+   - Added unit tests for TP touched excursion bounds, SL touched excursion bounds, open gap exits, intraday breakout entry vs excessive open gap, same-candle collisions across conservative/optimistic/ambiguous policies, and immediate entry band enforcement / max deviation scenarios (54 tests in file, all passing).
 
 ---
 
 ## 9. Decision Requested & Concluding Assessment
 
 1. **Pre-entry gap behavior is corrected and consistently represented**:
-   - **Conclusion: YES**. Pre-entry gaps on Day 1 opening beyond SL or TP are strictly distinguished from post-entry gaps. They are assigned `outcome_status = 'INVALIDATED_GAP'`, `entry_status = 'UNFILLED'`, `holding_days = 0`, and all Scope A trade metrics are strictly `NULL`. Counterfactual opportunity tracking (Scope B) remains cleanly preserved relative to planned reference anchor.
+   - **Conclusion: YES**. Pre-entry gaps on Day 1 opening beyond SL or TP, or exceeding `max_entry_deviation_pct` (5.0%) from anchor, are strictly distinguished from post-entry gaps. They are assigned `outcome_status = 'INVALIDATED_GAP'`, `entry_status = 'UNFILLED'`, `holding_days = 0`, and all Scope A trade metrics are strictly `NULL`. Counterfactual opportunity tracking (Scope B) remains cleanly preserved relative to planned reference anchor.
 
 2. **Exit-day excursion values have defensible and clearly documented semantics**:
-   - **Conclusion: YES**. A deterministic conservative daily-bar proxy is enforced: intraday TP bounds in-trade MFE at $P_{\text{TP}}$ while MAE captures candle low as potential pre-TP adverse excursion; intraday SL bounds in-trade MAE at $P_{\text{SL}}$ while MFE captures candle high as potential pre-SL favorable excursion; gap open exits bound both MFE and MAE to opening fill price; post-exit market movement is strictly separated from realized trade returns. Snapshots and terminal metrics use identical definitions.
+   - **Conclusion: YES**. Explicit mathematically sound intervals (`[mfe_min, mfe_max]`, `[mae_min, mae_max]`) capture the irreducible daily OHLC barrier touch ambiguity without claiming false tick precision. The deterministic conservative proxy (`mfe`, `mae`) is guaranteed to lie within the bounds. Snapshots and terminal metrics maintain 100% exact parity.
 
 3. **Outcome Tracking is ready to be used as a source of model-evaluation targets**:
-   - **Conclusion: READY**. All 31 historical records in `datasets/stock_signals.db` have been recomputed with 0 violations across invariants, database migration, and fee/slippage alignment. Metric isolation guarantees that unfilled and invalidated orders do not pollute completed trade metrics (win rate: 37.04%, expectancy: -17 bps across 27 filled trades). The pipeline is robust, idempotent, and ready for model-evaluation target generation.
+   - **Conclusion: READY**. All 31 historical records in `datasets/stock_signals.db` have been recomputed with 0 violations across invariants, database migration, excursion bounds, and fee/slippage alignment. Metric isolation guarantees that unfilled and invalidated orders do not pollute completed trade metrics (win rate: 37.04%, expectancy: -17 bps across 27 filled trades). The pipeline is robust, idempotent, and ready for model-evaluation target generation.
 

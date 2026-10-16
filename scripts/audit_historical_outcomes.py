@@ -108,6 +108,77 @@ def run_audit() -> None:
             if out.mae_price is not None and out.mae_price > 1e-9:
                 violations.append(f"{out.signal_id}: Positive mae_price {out.mae_price}")
 
+            # Check explicit excursion bounds and entry deviation
+            if (
+                out.mfe_min is None
+                or out.mfe_max is None
+                or out.mae_min is None
+                or out.mae_max is None
+            ):
+                violations.append(f"{out.signal_id}: Filled trade missing excursion bounds")
+            else:
+                if out.mfe_min > (out.mfe or 0.0) + 1e-9:
+                    violations.append(
+                        f"{out.signal_id}: mfe_min {out.mfe_min} > mfe {out.mfe}"
+                    )
+                if (out.mfe or 0.0) > out.mfe_max + 1e-9:
+                    violations.append(
+                        f"{out.signal_id}: mfe {out.mfe} > mfe_max {out.mfe_max}"
+                    )
+                if out.mae_min > (out.mae or 0.0) + 1e-9:
+                    violations.append(
+                        f"{out.signal_id}: mae_min {out.mae_min} > mae {out.mae}"
+                    )
+                if (out.mae or 0.0) > out.mae_max + 1e-9:
+                    violations.append(
+                        f"{out.signal_id}: mae {out.mae} > mae_max {out.mae_max}"
+                    )
+
+            if out.entry_deviation_pct is None:
+                violations.append(f"{out.signal_id}: Filled trade missing entry_deviation_pct")
+
+            # Final snapshot parity check
+            last_snap = conn.execute(
+                "SELECT * FROM signal_snapshots_daily "
+                "WHERE signal_id=? ORDER BY holding_day DESC LIMIT 1",
+                (out.signal_id,),
+            ).fetchone()
+            if last_snap:
+                if out.mfe is not None and abs(last_snap["mfe_so_far"] - out.mfe) > 1e-5:
+                    violations.append(
+                        f"{out.signal_id}: Final snapshot mfe_so_far {last_snap['mfe_so_far']} "
+                        f"!= outcome mfe {out.mfe}"
+                    )
+                if out.mae is not None and abs(last_snap["mae_so_far"] - out.mae) > 1e-5:
+                    violations.append(
+                        f"{out.signal_id}: Final snapshot mae_so_far {last_snap['mae_so_far']} "
+                        f"!= outcome mae {out.mae}"
+                    )
+                if out.mfe_min is not None and last_snap["mfe_min_so_far"] is not None:
+                    if abs(last_snap["mfe_min_so_far"] - out.mfe_min) > 1e-5:
+                        violations.append(
+                            f"{out.signal_id}: Final snapshot mfe_min_so_far "
+                            f"{last_snap['mfe_min_so_far']} != outcome {out.mfe_min}"
+                        )
+                if out.mfe_max is not None and last_snap["mfe_max_so_far"] is not None:
+                    if abs(last_snap["mfe_max_so_far"] - out.mfe_max) > 1e-5:
+                        violations.append(
+                            f"{out.signal_id}: Final snapshot mfe_max_so_far "
+                            f"{last_snap['mfe_max_so_far']} != outcome {out.mfe_max}"
+                        )
+                if out.mae_min is not None and last_snap["mae_min_so_far"] is not None:
+                    if abs(last_snap["mae_min_so_far"] - out.mae_min) > 1e-5:
+                        violations.append(
+                            f"{out.signal_id}: Final snapshot mae_min_so_far "
+                            f"{last_snap['mae_min_so_far']} != outcome {out.mae_min}"
+                        )
+                if out.mae_max is not None and last_snap["mae_max_so_far"] is not None:
+                    if abs(last_snap["mae_max_so_far"] - out.mae_max) > 1e-5:
+                        violations.append(
+                            f"{out.signal_id}: Final snapshot mae_max_so_far "
+                            f"{last_snap['mae_max_so_far']} != outcome {out.mae_max}"
+                        )
+
             # Check fee and slippage math
             if (
                 out.return_after_fees is not None

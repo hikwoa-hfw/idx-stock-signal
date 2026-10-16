@@ -1213,6 +1213,17 @@ class SignalOutcomeRecord(BaseModel):
     horizon_end_return: Optional[float] = None
     is_full_horizon_complete: bool = False
 
+    # Explicit in-trade excursion bounds and entry deviation metrics
+    mfe_min: Optional[float] = None
+    mfe_max: Optional[float] = None
+    mae_min: Optional[float] = None
+    mae_max: Optional[float] = None
+    mfe_price_min: Optional[float] = None
+    mfe_price_max: Optional[float] = None
+    mae_price_min: Optional[float] = None
+    mae_price_max: Optional[float] = None
+    entry_deviation_pct: Optional[float] = None
+
     @property
     def mode_id(self) -> Optional[str]:
         return self.mode
@@ -1303,6 +1314,15 @@ class SignalOutcomeRecord(BaseModel):
         "full_horizon_mae_price",
         "horizon_end_price",
         "horizon_end_return",
+        "mfe_min",
+        "mfe_max",
+        "mae_min",
+        "mae_max",
+        "mfe_price_min",
+        "mfe_price_max",
+        "mae_price_min",
+        "mae_price_max",
+        "entry_deviation_pct",
     )
     @classmethod
     def validate_finite_return_metrics(cls, v: Optional[float]) -> Optional[float]:
@@ -1364,6 +1384,17 @@ class SignalOutcomeRecord(BaseModel):
                     raise ValueError("Invalidated gap signal cannot have mfe or mae")
                 if self.mfe_price is not None or self.mae_price is not None:
                     raise ValueError("Invalidated gap signal cannot have mfe_price or mae_price")
+                if (
+                    self.mfe_min is not None
+                    or self.mfe_max is not None
+                    or self.mae_min is not None
+                    or self.mae_max is not None
+                    or self.mfe_price_min is not None
+                    or self.mfe_price_max is not None
+                    or self.mae_price_min is not None
+                    or self.mae_price_max is not None
+                ):
+                    raise ValueError("Invalidated gap signal cannot have excursion bounds")
                 if (
                     self.time_to_peak is not None
                     or self.time_to_tp is not None
@@ -1443,6 +1474,10 @@ class SignalDailySnapshot(BaseModel):
     low_price: float
     mfe_so_far: float
     mae_so_far: float
+    mfe_min_so_far: Optional[float] = None
+    mfe_max_so_far: Optional[float] = None
+    mae_min_so_far: Optional[float] = None
+    mae_max_so_far: Optional[float] = None
 
     @field_validator("signal_id")
     @classmethod
@@ -1466,10 +1501,18 @@ class SignalDailySnapshot(BaseModel):
             raise ValueError(f"Price must be positive and finite, got {v}")
         return v
 
-    @field_validator("return_from_entry", "mfe_so_far", "mae_so_far")
+    @field_validator(
+        "return_from_entry",
+        "mfe_so_far",
+        "mae_so_far",
+        "mfe_min_so_far",
+        "mfe_max_so_far",
+        "mae_min_so_far",
+        "mae_max_so_far",
+    )
     @classmethod
-    def validate_finite_metrics(cls, v: float) -> float:
-        if not math.isfinite(v):
+    def validate_finite_metrics(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and not math.isfinite(v):
             raise ValueError(f"Metric must be a finite float, got {v}")
         return v
 

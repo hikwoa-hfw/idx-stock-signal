@@ -1906,7 +1906,355 @@ def test_asii_bbca_byan_historical_recomputation():
     assert out_bbca.trigger_price == pytest.approx(10200.0)
 
 
+# -------------------------------------------------------------------------
+# Unit Tests: Excursion Bounds, Entry Deviation, and Barrier Exits
+# -------------------------------------------------------------------------
 
 
+def test_tp_touched_excursion_bounds_and_snapshot_parity():
+    """Verify single TP exit bounds and snapshot parity."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0)
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=105.0, low=98.0, close=103.0),
+        _make_bar(date(2026, 1, 5), open_=102.0, high=112.0, low=97.0, close=109.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "TP"
+    assert outcome.holding_days == 2
+    assert outcome.entry_price == 100.0
+    assert outcome.exit_price == pytest.approx(110.0)
+
+    # In-trade MFE is bounded by TP barrier on exit day
+    assert outcome.mfe == pytest.approx(0.10)
+    assert outcome.mfe_min == pytest.approx(0.10)
+    assert outcome.mfe_max == pytest.approx(0.10)
+
+    # MAE bounds: Day 1 reached 98.0 (-2%), Day 2 reached 97.0 (-3%)
+    # If TP hit before day 2 low, low was 102.0 (open), so adverse excursion was -2% (from Day 1)
+    # If low hit before TP, adverse excursion was -3% (Day 2 low)
+    assert outcome.mae_min == pytest.approx(-0.03)
+    assert outcome.mae_max == pytest.approx(-0.02)
+    assert outcome.mae == pytest.approx(-0.03)
+
+    # Snapshots check
+    assert len(snapshots) == 2
+    last_snap = snapshots[-1]
+    assert last_snap.holding_day == 2
+    assert last_snap.mfe_so_far == pytest.approx(outcome.mfe)
+    assert last_snap.mae_so_far == pytest.approx(outcome.mae)
+    assert last_snap.mfe_min_so_far == pytest.approx(outcome.mfe_min)
+    assert last_snap.mfe_max_so_far == pytest.approx(outcome.mfe_max)
+    assert last_snap.mae_min_so_far == pytest.approx(outcome.mae_min)
+    assert last_snap.mae_max_so_far == pytest.approx(outcome.mae_max)
 
 
+def test_sl_touched_excursion_bounds_and_snapshot_parity():
+    """Verify single SL exit bounds and snapshot parity."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0)
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=104.0, low=95.0, close=96.0),
+        _make_bar(date(2026, 1, 5), open_=94.0, high=98.0, low=88.0, close=89.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "SL"
+    assert outcome.holding_days == 2
+    assert outcome.entry_price == 100.0
+    assert outcome.exit_price == pytest.approx(90.0)
+
+    # In-trade MAE is bounded by SL barrier on exit day
+    assert outcome.mae == pytest.approx(-0.10)
+    assert outcome.mae_min == pytest.approx(-0.10)
+    assert outcome.mae_max == pytest.approx(-0.10)
+
+    # MFE bounds: Day 1 reached 104.0 (+4%).
+    # Day 2 reached 98.0 (< 104.0).
+    # Regardless of whether 98.0 was before or after SL, Day 1 peak was 104.0
+    assert outcome.mfe_min == pytest.approx(0.04)
+    assert outcome.mfe_max == pytest.approx(0.04)
+    assert outcome.mfe == pytest.approx(0.04)
+
+    # Snapshots check
+    assert len(snapshots) == 2
+    last_snap = snapshots[-1]
+    assert last_snap.mfe_so_far == pytest.approx(outcome.mfe)
+    assert last_snap.mae_so_far == pytest.approx(outcome.mae)
+    assert last_snap.mfe_min_so_far == pytest.approx(outcome.mfe_min)
+    assert last_snap.mfe_max_so_far == pytest.approx(outcome.mfe_max)
+    assert last_snap.mae_min_so_far == pytest.approx(outcome.mae_min)
+    assert last_snap.mae_max_so_far == pytest.approx(outcome.mae_max)
+
+
+def test_gap_through_exit_at_open_bounds():
+    """Verify gap-through at open bounds are exact and equal."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0)
+    # Day 1 regular, Day 2 gaps below SL at open 85.0
+    bars = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=103.0, low=97.0, close=98.0),
+        _make_bar(date(2026, 1, 5), open_=85.0, high=88.0, low=82.0, close=86.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "SL"
+    assert outcome.holding_days == 2
+    assert outcome.exit_price == pytest.approx(85.0)
+
+    # Exit at open: Day 2 in-trade extreme is 85.0
+    assert outcome.mae == pytest.approx(-0.15)
+    assert outcome.mae_min == pytest.approx(-0.15)
+    assert outcome.mae_max == pytest.approx(-0.15)
+    assert outcome.mfe == pytest.approx(0.03)
+    assert outcome.mfe_min == pytest.approx(0.03)
+    assert outcome.mfe_max == pytest.approx(0.03)
+
+
+def test_breakout_entry_intraday_and_open_exceeding_dev():
+    """Verify breakout intraday entry vs excessive gap at trigger day open."""
+    # Breakout signal: entry_low is trigger level (105.0)
+    sig_breakout = SignalRecord(
+        signal_id="sig-breakout-01",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        entry_low=105.0,
+        entry_high=107.0,
+        tp_price=115.0,
+        sl_price=95.0,
+        max_holding_days=5,
+        predicted_probability=0.8,
+        score=90.0,
+        model_version="v1",
+        max_entry_deviation_pct=0.05,
+    )
+
+    # 1. Intraday trigger: Day 1 open=100.0 (< 105.0), high=108.0 (triggers at 105.0)
+    bars_trigger_intraday = [
+        _make_bar(date(2026, 1, 2), open_=100.0, high=108.0, low=99.0, close=106.0),
+    ]
+    engine = OutcomeEngine()
+    out1, snaps1 = engine.evaluate_signal(sig_breakout, bars_trigger_intraday)
+    assert out1 is not None
+    assert out1.outcome_status == "OPEN"
+    assert out1.entry_status == "FILLED"
+    assert out1.entry_price == pytest.approx(105.0)
+    assert out1.entry_deviation_pct == pytest.approx(0.0)
+
+    # 2. Open exceeds max deviation: trigger=105.0, open=112.0 (dev = 6.67% > 5%)
+    bars_trigger_gap = [
+        _make_bar(date(2026, 1, 2), open_=112.0, high=114.0, low=110.0, close=113.0),
+    ]
+    out2, snaps2 = engine.evaluate_signal(sig_breakout, bars_trigger_gap)
+    assert out2 is not None
+    assert out2.outcome_status == "INVALIDATED_GAP"
+    assert out2.entry_status == "UNFILLED"
+    assert out2.entry_price is None
+    assert len(snaps2) == 0
+
+
+def test_same_candle_collision_excursion_bounds_policies():
+    """Verify excursion bounds for same-candle collisions under all 3 policies."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0)
+    bar = _make_bar(date(2026, 1, 2), open_=100.0, high=115.0, low=85.0, close=102.0)
+
+    # 1. Conservative (SL first)
+    eng_cons = OutcomeEngine(ambiguity_policy="conservative")
+    out_cons, _ = eng_cons.evaluate_signal(signal, [bar])
+    assert out_cons is not None
+    assert out_cons.outcome_status == "SL"
+    assert out_cons.exit_price == pytest.approx(90.0)
+    assert out_cons.mae == pytest.approx(-0.10)
+    assert out_cons.mae_min == pytest.approx(-0.10)
+    assert out_cons.mae_max == pytest.approx(-0.10)
+    assert out_cons.mfe == pytest.approx(0.0)  # bounded at open (100.0)
+    assert out_cons.mfe_min == pytest.approx(0.0)
+    assert out_cons.mfe_max == pytest.approx(0.15)  # upper bound had high touched first
+
+    # 2. Optimistic (TP first)
+    eng_opt = OutcomeEngine(ambiguity_policy="optimistic")
+    out_opt, _ = eng_opt.evaluate_signal(signal, [bar])
+    assert out_opt is not None
+    assert out_opt.outcome_status == "TP"
+    assert out_opt.exit_price == pytest.approx(110.0)
+    assert out_opt.mfe == pytest.approx(0.10)
+    assert out_opt.mfe_min == pytest.approx(0.10)
+    assert out_opt.mfe_max == pytest.approx(0.10)
+    assert out_opt.mae == pytest.approx(0.0)  # bounded at open (100.0)
+    assert out_opt.mae_min == pytest.approx(-0.15)  # lower bound had low touched first
+    assert out_opt.mae_max == pytest.approx(0.0)
+
+    # 3. Ambiguous (Close exit)
+    eng_amb = OutcomeEngine(ambiguity_policy="ambiguous")
+    out_amb, _ = eng_amb.evaluate_signal(signal, [bar])
+    assert out_amb is not None
+    assert out_amb.outcome_status == "AMBIGUOUS"
+    assert out_amb.exit_price == pytest.approx(102.0)
+    assert out_amb.mfe == pytest.approx(0.10)
+    assert out_amb.mfe_min == pytest.approx(0.10)
+    assert out_amb.mfe_max == pytest.approx(0.10)
+    assert out_amb.mae == pytest.approx(-0.10)
+    assert out_amb.mae_min == pytest.approx(-0.10)
+    assert out_amb.mae_max == pytest.approx(-0.10)
+
+
+def test_immediate_entry_band_and_deviation_scenarios():
+    """Verify immediate entry band enforcement and max deviation gating."""
+    # Signal: entry range [99.0, 101.0], ref=100.0, max_dev=0.05 (range 95.0 to 105.0)
+    signal = _make_signal(entry_low=99.0, entry_high=101.0, tp_price=110.0, sl_price=90.0)
+
+    # Scenario A: Open inside band (100.0) -> fills under both modes
+    bar_inside = [_make_bar(date(2026, 1, 2), open_=100.0, high=102.0, low=99.5, close=101.0)]
+    eng_lax = OutcomeEngine(enforce_entry_band=False)
+    out_a1, _ = eng_lax.evaluate_signal(signal, bar_inside)
+    assert out_a1 is not None and out_a1.outcome_status == "OPEN"
+    assert out_a1.entry_price == 100.0
+    assert out_a1.entry_deviation_pct == pytest.approx(0.0)
+
+    eng_strict = OutcomeEngine(enforce_entry_band=True)
+    out_a2, _ = eng_strict.evaluate_signal(signal, bar_inside)
+    assert out_a2 is not None and out_a2.outcome_status == "OPEN"
+    assert out_a2.entry_price == 100.0
+
+    # Scenario B: Open outside band (102.0) but <= 5% deviation (dev = 2%)
+    bar_outside_mild = [
+        _make_bar(date(2026, 1, 2), open_=102.0, high=103.0, low=101.5, close=102.5)
+    ]
+    out_b1, _ = eng_lax.evaluate_signal(signal, bar_outside_mild)
+    assert out_b1 is not None and out_b1.outcome_status == "OPEN"
+    assert out_b1.entry_price == 102.0
+    assert out_b1.entry_deviation_pct == pytest.approx(0.02)
+
+    out_b2, snaps_b2 = eng_strict.evaluate_signal(signal, bar_outside_mild)
+    assert out_b2 is not None
+    assert out_b2.outcome_status == "INVALIDATED_GAP"
+    assert out_b2.entry_status == "UNFILLED"
+    assert out_b2.entry_price is None
+    assert len(snaps_b2) == 0
+
+    # Scenario C: Open outside max deviation (106.0, dev = 6% > 5%)
+    bar_outside_extreme = [
+        _make_bar(date(2026, 1, 2), open_=106.0, high=107.0, low=105.0, close=106.5)
+    ]
+    out_c1, snaps_c1 = eng_lax.evaluate_signal(signal, bar_outside_extreme)
+    assert out_c1 is not None
+    assert out_c1.outcome_status == "INVALIDATED_GAP"
+    assert out_c1.entry_status == "UNFILLED"
+    assert out_c1.entry_price is None
+    assert len(snaps_c1) == 0
+
+
+def test_sl_touched_before_days_high_uncertain_excursion():
+    """Verify SL touched on Day 2 where Day 2 high exceeds prior peak produces distinct bounds."""
+    signal = _make_signal(tp_price=110.0, sl_price=90.0, max_holding_days=5)
+    bars = [
+        # Day 1: normal entry at 100.0, peak reaches 102.0 (+2%)
+        _make_bar(date(2026, 1, 2), open_=100.0, high=102.0, low=98.0, close=101.0),
+        # Day 2: opens at 94.0, touches high 108.0 (+8%), drops to low 88.0 (hitting SL 90.0)
+        _make_bar(date(2026, 1, 5), open_=94.0, high=108.0, low=88.0, close=89.0),
+    ]
+    engine = OutcomeEngine()
+    outcome, snapshots = engine.evaluate_signal(signal, bars)
+
+    assert outcome is not None
+    assert outcome.outcome_status == "SL"
+    assert outcome.holding_days == 2
+    assert outcome.entry_price == 100.0
+    assert outcome.exit_price == pytest.approx(90.0)
+
+    # In-trade MAE is strictly bounded at SL barrier
+    assert outcome.mae == pytest.approx(-0.10)
+    assert outcome.mae_min == pytest.approx(-0.10)
+    assert outcome.mae_max == pytest.approx(-0.10)
+
+    # In-trade MFE bounds:
+    # Lower bound (SL visited before candle high): Day 2 high in-trade is bounded by open 94.0,
+    # so overall in-trade peak is Day 1 high 102.0 (+2%).
+    assert outcome.mfe_min == pytest.approx(0.02)
+    # Upper bound (candle high visited before SL): Day 2 high 108.0 reached in-trade (+8%).
+    assert outcome.mfe_max == pytest.approx(0.08)
+    # Proxy tracks upper bound estimate
+    assert outcome.mfe == pytest.approx(0.08)
+
+    # Snapshots parity on terminal day
+    assert len(snapshots) == 2
+    last_snap = snapshots[-1]
+    assert last_snap.holding_day == 2
+    assert last_snap.mfe_so_far == pytest.approx(outcome.mfe)
+    assert last_snap.mae_so_far == pytest.approx(outcome.mae)
+    assert last_snap.mfe_min_so_far == pytest.approx(outcome.mfe_min)
+    assert last_snap.mfe_max_so_far == pytest.approx(outcome.mfe_max)
+    assert last_snap.mae_min_so_far == pytest.approx(outcome.mae_min)
+    assert last_snap.mae_max_so_far == pytest.approx(outcome.mae_max)
+
+
+def test_breakout_open_gating_scenarios():
+    """Verify breakout order open gating: below SL, outside band, and inside band."""
+    sig_bo = SignalRecord(
+        signal_id="sig-bo-gating-01",
+        ticker="BBCA",
+        signal_date=date(2026, 1, 1),
+        signal="WAIT_FOR_BREAKOUT",
+        status="WAIT_FOR_BREAKOUT",
+        entry_policy="BREAKOUT",
+        entry_low=105.0,
+        entry_high=107.0,
+        tp_price=115.0,
+        sl_price=95.0,
+        max_holding_days=5,
+        predicted_probability=0.8,
+        score=90.0,
+        model_version="v1",
+        max_entry_deviation_pct=0.05,
+    )
+
+    # 1. Trigger day open above TP (116.0 >= 115.0) -> INVALIDATED_GAP
+    bars_open_above_tp = [
+        _make_bar(date(2026, 1, 2), open_=116.0, high=118.0, low=114.0, close=117.0),
+    ]
+    eng = OutcomeEngine()
+    out1, snaps1 = eng.evaluate_signal(sig_bo, bars_open_above_tp)
+    assert out1 is not None
+    assert out1.outcome_status == "INVALIDATED_GAP"
+    assert out1.entry_status == "UNFILLED"
+    assert out1.entry_price is None
+    assert len(snaps1) == 0
+
+    # 2. Trigger day open outside band (108.0 > entry_high 107.0) but dev = 2.86% <= 5%
+    bars_open_above_band = [
+        _make_bar(date(2026, 1, 2), open_=108.0, high=110.0, low=107.5, close=109.0),
+    ]
+    # Under enforce_entry_band=True -> INVALIDATED_GAP
+    eng_strict = OutcomeEngine(enforce_entry_band=True)
+    out2_strict, snaps2_strict = eng_strict.evaluate_signal(sig_bo, bars_open_above_band)
+    assert out2_strict is not None
+    assert out2_strict.outcome_status == "INVALIDATED_GAP"
+    assert out2_strict.entry_status == "UNFILLED"
+    assert out2_strict.entry_price is None
+    assert len(snaps2_strict) == 0
+
+    # Under enforce_entry_band=False (default MOO) -> fills at open 108.0
+    eng_lax = OutcomeEngine(enforce_entry_band=False)
+    out2_lax, snaps2_lax = eng_lax.evaluate_signal(sig_bo, bars_open_above_band)
+    assert out2_lax is not None
+    assert out2_lax.entry_status == "FILLED"
+    assert out2_lax.entry_price == pytest.approx(108.0)
+    assert out2_lax.entry_deviation_pct == pytest.approx((108.0 - 105.0) / 105.0)
+    assert len(snaps2_lax) == 1
+
+    # 3. Trigger day open inside band (106.0 in [105.0, 107.0]) -> fills under both
+    bars_open_inside_band = [
+        _make_bar(date(2026, 1, 2), open_=106.0, high=109.0, low=105.5, close=108.0),
+    ]
+    out3_strict, snaps3_strict = eng_strict.evaluate_signal(sig_bo, bars_open_inside_band)
+    assert out3_strict is not None
+    assert out3_strict.entry_status == "FILLED"
+    assert out3_strict.entry_price == pytest.approx(106.0)
+    assert len(snaps3_strict) == 1

@@ -63,7 +63,7 @@ Pada sesi pekerjaan ini, kami mengoreksi dan memvalidasi metodologi evaluasi met
 - **`docs/11_feature_ablation_metric_validation_report.md`:**
   * Laporan audit lengkap 8 bagian mencakup metadata, executive summary, metodologi metrik harian & macro, tabel hasil komparasi, validasi hipotesis fitur, verifikasi semantik label & target, dan artefak reproduktibilitas.
 - **`audit_report.md`:**
-  * Dikonversi menjadi indeks direktori audit ringkas yang memuat status terkini sistem, tabel riwayat audit dengan tautan ke `docs/08`, `docs/09`, `docs/10`, dan `docs/11`, serta perintah verifikasi standar.
+  * Diformat menggunakan template standar governance 10 bagian resmi yang diisi dengan seluruh temuan, hasil kuantitatif agregasi makro & presisi harian, serta verifikasi Phase 11A.1.
 - **`summary.md`:**
   * Menambahkan Log Entry 52 (strictly append-only).
 

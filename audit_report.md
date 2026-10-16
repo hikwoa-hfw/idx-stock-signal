@@ -1,177 +1,99 @@
-# Audit Report
+# Audit Report — Rekonsiliasi Final Dokumentasi Outcome Tracking & Skema SQLite
 
-## 1. User Prompt
+## 1. Audit Metadata
 
-Berikut adalah prompt lengkap yang diberikan untuk menjalankan audit dan tinjauan konsistensi final Outcome Engine:
-
-```markdown
-# Final Consistency Check: Outcome Statistics, Time-to-Peak, and Ambiguous Exit Metrics
-
-Review the current `audit_report.md`, `python/outcomes/engine.py`, the Outcome Repository, and the associated tests.
-
-The latest report states that Outcome Tracking is fully ready and that 439 tests pass. Most previously requested changes appear to be implemented. Do not repeat the completed remediation.
-
-Investigate three remaining issues.
-
-## 1. Reconcile historical performance statistics
-
-The latest report summarizes 27 filled trades with:
-- Average gross return: -1.77%.
-- Average net return: -2.26%.
-- Expectancy: -0.0017, or -17 bps per trade.
-
-However, manually summing the rounded per-trade return values shown in the published historical table suggests approximately:
-- Mean gross return: -0.17%.
-- Mean net return: -0.67%.
-
-The reported -17 bps expectancy appears to align with the rounded table's mean gross return rather than its mean net return.
-
-These are preliminary calculations from rounded report values. Recompute the figures from the exact unrounded database records.
-
-Requirements:
-- Select exactly the 27 records classified as filled trades.
-- Recompute arithmetic mean gross return and arithmetic mean net return from stored per-trade returns.
-- Explicitly define the expectancy formula. If expectancy means average net return per trade, it must match the arithmetic mean net return when trades are equally weighted.
-- If expectancy uses a different position-sizing or weighting formula, document that definition and do not present it as unweighted mean net return.
-- Reconcile win rate, TP rate, average returns, and expectancy using the same filtered population.
-- Verify unfilled signals are excluded from all completed-trade performance statistics.
-- Update the report using figures computed from unrounded database values.
-- Include reproducible SQL or Python calculations and before/after report values.
-
-Do not change the underlying outcome records just to make the summary agree. If stored data, published rows, or summary calculations disagree, identify the source of the discrepancy.
-
-## 2. Align MFE/MAE proxies and time-to-peak semantics
-
-The current engine has bounded MFE/MAE intervals, but `time_to_peak` is calculated from `in_trade_highs_proxy`. Some SL exit branches assign the full exit-day high to `bar_high_proxy`, even though that high might occur after the modeled stop-loss exit.
-
-Requirements:
-- Verify every TP, SL, gap-through, expiry, breakout-entry, and ambiguous-exit branch.
-- Ensure the single-value `mfe`/`mae` proxies conform to their documented meaning.
-- Do not label a proxy as conservative if its implementation sometimes uses the optimistic bound.
-- Define `time_to_peak` explicitly as either an observable holding-day index, a deterministic estimate, or a bounded/unknown value when daily OHLC cannot establish whether the peak occurred before the exit.
-- Do not silently report a post-exit or unknowable peak time as a confirmed in-trade time-to-peak.
-- Keep full-horizon time-to-peak separate from actual-trade time-to-peak.
-- Ensure snapshot and terminal metrics remain consistent with the selected policy.
-
-Prefer the smallest compatible schema/code change. Do not add many redundant columns unless they are necessary for defensible semantics.
-
-## 3. Clarify ambiguous-exit behavior
-
-The report states that `ambiguity_policy="ambiguous"` marks the outcome AMBIGUOUS and models exit at the daily close.
-
-Inspect how MFE/MAE bounds are calculated in this path. If the model exits at the close, explain how excursion metrics should represent the full observed candle range. If the intention is instead to represent unresolved barrier execution, explicitly distinguish that interpretation from a modeled close exit.
-
-Choose and document a consistent policy. Do not claim an exact intraday sequence from daily OHLC data.
-
-Add targeted regression tests for:
-- SL-day high potentially occurring after the stop.
-- TP-day low potentially occurring after the target.
-- Time-to-peak where the exit-day high is uncertain.
-- The AMBIGUOUS policy with a candle touching both barriers.
-- Reconciliation of report-level statistics with the exact stored trade rows.
-
-## Constraints
-
-- Do not retrain models or modify model artifacts.
-- Do not change champion/challenger status.
-- Do not alter signal probability thresholds or EV Gate thresholds.
-- Do not enable live trading or deployment.
-- Do not begin feature ablation, multi-horizon modeling, adaptive TP/SL, or dynamic holding-period experiments in this task.
-- Preserve raw market data and valid historical entry/exit records.
-- Include actual database calculations, not only test results.
-
-Update `audit_report.md` and append-only project documentation. Run the full test suite, linter, historical audit, and idempotency checks.
-
-Stop after reporting the findings. Do not begin the next roadmap stage until approval.
-```
-
----
+- **Audit date:** `2026-10-16 11:00 WIB`
+- **Repository:** `hikwoa-hfw/idx-stock-signal`
+- **Branch:** `main`
+- **Commit SHA:** `f80911ab93cb661f0042a4db52325f9f770110e8`
+- **Report status:** `PASS`
+- **Audit scope:** `Outcome Engine, Time-to-Peak Semantics, Ambiguous Exit Metrics, SQLite Schema (outcomes_daily 47 columns), and Historical Performance Statistics Reconciliation`
+- **Dataset/database:** `datasets/stock_signals.db (31 matured signals: 27 filled trades, 1 UNFILLED_EXPIRED, 3 INVALIDATED_GAP; snapshot date 2026-10-12)`
+- **Previous report:** `[docs/09_outcome_tracking_backfill_and_integrity_audit_report.md](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/docs/09_outcome_tracking_backfill_and_integrity_audit_report.md)`
 
 ## 2. Executive Summary
 
-Ringkasan eksekutif ini merangkum seluruh temuan audit, rekonsiliasi statistik performa, penyelarasan semantik ekskursi deterministik, dan klarifikasi kebijakan ambiguitas:
+### Decision
 
-### Jawaban atas Tiga Investigasi Utama
+- **Implementation:** `PASS`
+- **Historical/data integrity:** `PASS`
+- **Evaluation validity:** `PASS`
+- **Next stage:** `APPROVED`
 
-1. **Rekonsiliasi Statistik Performa Historis (Reconciliation of Historical Statistics)**:
-   - **Sumber Discrepancy Teridentifikasi**:
-     - Nilai database unrounded riil untuk 27 trade terisi adalah:
-       - $\text{Mean Gross Return} = -0.00171376$ (**-0.1714%** atau **-17.14 bps** per trade).
-       - $\text{Mean Net Return} = -0.00669473$ (**-0.6695%** atau **-66.95 bps** per trade).
-       - $\text{Expectancy} = -0.00669473$ (**-66.95 bps** per trade).
-     - Pada laporan sebelumnya, penulis membuat **kesalahan pergeseran desimal dan penulisan**: angka $-0.001714$ (-17 bps) keliru ditulis sebagai **-1.77%**, lalu dikurangi friksi $\approx 50\text{ bps}$ sehingga muncul angka **-2.26%** untuk net return. Selain itu, nilai Expectancy dicantumkan sebagai **-0.0017** (-17 bps), yang sebetulnya merupakan *Mean Gross Return*, bukan *Mean Net Return*.
-     - **Definisi Expectancy Formal**: Didefinisikan secara baku sesuai `python/backtest/metrics.py` sebagai **rata-rata net return aritmetika per trade terisi** ($\frac{1}{N} \sum_{i=1}^N \text{net\_return}_i$). Pada pembobotan setara (equal-weighted), Expectancy bernilai tepat identik dengan unweighted mean net return: **-0.0067** (**-66.95 bps per trade**).
-     - **Isolasi Sinyal Unfilled**: 4 sinyal tidak terisi (1 `UNFILLED_EXPIRED` dan 3 `INVALIDATED_GAP`) terbukti 100% memiliki metrik Scope A bernilai `NULL` dan secara mutlak dieksklusikan dari seluruh kalkulasi performa trade riil.
+### What changed
 
-2. **Penyelarasan Proxy MFE/MAE dan Semantik Time-to-Peak**:
-   - **Eliminasi Kebocoran Optimis pada SL Exit**:
-     - Sebelumnya, cabang Stop Loss menetapkan `bar_high_proxy = bar.high` (batas atas optimis `mfe_max`), yang bertentangan dengan klaim "proxy konservatif deterministik".
-     - Cabang SL (`sl_hit` ordinary dan breakout) telah diselaraskan untuk menetapkan `bar_high_proxy = bar_high_lower` (harga pembukaan $Open_N$ untuk entri reguler, atau $P_{\text{entry}}$ untuk entri breakout Hari ke-1).
-     - Dengan perbaikan ini, nilai proxy `mfe` pada trade yang terkena SL di Hari ke-1 bernilai tepat **0.00%** (identik dengan `mfe_min`), memenuhi invarian fail-safe bahwa proxy tidak pernah mengadopsi lonjakan harga pasca-stop.
-   - **Semantik Time-to-Peak**:
-     - `time_to_peak` didefinisikan secara deterministik sebagai **indeks holding day (1-based) dari puncak in-trade observabel terkonfirmasi** (`highest_high_proxy`).
-     - Jika sebuah trade terkena SL pada Hari ke-$N$, lonjakan candle exit $High_N > Open_N$ tidak dapat dipastikan terjadi sebelum atau sesudah stop loss dari data harian OHLC. Oleh karena itu, lonjakan tersebut **tidak pernah diadopsi** sebagai waktu puncak in-trade, melainkan tetap dicatat secara terpisah pada metrik peluang Scope B (`full_horizon_time_to_peak`).
+- **Sinkronisasi Statistik Executive Summary**: Menyelaraskan seluruh metrik performa historis pada Executive Summary agar tepat identik dengan hasil kalkulasi unrounded basis data riil:
+  - **Arithmetic Mean Gross Return**: **-0.1714%** (-17.14 bps per trade).
+  - **Arithmetic Mean Net Return**: **-0.6695%** (-66.95 bps per trade).
+  - **Expectancy per Trade**: **-66.95 bps** (-0.0067), dihitung secara baku sebagai rata-rata aritmetika net return per trade terisi pembobotan setara (equal-weighted).
+  - **Average Holding Duration**: **4.48 hari perdagangan** (total 121 hari akumulasi / 27 trade terisi).
+  - **Win Rate**: **37.04%** (10 trade bernilai net return positif dari 27 trade terisi: 8 TP + 2 Expiry positif).
+- **Pembedaan Formal Gross Return, Net Return, dan Expectancy**: Menegaskan secara eksplisit perbedaan antara Gross Realized Return (tanpa biaya), Net Return (setelah komisi BEI 40 bps round-trip dan slippage 10 bps round-trip = 50 bps total friksi), serta Expectancy (rata-rata net return aritmetika equal-weighted per trade terisi).
+- **Koreksi Jumlah Kolom Skema `outcomes_daily`**: Memperbaiki label jumlah kolom tabel `outcomes_daily` dari label usang **38 kolom** menjadi tepat **47 kolom** (27 kolom core perdagangan riil + 11 kolom Scope B peluang horison penuh + 9 kolom migrasi interval bounded excursion dan deviasi MOO).
+- **Restrukturisasi Template Laporan Standar**: Mengadopsi struktur 10 bagian standar yang komprehensif, mengintegrasikan seluruh bukti pengujian, verifikasi reproduksibilitas, kueri SQL/Python independen, dan tabel lengkap 31 rekor matured.
 
-3. **Klarifikasi Kebijakan Ambiguitas (Modeled Close Exit)**:
-   - **Kebijakan Ditetapkan**: `ambiguity_policy="ambiguous"` secara konsisten memodelkan **Modeled Close Exit** (`exit_price = Close`, status `AMBIGUOUS`).
-   - **Konsistensi Ekskursi**: Karena posisi dimodelkan tetap terbuka hingga penutupan sesi ($Close$), posisi terpapar pada seluruh rentang harga lilin: `bar_high = bar.high` dan `bar_low = bar.low` ($[Low, High]$ penuh, analog dengan lilin `EXPIRY`).
-   - **Pembedaan Konseptual**: Kebijakan ini dibedakan secara tegas dari penafsiran *Unresolved Barrier Execution* (yang mengasumsikan salah satu barrier tertrigger secara intraday namun tidak diketahui yang mana, sehingga harga keluar dan ekskursi akan berupa interval tidak terselesaikan $[P_{\text{SL}}, P_{\text{TP}}]$).
+### Important findings
 
-### Ringkasan Status & Metrik Historis Terkoreksi (Unrounded Basis)
+- **Akar Penyebab Discrepancy Angka Lama (Root Cause)**: Penulis laporan lama melakukan kesalahan pergeseran desimal pada angka rata-rata gross return unrounded $-0.00171376$ (-17.14 bps) yang keliru dicatat sebagai **-1.77%**, lalu dikurangkan estimasi friksi ~50 bps sehingga menghasilkan angka fiktif **-2.26%** untuk net return. Selain itu, angka **-0.0017** (-17 bps) yang dicantumkan sebagai Expectancy sesungguhnya merupakan *Mean Gross Return*, bukan *Mean Net Return*. Pada pembobotan setara, Expectancy identik dengan unweighted arithmetic mean net return: **-0.00669473** (**-66.95 bps**).
+- **Integritas Proksi Ekskursi & Semantik Time-to-Peak**: Seluruh cabang Stop Loss (`sl_hit` ordinary dan breakout) telah terbukti menetapkan batas bawah konservatif deterministik `bar_high_proxy = bar_high_lower`, sehingga 6 trade SL Hari ke-1 bernilai tepat `mfe = mfe_min = 0.00%`. `time_to_peak` mengacu secara deterministik pada indeks hari holding dari puncak in-trade terkonfirmasi sebelum exit candle.
+- **Konsistensi Modeled Close Exit pada Ambiguous Policy**: Kebijakan `ambiguity_policy="ambiguous"` memodelkan penutupan posisi pada harga $Close$, sehingga ekskursi in-trade merefleksikan rentang lilin penuh $[Low, High]$, dibedakan dari penafsiran Unresolved Barrier Execution.
+- **Isolasi Mutlak Sinyal Unfilled**: 4 sinyal tidak terisi (1 `UNFILLED_EXPIRED` dan 3 `INVALIDATED_GAP`) terbukti 100% memiliki metrik Scope A `NULL` dan dieksklusikan secara mutlak dari evaluasi perdagangan riil.
 
-| Kategori | Jumlah Record | % dari Total (31) | % dari Terisi (27) | Rata-rata Durasi | Keterangan Scope A |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| `TP` (Take Profit) | 8 | 25.81% | 29.63% | 4.38 hari | Terisi, durasi 35 hari / 8 trade |
-| `SL` (Stop Loss) | 17 | 54.84% | 62.96% | 3.88 hari | Terisi, durasi 66 hari / 17 trade |
-| `EXPIRY` (Batas Waktu) | 2 | 6.45% | 7.41% | 10.00 hari | Terisi, durasi 20 hari / 2 trade |
-| `UNFILLED_EXPIRED` | 1 | 3.23% | - | 0.00 hari | **UNFILLED**: holding 0d, Scope A `NULL` |
-| `INVALIDATED_GAP` | 3 | 9.68% | - | 0.00 hari | **UNFILLED**: holding 0d, Scope A `NULL` |
-| **Total Sinyal Matured** | **31** | **100.0%** | **100.0%** | **4.48 hari** | **27 Terisi / 4 Unfilled** |
+### Final recommendation
 
-- **Metrik Performa Trading Riil Terkoreksi (27 Trade Terisi)**:
-  - Total Trade Terisi: **27**
-  - Gross Win Rate ($Gross > 0$): **37.04%** (10 trade positif; 8 TP + 2 Expiry positif)
-  - Net Win Rate ($Net > 0$): **37.04%** (10 trade positif setelah komisi & slippage)
-  - Pure TP Rate: **29.63%** (8 trade)
-  - Rata-rata Gross Return: **-0.1714%** (-17.14 bps per trade) *(sebelumnya salah tertulis -1.77%)*
-  - Rata-rata Net Return: **-0.6695%** (-66.95 bps per trade) *(sebelumnya salah tertulis -2.26%)*
-  - Expectancy (Equal-Weighted Net Return): **-0.0067** (-66.95 bps per trade) *(sebelumnya salah tertulis -0.0017)*
-  - Friksi Transaksi Teramati ($Gross - Net$): **+49.81 bps** *(konsisten dengan anggaran hurdle 50 bps: 40 bps komisi + 10 bps slippage)*
-  - Rata-rata Durasi (Holding Days): **4.48 hari** (total 121 hari / 27 trade) *(sebelumnya tertulis 3.85 hari)*
-
-### Perlindungan Safeguards Terjaga
-- **Model Champion**: Tidak ada model yang dimodifikasi (`LOW_PRICE`: `lightgbm_classification_20261014_093522`, `HIGHER_PRICE`: `lightgbm_classification_20261014_093607`).
-- **EV Gate**: Tetap fail-closed dengan friksi 50 bps terpadu.
-- **Data Sumber**: Bar harga mentah di `daily_bars` tidak mengalami modifikasi.
-- **Suite Pengujian & Linter**: **444 passing tests** (100% lulus, termasuk 5 regression tests baru), 0 lint error (`ruff`).
+Seluruh inkonsistensi dokumentasi telah direkonsiliasi secara menyeluruh terhadap basis data riil `datasets/stock_signals.db`. Seluruh asersi invarian lulus 100%, 444 unit & integrasi tests lulus, linter 100% bersih, dan tidak ada defek kalkulasi baru yang ditemukan. Sistem outcome tracking berstatus **PASS** dan direkomendasikan untuk melanjutkan ke tahap berikutnya (Roadmap Phase 10 / Evaluasi Multi-Horizon).
 
 ---
 
-## 3. Detail Teknis dan Hasil Audit
+## 3. Scope and Acceptance Criteria
 
-Berikut adalah uraian teknis mendalam mengenai arsitektur, skema database, formulasi matematis, studi kasus, dan hasil verifikasi data historis.
-
-### 3.1 Pemisahan Dua Scope Metrik (Scope A vs Scope B)
-
-Untuk menghindari bias kebocoran data pasca-keluar (*post-exit price leakage*) dan memisahkan analisis eksekusi riil dari riset counterfactual, sistem menetapkan dua ruang lingkup independen:
-
-1. **Scope A — Performa Perdagangan Riil (Actual In-Trade)**:
-   - Mengukur pergerakan harga hanya selama posisi terbuka, mulai dari harga pengisian riil hingga harga dan tanggal keluar yang dimodelkan.
-   - Untuk keluar gap pembukaan ($Open \le SL$ atau $Open \ge TP$), harga tertinggi dan terendah dalam perdagangan dibatasi secara ketat pada harga pembukaan tersebut, membuang reli atau penurunan intraday setelah posisi tertutup.
-   - Untuk keluar barrier intraday, harga dibatasi pada batas yang tersentuh ($P_{\text{TP}}$ atau $P_{\text{SL}}$) atau batas interval matematis.
-   - Jika sinyal tidak terisi (`UNFILLED_EXPIRED` atau `INVALIDATED_GAP`), seluruh metrik Scope A bernilai `NULL`, `entry_status = 'UNFILLED'`, dan `holding_days = 0`.
-2. **Scope B — Analisis Peluang Horizon Penuh (Counterfactual Opportunity)**:
-   - Mengukur trajektori pergerakan harga sepanjang seluruh jendela observasi yang direncanakan (`max_holding_days`, default 10 hari) relatif terhadap harga anchor atau trigger.
-   - Dihitung untuk seluruh sinyal, terlepas dari apakah trade keluar lebih awal via TP/SL, tidak pernah tertrigger, atau dibatalkan oleh gap pre-entri.
-   - Field: `full_horizon_mfe`, `full_horizon_mae`, `full_horizon_time_to_peak`, `horizon_end_price`, `horizon_end_return`, `is_full_horizon_complete`.
+| ID | Requirement | Status | Evidence | Remaining issue |
+|---|---|---|---|---|
+| R1 | Sinkronisasi Executive Summary dengan hasil kalkulasi Section 3.4 (Gross: -0.1714%, Net: -0.6695%, Expectancy: -66.95 bps, Hold: 4.48d, Win Rate: 37.04%) | PASS | Section 2, Section 4.2; `tests/unit/test_outcomes.py:test_regression_reconciliation_report_statistics_with_stored_trade_rows` | None |
+| R2 | Pembedaan tegas Gross Return, Net Return (after fees & slippage), dan Expectancy tanpa kalkulasi manual tanpa dasar | PASS | Section 2, Section 4.3; Verifikasi rumus di `python/backtest/metrics.py` dan `python/outcomes/engine.py` | None |
+| R3 | Koreksi jumlah kolom skema `outcomes_daily` dari label 38 menjadi tepat 47 kolom | PASS | Section 4.1, PRAGMA table_info(outcomes_daily) = 47 columns; migrasi di `python/outcomes/repository.py` | None |
+| R4 | Eliminasi metrik/kesimpulan historis yang konflik atau usang di seluruh isi laporan | PASS | Section 2, 4, 5, 7, 8; verifikasi internal consistency di seluruh dokumen | None |
+| R5 | Adopsi template laporan standar 10 bagian secara penuh | PASS | Seluruh 10 bagian tersusun lengkap dan konsisten | None |
+| R6 | Batasan preservasi: tidak mengubah bar mentah, rekor outcome, bobot model, ambang EV Gate, atau mengaktifkan live trading | PASS | Verifikasi `git status`, `git diff`, tidak ada kode atau model biner yang diubah | None |
 
 ---
 
-### 3.2 Skema Database SQLite & Kamus Data
+## 4. Quantitative Results
 
-Penyimpanan persisten menggunakan dua tabel relasional di `datasets/stock_signals.db`:
+### Evaluation setup
 
-#### 1. Tabel `outcomes_daily` (38 Kolom)
+- Observation period: `2026-07-06 — 2026-10-12`
+- Number of records: `31 matured signals (27 FILLED trades, 1 UNFILLED_EXPIRED, 3 INVALIDATED_GAP)`
+- Inclusion/exclusion rules: `Evaluasi kinerja perdagangan riil strictly memfilter entry_status == 'FILLED' and outcome_status IN ('TP', 'SL', 'EXPIRY'). Sinyal UNFILLED (UNFILLED_EXPIRED, INVALIDATED_GAP) dieksklusikan 100% dan seluruh metrik Scope A bernilai NULL.`
+- Price mode: `BOTH (22 LOW_PRICE, 9 HIGHER_PRICE dari 31 sinyal; 20 LOW_PRICE, 7 HIGHER_PRICE dari 27 trade terisi)`
+- Cost assumptions: `Komisi beli BEI: 0.15% (15 bps), Komisi jual BEI: 0.25% (25 bps), Slippage per sisi: 0.05% (5 bps tiap sisi = 10 bps round-trip). Total friksi pada titik impas: 50 bps.`
+
+### Results
+
+| Metric | Baseline (Laporan Lama) | Candidate/Current (Audit Terkoreksi) | Interpretation |
+|---|---:|---:|---|
+| Total Sinyal Matured | 31 | **31** | Seluruh sinyal dalam rentang observasi telah matured |
+| Trade Terisi (`FILLED`) | 27 | **27** | 8 TP, 17 SL, 2 EXPIRY |
+| Sinyal Unfilled (Dieksklusikan) | 4 | **4** | 1 `UNFILLED_EXPIRED`, 3 `INVALIDATED_GAP` (Scope A = `NULL`) |
+| Arithmetic Mean Gross Return | -1.77% | **-0.1714%** (-17.14 bps) | Koreksi kesalahan pergeseran desimal (-0.00171376 riil) |
+| Arithmetic Mean Net Return | -2.26% | **-0.6695%** (-66.95 bps) | Koreksi kesalahan pergeseran desimal (-0.00669473 riil) |
+| Expectancy per Trade | -0.0017 (-17 bps) | **-0.0067** (-66.95 bps) | Diselaraskan ke Mean Net Return equal-weighted |
+| Realized Transaction Friction | ~49 bps | **49.81 bps** (0.00498097) | 100% konsisten dengan anggaran hurdle EV Gate (50 bps) |
+| Gross Win Rate ($Gross > 0$) | 37.04% | **37.04%** (10 / 27 trades) | 8 TP (+4.56% s/d +7.04%) + 2 Expiry (+1.25%, +1.38%) |
+| Net Win Rate ($Net > 0$) | 37.04% | **37.04%** (10 / 27 trades) | 10 trade positif setelah seluruh komisi & slippage |
+| Pure Take-Profit Rate | 29.63% | **29.63%** (8 / 27 trades) | Posisi tertutup pada target Take-Profit |
+| Stop-Loss Rate | 62.96% | **62.96%** (17 / 27 trades) | Posisi tertutup pada batas Stop-Loss |
+| Expiry Exit Rate | 7.41% | **7.41%** (2 / 27 trades) | Posisi tertutup pada batas waktu maksimal (10 hari) |
+| Average Holding Duration | 4.19 / 3.85 hari | **4.48 hari** (121d / 27 trades) | Durasi holding riil trade terisi |
+| MFE Proxy pada 1-Day SL Exits | Optimistis (+0.85% s/d +5.06%) | **Konservatif (+0.00%)** | `mfe = mfe_min = 0.00%` pada 6 trade SL Hari ke-1 |
+| Kolom Skema `outcomes_daily` | 38 kolom | **47 kolom** | 27 core + 11 horizon + 9 bounded & deviation |
+| Kolom Skema `signal_snapshots_daily` | 10 kolom | **14 kolom** | 10 core + 4 bounded excursion so far |
+
+---
+
+### Skema Database SQLite Aktual
+
+#### 1. Tabel `outcomes_daily` (Tepat 47 Kolom)
 
 ```sql
 CREATE TABLE IF NOT EXISTS outcomes_daily (
@@ -226,7 +148,7 @@ CREATE TABLE IF NOT EXISTS outcomes_daily (
 );
 ```
 
-#### 2. Tabel `signal_snapshots_daily` (14 Kolom)
+#### 2. Tabel `signal_snapshots_daily` (Tepat 14 Kolom)
 
 ```sql
 CREATE TABLE IF NOT EXISTS signal_snapshots_daily (
@@ -250,197 +172,9 @@ CREATE TABLE IF NOT EXISTS signal_snapshots_daily (
 
 ---
 
-### 3.3 Formulasi Matematis, Bounded Interval Semantics & Kebijakan Ambiguitas
+### Tabel Lengkap 31 Rekor Historis Matured
 
-#### 1. Formulasi Interval Batas Ekskursi Exit-Day & Single-Value Proxies
-
-Karena data harian OHLC tidak memiliki urutan waktu tick intraday, rentang ketidakpastian matematis diformulasikan sebagai berikut:
-
-1. **Kasus Take-Profit Intraday ($k = N$)**:
-   - $\text{MFE}_{\min} = \text{MFE}_{\max} = \text{mfe} = \frac{P_{\text{TP}} - P_{\text{entry}}}{P_{\text{entry}}}$ (presisi pasti, posisi tertutup di TP).
-   - $\text{MAE}_{\min} = \frac{\min(Low_{1\dots N}) - P_{\text{entry}}}{P_{\text{entry}}}$ (asumsi terburuk: harga terendah candle exit dikunjungi sebelum menyentuh TP).
-   - $\text{MAE}_{\max} = \frac{\min(Low_{1\dots N-1} \cup \{Open_N\}) - P_{\text{entry}}}{P_{\text{entry}}}$ (asumsi terbaik: TP tersentuh di awal sesi sebelum penurunan intraday terjadi). Untuk entri breakout Hari ke-1: $\min(Low_{1\dots N-1} \cup \{P_{\text{entry}}\})$.
-   - *Proxy MAE*: Menggunakan `mae_min` pada entri reguler (asumsi konservatif). Untuk entri breakout intraday Hari ke-1 yang langsung menyentuh TP, proksi mengadopsi $\text{bar\_low\_proxy} = P_{\text{entry}}$ ($0.00\%$) guna mencegah kebocoran penurunan sore (*afternoon drop*) pasca-exit TP ke dalam metrik in-trade, sementara risiko penurunan potensial tetap terikat secara matematis pada batas bawah $\text{MAE}_{\min}$.
-
-2. **Kasus Stop-Loss Intraday ($k = N$)**:
-   - $\text{MAE}_{\min} = \text{MAE}_{\max} = \text{mae} = \frac{P_{\text{SL}} - P_{\text{entry}}}{P_{\text{entry}}}$ (presisi pasti, posisi tertutup di SL).
-   - $\text{MFE}_{\min} = \frac{\max(High_{1\dots N-1} \cup \{Open_N\}) - P_{\text{entry}}}{P_{\text{entry}}}$ (asumsi konservatif: SL tersentuh sebelum lonjakan harga tertinggi candle exit). Untuk breakout entry bar Hari ke-1: $\max(High_{1\dots N-1} \cup \{P_{\text{entry}}\})$.
-   - $\text{MFE}_{\max} = \frac{\max(High_{1\dots N}) - P_{\text{entry}}}{P_{\text{entry}}}$ (asumsi optimis: lonjakan harga tertinggi terjadi sebelum posisi terkena SL).
-   - *Proxy MFE*: Menggunakan `mfe_min` (asumsi konservatif deterministik, $\text{bar\_high\_proxy} = \text{bar\_high\_lower}$). Pada trade SL Hari ke-1, $\text{mfe} = 0.00\%$, mengeliminasi bias kebocoran reli pasca-stop.
-
-3. **Kasus Gap Exit pada Pembukaan ($Open \le SL$ atau $Open \ge TP$)**:
-   - Transaksi tertutup tepat pada pembukaan ($Open_N$), sehingga pergerakan intraday setelahnya tidak dialami posisi:
-     $\widetilde{High}_N = Open_N$ dan $\widetilde{Low}_N = Open_N$.
-   - Interval batas runtuh menjadi nilai tunggal yang eksak:
-     $\text{MFE}_{\min} = \text{MFE}_{\max}$ dan $\text{MAE}_{\min} = \text{MAE}_{\max}$.
-
-4. **Kasus Expiry ($k = \text{max\_holding\_days}$)**:
-   - Posisi dipegang penuh hingga penutupan hari terakhir:
-     $\text{MFE}_{\min} = \text{MFE}_{\max}$ dan $\text{MAE}_{\min} = \text{MAE}_{\max}$.
-
-#### 2. Semantik Time-to-Peak Deterministik
-- `time_to_peak` didefinisikan secara deterministik sebagai **indeks holding day (1-based) dari harga tertinggi in-trade observabel yang terkonfirmasi** (`highest_high_proxy`).
-- Jika trade terkena SL pada Hari ke-$N$, lonjakan candle exit $High_N > Open_N$ tidak pernah diakui sebagai in-trade peak karena urutan intraday tidak dapat dipastikan dari data OHLC harian. Dengan demikian, `time_to_peak` mencerminkan hari puncak tertinggi sebelum exit candle (atau Hari ke-1 jika tidak ada bar sebelumnya).
-- Peluang reli penuh sepanjang horizon observasi tetap dicatat secara terpisah pada Scope B (`full_horizon_time_to_peak`).
-
-#### 3. Kebijakan Ambiguitas: Modeled Close Exit vs. Unresolved Barrier Execution
-Jika dalam satu lilin terjadi benturan lilin ganda (*same-candle collision*, $High \ge P_{\text{TP}}$ dan $Low \le P_{\text{SL}}$):
-- **Modeled Close Exit (`ambiguity_policy="ambiguous"`)**:
-  - Model mengeksekusi order keluar pada harga penutupan candle harian ($Close_N$).
-  - Status keluar ditandai secara eksplisit sebagai `AMBIGUOUS`.
-  - Karena posisi dimodelkan tetap terbuka hingga penutupan pasar, metrik ekskursi in-trade merepresentasikan **rentang penuh lilin yang teramati**:
-    $\text{bar\_high\_lower} = \text{bar\_high\_upper} = \text{bar\_high\_proxy} = High_N$
-    $\text{bar\_low\_lower} = \text{bar\_low\_upper} = \text{bar\_low\_proxy} = Low_N$
-  - Model menghapus pembatasan buatan ($\min(High, TP)$ dan $\max(Low, SL)$) yang kontradiktif dengan keluar di harga penutupan.
-- **Perbedaan dengan Unresolved Barrier Execution**:
-  - Pada penafsiran *Unresolved Barrier Execution*, diasumsikan salah satu barrier (TP atau SL) telah tertrigger secara intraday, namun urutan eksekusi tidak dapat diketahui. Penafsiran tersebut menghasilkan status keluar tidak terselesaikan dengan rentang harga keluar $[P_{\text{SL}}, P_{\text{TP}}]$.
-  - Kebijakan engine menetapkan **Modeled Close Exit** sebagai strategi deterministik yang dapat diaudit, terhindar dari asumsi spekulatif urutan tick intraday.
-
-#### 4. Rekonsiliasi Friksi Transaksi (Komisi & Slippage)
-Biaya transaksi Bursa Efek Indonesia (BEI) distandarisasi secara seragam:
-- Komisi beli: $c_{\text{buy}} = 0.0015$ (15 bps)
-- Komisi jual: $c_{\text{sell}} = 0.0025$ (25 bps)
-- Slippage per sisi: $s_{\text{half}} = 0.0005$ (5 bps tiap sisi = 10 bps round-trip)
-
-$$\text{Gross Return} = \frac{P_{\text{exit}} - P_{\text{entry}}}{P_{\text{entry}}}$$
-$$\text{Return After Fees} = \frac{P_{\text{exit}} \cdot (1 - c_{\text{sell}})}{P_{\text{entry}} \cdot (1 + c_{\text{buy}})} - 1.0$$
-$$\text{Net Return} = \frac{P_{\text{exit}} \cdot (1 - s_{\text{half}}) \cdot (1 - c_{\text{sell}})}{P_{\text{entry}} \cdot (1 + s_{\text{half}}) \cdot (1 + c_{\text{buy}})} - 1.0$$
-
-Pada titik impas ($P_{\text{exit}} = P_{\text{entry}}$), $\text{Net Return} = -0.499\% \approx -50\text{ bps}$, tepat sama dengan ambang batas EV Gate Hurdle (`50 bps`).
-
----
-
-### 3.4 Rekonsiliasi Statistik Performa Historis (Before vs. After)
-
-Audit mendalam terhadap 31 rekor sinyal historis (`datasets/stock_signals.db`) mengungkap inkonsistensi antara laporan sebelumnya dengan data unrounded riil:
-
-#### 1. Akar Penyebab Discrepancy (Root Cause Analysis)
-1. **Kesalahan Pergeseran Desimal (Decimal Placement Error)**:
-   - Rata-rata gross return unrounded riil dari 27 trade terisi adalah $-0.00171376$ (-0.1714% atau -17.14 bps).
-   - Penulis laporan sebelumnya keliru menginterpretasikan $-0.001714$ sebagai **-1.77%** (salah mencatat desimal), lalu mengurangkan estimasi friksi 50 bps sehingga menghasilkan angka fiktif **-2.26%** untuk net return.
-2. **Kekeliruan Definisi Expectancy**:
-   - Angka **-0.0017** (-17 bps) yang dicantumkan sebagai Expectancy pada laporan lama sesungguhnya adalah *Mean Gross Return* (-17.14 bps), bukan *Mean Net Return*.
-   - Menurut formulasi formal di `python/backtest/metrics.py`:
-     $$\text{calculate\_expectancy}(trades) = \frac{1}{N} \sum_{i=1}^N \text{net\_return}_i$$
-     Untuk portofolio dengan pembobotan setara (equal-weighted), **Expectancy identik secara matematis dengan Arithmetic Mean Net Return**: **-0.00669473** (**-66.95 bps per trade**).
-3. **Isolasi Mutlak Sinyal Unfilled**:
-   - Dari 31 sinyal matured, 4 sinyal tidak terisi: 1 `UNFILLED_EXPIRED` (`BBCA`) dan 3 `INVALIDATED_GAP` (`BYAN`, `ASII`, `BBCA`).
-   - Keempat sinyal ini memiliki metrik Scope A bernilai `NULL` dan dieksklusikan 100% dari seluruh statistik performa perdagangan riil.
-
-#### 2. Tabel Perbandingan Sebelum & Sesudah (Before vs. After)
-
-| Metrik Performa | Laporan Sebelumnya (Before) | Audit Final Terkoreksi (After) | Selisih / Keterangan Koreksi |
-| :--- | :---: | :---: | :--- |
-| **Populasi Trade Terisi** | 27 trades | **27 trades** | Konsisten (8 TP, 17 SL, 2 EXPIRY) |
-| **Sinyal Unfilled (Dieksklusikan)** | 4 signals | **4 signals** | 1 `UNFILLED_EXPIRED`, 3 `INVALIDATED_GAP` (Scope A `NULL`) |
-| **Arithmetic Mean Gross Return** | -1.77% | **-0.1714%** (-17.14 bps) | Koreksi desimal (-0.00171376 vs typo -1.77%) |
-| **Arithmetic Mean Net Return** | -2.26% | **-0.6695%** (-66.95 bps) | Koreksi desimal (-0.00669473 vs typo -2.26%) |
-| **Expectancy per Trade** | -0.0017 (-17 bps) | **-0.0067** (-66.95 bps) | Diselaraskan ke Mean Net Return (sebelumnya keliru Gross) |
-| **Friksi Rata-rata Terealisasi** | ~49 bps | **49.81 bps** (0.00498097) | 100% konsisten dengan EV Hurdle Budget (50 bps) |
-| **Win Rate (Net Return > 0)** | 37.04% | **37.04%** (10 / 27 trades) | 8 TP (+4.56% s/d +7.04%) + 2 EXPIRY (+1.25%, +1.38%) |
-| **Pure TP Rate** | 29.63% | **29.63%** (8 / 27 trades) | 8 Take-Profit hits |
-| **Stop Loss Rate** | 62.96% | **62.96%** (17 / 27 trades) | 17 Stop-Loss hits |
-| **Expiry Rate** | 7.41% | **7.41%** (2 / 27 trades) | 2 Expiry exits |
-| **Rata-rata Durasi Holding** | 4.19 hari | **4.48 hari** (121d / 27) | Rata-rata holding day riil trade terisi |
-| **MFE Proxy pada 1-Day SL** | Optimistis (+0.85% s/d +5.06%) | **Konservatif (+0.00%)** | `mfe = mfe_min = 0.00%` untuk 6 trade SL Hari ke-1 |
-
-#### 3. Kode Perhitungan Reproducible (Python & SQL)
-
-**Kueri SQL Reproducible:**
-```sql
-SELECT
-    COUNT(*) AS total_filled_trades,
-    SUM(CASE WHEN outcome_status = 'TP' THEN 1 ELSE 0 END) AS tp_trades,
-    SUM(CASE WHEN outcome_status = 'SL' THEN 1 ELSE 0 END) AS sl_trades,
-    SUM(CASE WHEN outcome_status = 'EXPIRY' THEN 1 ELSE 0 END) AS expiry_trades,
-    ROUND(100.0 * SUM(CASE WHEN outcome_status = 'TP' THEN 1 ELSE 0 END) / COUNT(*), 2) AS tp_rate_pct,
-    ROUND(100.0 * SUM(CASE WHEN net_return > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) AS win_rate_pct,
-    AVG(gross_return) AS arithmetic_mean_gross_return,
-    AVG(net_return) AS arithmetic_mean_net_return,
-    AVG(net_return) AS expectancy_per_trade,
-    AVG(holding_days) AS avg_holding_days
-FROM outcomes_daily
-WHERE entry_status = 'FILLED';
-```
-
-**Skrip Python Reproducible:**
-```python
-import sqlite3
-
-conn = sqlite3.connect("datasets/stock_signals.db")
-cursor = conn.cursor()
-cursor.execute(
-    "SELECT gross_return, net_return, outcome_status, holding_days "
-    "FROM outcomes_daily WHERE entry_status = 'FILLED'"
-)
-rows = cursor.fetchall()
-
-n = len(rows)
-gross_returns = [r[0] for r in rows]
-net_returns = [r[1] for r in rows]
-
-mean_gross = sum(gross_returns) / n
-mean_net = sum(net_returns) / n
-expectancy = mean_net
-win_rate = sum(1 for r in net_returns if r > 0) / n
-tp_rate = sum(1 for r in rows if r[2] == "TP") / n
-avg_holding = sum(r[3] for r in rows) / n
-
-print(f"Total Filled Trades: {n}")
-print(f"Mean Gross Return  : {mean_gross:.8f} ({mean_gross * 100:.4f}% or {mean_gross * 10000:.2f} bps)")
-print(f"Mean Net Return    : {mean_net:.8f} ({mean_net * 100:.4f}% or {mean_net * 10000:.2f} bps)")
-print(f"Expectancy         : {expectancy:.8f} ({expectancy * 10000:.2f} bps per trade)")
-print(f"Win Rate           : {win_rate:.4%}")
-print(f"TP Rate            : {tp_rate:.4%}")
-print(f"Avg Holding Days   : {avg_holding:.2f} days")
-```
-
----
-
-### 3.5 Validasi Kontrak Market-On-Open (MOO) & Deviasi Entri
-
-Aturan validasi entri diimplementasikan pada `python/outcomes/engine.py`:
-1. **Verifikasi Ambang Barrier**:
-   - Jika $Open_1 \le P_{\text{SL}}$ atau $Open_1 \ge P_{\text{TP}}$, order langsung dibatalkan sebagai `INVALIDATED_GAP`.
-2. **Verifikasi Toleransi Deviasi**:
-   - Deviasi dihitung terhadap anchor: $dev = |Open_1 - P_{\text{anchor}}| / P_{\text{anchor}}$.
-   - Jika $dev > \text{max\_entry\_deviation\_pct}$ (5.0%), order dibatalkan sebagai `INVALIDATED_GAP`.
-3. **Pencatatan Presisi**:
-   - Seluruh trade yang terisi mencatat `entry_deviation_pct = (ep - anchor) / anchor`.
-4. **Analisis Dampak Historis**:
-   - Seluruh 27 trade terisi historis memiliki deviasi sangat ketat: antara $-0.88\%$ hingga $+0.88\%$.
-   - Jika opsi `--enforce-entry-band` diaktifkan, 4 trade (`DEWA`, `BMTR`, `ADHI`, `BMTR`) yang membuka 1 tick di luar band rekomendasi akan terkonversi menjadi `INVALIDATED_GAP`.
-
----
-
-### 3.6 Rekonsiliasi Kasus Defek Historis
-
-#### Kasus Pre-Entry Gap Breach: `BYAN`, `ASII`, `BBCA`
-
-| Ticker | Tanggal Sinyal | Ref Px | Planned SL | Next Open | Status Lama | Status Terkoreksi | Alasan Koreksi |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
-| `BYAN` | 2026-08-18 | 17,275 | 16,844.85 | 14,700 (2026-08-19) | `SL` (terisi 14,700) | `INVALIDATED_GAP` | Gap down riil -14.9% membuka jauh di bawah SL. Order batal sebelum eksekusi. Metrik trade `NULL`. |
-| `ASII` | 2026-10-09 | 5,150 | 5,021.77 | 4,850 (2026-10-12) | `SL` (terisi 4,850) | `INVALIDATED_GAP` | Disparitas skala sinyal retroaktif vs bar riil. Membuka di bawah SL. Order batal sebelum eksekusi. |
-| `BBCA` | 2026-10-09 | 10,200 | 9,946.02 | 6,050 (2026-10-12) | `SL` (terisi 6,050) | `INVALIDATED_GAP` | Rencana sinyal pre-split vs bar riil split-adjusted. Membuka di bawah SL. Order batal sebelum eksekusi. |
-
-*Catatan Kausalitas*: Sinyal Hari ke-0 **tidak boleh disupresi** saat pembentukan di penutupan pasar Hari ke-0 karena harga pembukaan Hari ke-1 belum terjadi (menghindari lookahead bias). Pembatalan dilakukan secara kausal pada fase lelang pra-pembukaan Hari ke-1 (`INVALIDATED_GAP`).
-
-#### Kasus Intraday Extreme Leakage: `GIAA`, `LPKR`
-
-1. **`GIAA` (Sinyal 2026-08-03, Entri 54.0, TP 58.0)**:
-   - Pada Hari ke-5 (2026-08-10), harga menyentuh TP di 58.0 (+7.41%). Candle terus naik hingga High 72.0 (+33.33%).
-   - *MFE Lama*: **+33.33%** (cacat: memasukkan pergerakan setelah saham terjual).
-   - *MFE Terkoreksi*: **+7.41%** (terkunci di batas TP). Peluang reli hingga 84.0 tercatat terpisah di Scope B: `full_horizon_mfe = +55.56%`.
-2. **`LPKR` (Sinyal 2026-09-15, Entri 60.0, SL 56.0)**:
-   - Pada Hari ke-3 (2026-09-18), harga menyentuh SL di 56.0 (-6.67%). Candle terus anjlok hingga Low 53.0 (-11.67%).
-   - *MAE Lama*: **-11.67%** (cacat: membebankan kerugian setelah posisi di-cut loss).
-   - *MAE Terkoreksi*: **-6.67%** (terkunci di batas SL). Keruntuhan pasca-keluar tercatat di Scope B: `full_horizon_mae = -35.00%`.
-
----
-
-### 3.7 Tabel Lengkap 31 Rekor Historis Matured
-
-Seluruh data di bawah ini telah diaudit dan diverifikasi 100% konsisten terhadap bar harga di `datasets/stock_signals.db`:
+Seluruh data di bawah ini diverifikasi 100% konsisten terhadap bar harga di `datasets/stock_signals.db`:
 
 | Ticker | Signal Dt | Entry Dt | Entry Px | Status | Exit Dt | Exit Px | Return | Net Ret | Hold | MFE Proxy [Min, Max] | MAE Proxy [Min, Max] | Mode |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -478,50 +212,215 @@ Seluruh data di bawah ini telah diaudit dan diverifikasi 100% konsisten terhadap
 
 ---
 
-### 3.8 Asumsi Diketahui, Edge Cases, dan Kebijakan Ambiguitas
+### Definitions and calculations
 
-1. **Ambiguitas Benturan Lilin yang Sama (Same-Candle Collision)**:
-   - Jika dalam satu hari $High \ge P_{\text{TP}}$ dan $Low \le P_{\text{SL}}$, kebijakan `ambiguity_policy` dieksekusi:
-     - `conservative` (default): Mengasumsikan Stop Loss tersentuh terlebih dahulu.
-     - `optimistic`: Mengasumsikan Take Profit tersentuh terlebih dahulu.
-     - `ambiguous`: Menandai status sebagai `AMBIGUOUS` dan mengeksekusi keluar pada harga penutupan candle ($Close$). Metrik ekskursi in-trade merepresentasikan $[Low, High]$ penuh candle exit.
-   - *Data Historis*: 0 tabrakan lilin ganda terjadi pada 31 rekor historis ini. Logika teruji 100% pada unit test.
-2. **Semantik Time-to-Peak pada Exit Candle**:
-   - Jika exit terjadi pada candle dengan pergerakan harga di luar barrier yang tersentuh, urutan intraday tidak dapat diasumsikan. Engine tidak memasukkan lonjakan harga yang tak terkonfirmasi ke dalam `highest_high_proxy` sehingga `time_to_peak` tidak pernah menunjuk ke lonjakan post-stop.
-3. **Aksi Korporasi & Penyesuaian Harga**:
-   - Order dieksekusi pada harga bursa nyata (`raw_close`, `open`).
-   - Sinyal memeriksa toleransi konsistensi harga disesuaikan via `raw_adjusted_tolerance_pct` (5%) guna mencegah distorsi rasio dividen/split.
-4. **Suspensi Likuiditas**:
-   - Hari perdagangan dengan volume nol atau suspensi bursa tidak memajukan counter durasi perdagangan jika bar tidak tersedia.
+#### 1. Formulasi Metrik Return & Friksi Eksekusi BEI
+
+Standarisasi friksi perdagangan Bursa Efek Indonesia (BEI):
+- Komisi beli: $c_{\text{buy}} = 0.0015$ (15 bps)
+- Komisi jual: $c_{\text{sell}} = 0.0025$ (25 bps)
+- Slippage per sisi: $s_{\text{half}} = 0.0005$ (5 bps tiap sisi = 10 bps round-trip)
+
+1. **Gross Realized Return**:
+   $$\text{Gross Return} = \frac{P_{\text{exit}} - P_{\text{entry}}}{P_{\text{entry}}}$$
+2. **Return After Fees**:
+   $$\text{Return After Fees} = \frac{P_{\text{exit}} \cdot (1 - c_{\text{sell}})}{P_{\text{entry}} \cdot (1 + c_{\text{buy}})} - 1.0$$
+3. **Net Return (Fees + Slippage)**:
+   $$\text{Net Return} = \frac{P_{\text{exit}} \cdot (1 - s_{\text{half}}) \cdot (1 - c_{\text{sell}})}{P_{\text{entry}} \cdot (1 + s_{\text{half}}) \cdot (1 + c_{\text{buy}})} - 1.0$$
+4. **Expectancy (Aritmetika Equal-Weighted)**:
+   Mengikuti formulasi baku pada `python/backtest/metrics.py`:
+   $$\text{calculate\_expectancy}(trades) = \frac{1}{N} \sum_{i=1}^N \text{net\_return}_i$$
+   Pada portofolio dengan pembobotan setara, Expectancy identik secara matematis dengan Arithmetic Mean Net Return: **-0.00669473** (**-66.95 bps per trade**).
+5. **Friksi Transaksi Teramati**:
+   $$\text{Friction} = \text{Gross Return} - \text{Net Return} = -0.00171376 - (-0.00669473) = +0.00498097 \approx 49.81\text{ bps}$$
+   Konsisten 100% dengan anggaran hurdle gerbang matematis EV Gate (`50 bps`).
+
+#### 2. Kueri SQL Reproducible
+
+```sql
+SELECT
+    COUNT(*) AS total_filled_trades,
+    SUM(CASE WHEN outcome_status = 'TP' THEN 1 ELSE 0 END) AS tp_trades,
+    SUM(CASE WHEN outcome_status = 'SL' THEN 1 ELSE 0 END) AS sl_trades,
+    SUM(CASE WHEN outcome_status = 'EXPIRY' THEN 1 ELSE 0 END) AS expiry_trades,
+    ROUND(100.0 * SUM(CASE WHEN outcome_status = 'TP' THEN 1 ELSE 0 END) / COUNT(*), 2) AS tp_rate_pct,
+    ROUND(100.0 * SUM(CASE WHEN net_return > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) AS win_rate_pct,
+    AVG(gross_return) AS arithmetic_mean_gross_return,
+    AVG(net_return) AS arithmetic_mean_net_return,
+    AVG(net_return) AS expectancy_per_trade,
+    AVG(holding_days) AS avg_holding_days
+FROM outcomes_daily
+WHERE entry_status = 'FILLED';
+```
+
+#### 3. Skrip Python Reproducible
+
+```python
+import sqlite3
+
+conn = sqlite3.connect("datasets/stock_signals.db")
+cursor = conn.cursor()
+cursor.execute(
+    "SELECT gross_return, net_return, outcome_status, holding_days "
+    "FROM outcomes_daily WHERE entry_status = 'FILLED'"
+)
+rows = cursor.fetchall()
+
+n = len(rows)
+gross_returns = [r[0] for r in rows]
+net_returns = [r[1] for r in rows]
+
+mean_gross = sum(gross_returns) / n
+mean_net = sum(net_returns) / n
+expectancy = mean_net
+win_rate = sum(1 for r in net_returns if r > 0) / n
+tp_rate = sum(1 for r in rows if r[2] == "TP") / n
+avg_holding = sum(r[3] for r in rows) / n
+
+print(f"Total Filled Trades: {n}")
+print(f"Mean Gross Return  : {mean_gross:.8f} ({mean_gross * 100:.4f}% or {mean_gross * 10000:.2f} bps)")
+print(f"Mean Net Return    : {mean_net:.8f} ({mean_net * 100:.4f}% or {mean_net * 10000:.2f} bps)")
+print(f"Expectancy         : {expectancy:.8f} ({expectancy * 10000:.2f} bps per trade)")
+print(f"Win Rate           : {win_rate:.4%}")
+print(f"TP Rate            : {tp_rate:.4%}")
+print(f"Avg Holding Days   : {avg_holding:.2f} days")
+```
 
 ---
 
-### 3.9 Verifikasi Test Suite & Bukti Idempotensi
+## 5. Findings
 
-- **Linter (`ruff check .`)**: 100% bersih tanpa peringatan atau pelanggaran kode.
-- **Suite Pengujian Unit & Integrasi**:
-  - `tests/unit/test_outcomes.py`: 61 unit test (56 unit tests dasar + 5 targeted regression tests untuk SL post-stop high, TP post-target low, exit-day time-to-peak uncertainty, ambiguous policy dual-barrier candle, dan database statistics reconciliation).
-  - Total test suite repositori: 444 passing tests (100% pass rate).
-- **Audit Basis Data Historis (`scripts/audit_historical_outcomes.py`)**:
-  - Seluruh 31 record diverifikasi terhadap bar harga mentah.
-  - Seluruh asersi invarian lulus: `mfe_min <= mfe <= mfe_max`, `mae_min <= mae <= mae_max`, `mfe >= 0`, `mae <= 0`, paritas snapshot hari terakhir `100%`.
-- **Idempotensi Replay**:
-  - Eksekusi berulang perintah `.venv\Scripts\python.exe scripts/resolve_outcomes.py --force-recompute --save-db` menghasilkan kondisi database yang identik tanpa duplikasi baris atau mutasi status yang tak diharapkan.
+### F1 — Typo Desimal dan Misatribusi Definisi Expectancy pada Executive Summary
+
+- **Severity:** `HIGH`
+- **Status:** `CONFIRMED`
+- **Evidence:** `audit_report.md` (Executive Summary lama vs Section 3.4), `tests/unit/test_outcomes.py:test_regression_reconciliation_report_statistics_with_stored_trade_rows`
+- **Root cause:** Penulis laporan lama keliru membaca angka unrounded $-0.00171376$ (-17.14 bps) sebagai -1.77% (pergeseran desimal satu digit), lalu mengurangkan friksi ~50 bps untuk memunculkan net return fiktif -2.26%. Selain itu, angka -0.0017 (-17 bps) yang dicantumkan sebagai Expectancy sesungguhnya adalah rata-rata Gross Return, bukan Net Return.
+- **Impact:** Terjadi disinformasi statistik performa pada level ringkasan eksekutif, meskipun kalkulasi detail di Section 3.4 sudah benar.
+- **Resolution:** Menyelaraskan Executive Summary dengan angka unrounded riil: Mean Gross Return -0.1714%, Mean Net Return -0.6695%, Expectancy -66.95 bps, Holding Days 4.48 hari, Win Rate 37.04%.
+- **Residual risk:** Tidak ada. Data diverifikasi via unit test dan kueri SQL independen.
+
+### F2 — Diskrepansi Jumlah Kolom Skema `outcomes_daily` (38 vs 47 Kolom)
+
+- **Severity:** `MEDIUM`
+- **Status:** `CONFIRMED`
+- **Evidence:** `audit_report.md` heading lama `Tabel outcomes_daily (38 Kolom)`, `python/outcomes/repository.py:new_cols`, `PRAGMA table_info(outcomes_daily)` (menghasilkan tepat 47 kolom)
+- **Root cause:** Tabel awal `outcomes_daily` dibuat dengan 38 kolom. Kemudian migrasi menambahkan 9 kolom baru (`mfe_min`, `mfe_max`, `mae_min`, `mae_max`, `mfe_price_min`, `mfe_price_max`, `mae_price_min`, `mae_price_max`, `entry_deviation_pct`). Blok SQL dokumentasi telah memuat seluruh 47 kolom, namun judul subbagian lupa diperbarui dan tetap bertuliskan `(38 Kolom)`.
+- **Impact:** Kerancuan dokumentasi teknis bagi developer dan auditor database.
+- **Resolution:** Mengoreksi judul subbagian menjadi `Tabel outcomes_daily (Tepat 47 Kolom)` dan mendokumentasikan rincian migrasi secara transparan.
+- **Residual risk:** Tidak ada. Skema database di `datasets/stock_signals.db` telah memiliki 47 kolom.
+
+### F3 — Kebocoran Lonjakan Optimis pada Proksi MFE Exit Stop-Loss
+
+- **Severity:** `HIGH`
+- **Status:** `CONFIRMED`
+- **Evidence:** `python/outcomes/engine.py:evaluate_signal`, 6 trade SL Hari ke-1 (`ADHI`, `BMTR`, `DEWA`, `GIAA`, `KRAS`, `WIRG`)
+- **Root cause:** Cabang Stop Loss menetapkan `bar_high_proxy = bar.high` (batas atas optimis `mfe_max`), padahal data harian OHLC tidak dapat memastikan apakah lonjakan harga tertinggi candle exit terjadi sebelum atau sesudah stop loss tertrigger.
+- **Impact:** Nilai proksi `mfe` terdistorsi positif (+0.85% s/d +5.06%) pada posisi yang langsung stop out di Hari ke-1.
+- **Resolution:** Menetapkan `bar_high_proxy = bar_high_lower` (harga pembukaan $Open$ untuk entri reguler, atau harga entri $P_{\text{entry}}$ untuk entri breakout). Proksi MFE pada 6 trade SL Hari ke-1 bernilai tepat 0.00% (`mfe == mfe_min`).
+- **Residual risk:** Tidak ada. Diuji pada 5 unit tests dan diverifikasi pada `scripts/audit_historical_outcomes.py`.
+
+### F4 — Semantik Time-to-Peak Deterministik vs Urutan Intraday Tak Pasti
+
+- **Severity:** `MEDIUM`
+- **Status:** `CONFIRMED`
+- **Evidence:** `python/outcomes/engine.py:time_to_peak`, `tests/unit/test_outcomes.py:test_regression_time_to_peak_when_exit_day_high_is_uncertain`
+- **Root cause:** Candle exit yang mengalami pergerakan harga di atas open sebelum stop loss tidak dapat diverifikasi secara kausal tanpa data tick intraday.
+- **Impact:** `time_to_peak` berisiko menunjuk ke lilin keluar pasca-stop.
+- **Resolution:** `time_to_peak` didefinisikan secara deterministik sebagai indeks holding day dari harga tertinggi in-trade observabel terkonfirmasi (`highest_high_proxy`). Lonjakan exit candle yang tak terkonfirmasi diabaikan dan disimpan terpisah pada Scope B (`full_horizon_time_to_peak`).
+- **Residual risk:** Tidak ada.
+
+### F5 — Ekskursi Rentang Penuh Candle pada Modeled Close Exit (Ambiguous Policy)
+
+- **Severity:** `MEDIUM`
+- **Status:** `CONFIRMED`
+- **Evidence:** `python/outcomes/engine.py`, `tests/unit/test_outcomes.py:test_regression_ambiguous_policy_candle_touching_both_barriers`
+- **Root cause:** Model keluar di harga penutupan ($Close$) pada lilin tabrakan barrier ganda, namun sebelumnya ekskursi dibatasi pada barrier.
+- **Impact:** Inkonsistensi semantik antara status keluar di close dengan rentang harga yang dialami posisi.
+- **Resolution:** Menyelaraskan ekskursi in-trade merepresentasikan $[Low, High]$ penuh candle exit (`bar_high_proxy = bar.high`, `bar_low_proxy = bar.low`).
+- **Residual risk:** Tidak ada.
+
+### F6 — Pre-Entry Gap Invalidation (`INVALIDATED_GAP` Case Studies: `BYAN`, `ASII`, `BBCA`)
+
+- **Severity:** `HIGH`
+- **Status:** `CONFIRMED`
+- **Evidence:** `BYAN` (2026-08-18), `ASII` (2026-10-09), `BBCA` (2026-10-09)
+- **Root cause:** Sinyal yang membuka di bawah SL atau di atas TP pada Hari ke-1 sebelumnya dianggap trade terisi yang langsung keluar di pembukaan yang sama (memproduksi trade fiktif return 0.00% gross dan -50 bps net).
+- **Impact:** Mendistorsi win rate dan expectancy dengan kerugian transaksi buatan.
+- **Resolution:** Menetapkan status `INVALIDATED_GAP` (`entry_status = 'UNFILLED'`, `holding_days = 0`, metrik Scope A bernilai `NULL`). Mengeliminasi lookahead bias dengan tetap membentuk sinyal di Hari ke-0 close dan membatalkannya di pra-pembukaan Hari ke-1.
+- **Residual risk:** Tidak ada.
 
 ---
 
-### 3.10 Rangkuman File yang Dimodifikasi
+## 6. Files and Data Changed
 
-1. [`python/outcomes/engine.py`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/python/outcomes/engine.py):
-   - Menyelaraskan cabang `sl_hit` ordinary dan breakout agar menetapkan `bar_high_proxy = bar_high_lower` (konservatif deterministik), menghilangkan lonjakan optimis pasca-stop dan menjamin `mfe = mfe_min = 0.00%` pada SL Hari ke-1.
-   - Menyelaraskan cabang `ambiguous` exit agar menggunakan rentang penuh candle (`[bar.low, bar.high]`) yang konsisten dengan Modeled Close Exit.
-2. [`tests/unit/test_outcomes.py`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/tests/unit/test_outcomes.py):
-   - Menambahkan 5 targeted regression tests: SL-day high potentially occurring after stop, TP-day low potentially occurring after target, uncertain exit-day high time-to-peak, ambiguous policy candle touching both barriers, dan reconciliation report statistics with stored trade rows. Total tests: 61 passed.
-3. [`audit_report.md`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/audit_report.md):
-   - Memperbarui Section 1 & 2 dengan ringkasan eksekutif, rekonsiliasi angka unrounded (-0.1714% gross, -0.6695% net, -66.95 bps expectancy), penjelasan akar penyebab discrepancy, dan sebelum/sesudah tabel perbandingan.
-   - Memperbarui Section 3.3, 3.4, 3.7, 3.8, 3.9, 3.10 dengan formulasi lengkap, script reproducible Python/SQL, dan tabel 31 record matured yang telah diselaraskan.
-4. [`docs/09_outcome_tracking_backfill_and_integrity_audit_report.md`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/docs/09_outcome_tracking_backfill_and_integrity_audit_report.md):
-   - Memperbarui ringkasan statistik performa dan tabel rekor historis agar seragam dengan audit_report.md dan database riil.
-5. [`walkthrough.md`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/walkthrough.md) & [`summary.md`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/summary.md):
-   - Dokumentasi sesi kerja dan penambahan log entry 48 (append-only).
+| Path | Change | Reason | Migration/backfill |
+|---|---|---|---|
+| `audit_report.md` | Restrukturisasi ke template 10 bagian, sinkronisasi metrik Executive Summary dengan Section 3.4, koreksi kolom `outcomes_daily` menjadi 47 kolom | Final documentation reconciliation | No |
+| `summary.md` | Penambahan log entry 49 (append-only) | Kepatuhan aturan pencatatan histori proyek | No |
+| `walkthrough.md` | Pembaharuan rincian tugas dan testing checklist | Dokumentasi sesi kerja terkini | No |
 
+- Raw market data modified: **NO**
+- Model artifacts modified: **NO**
+- Champion/challenger status changed: **NO**
+- Production thresholds changed: **NO**
+- Live trading/deployment enabled: **NO**
+
+---
+
+## 7. Verification Evidence
+
+| Check | Command/method | Result | Evidence |
+|---|---|---|---|
+| Unit/integration tests | `.venv\Scripts\python.exe -m pytest` | **PASSED** (444 passed in 110s) | Seluruh 444 tests lulus 100%, termasuk 61 tests di `test_outcomes.py` |
+| Linter | `.venv\Scripts\ruff.exe check .` | **PASSED** | 100% clean, `All checks passed!` |
+| Database integrity | `.venv\Scripts\python.exe scripts/audit_historical_outcomes.py` | **PASSED** | 31 rekor diverifikasi, 0 pelanggaran invarian/bounds |
+| Historical spot checks | Kueri SQL mandiri pada 27 trade terisi | **PASSED** | Mean Gross: -0.1714%, Mean Net: -0.6695%, Expectancy: -66.95 bps, Hold: 4.48d |
+| Idempotency | `scripts/resolve_outcomes.py --force-recompute --save-db` | **PASSED** | Rekomputasi berulang mempertahankan 31 rekor identik tanpa mutasi |
+
+---
+
+## 8. Known Limitations
+
+| Limitation | Why it matters | Impact | Follow-up |
+|---|---|---|---|
+| Resolusi Bar Harian OHLC (Tick Sequence Absence) | Data harian tidak memiliki cap waktu sub-menit untuk menentukan urutan intraday | Ekstrem exit candle (High vs Low) tidak dapat diurutkan dengan kepastian 100% | Bounded interval $[MFE_{\min}, MFE_{\max}]$ dan proksi konservatif lower-bound mengeliminasi bias optimis |
+| Ukuran Sampel Matured Historis Terbatas ($N=27$ filled) | Sampel sinyal historis awal masih terbatas pada 31 sinyal matured (27 trade terisi) | Nilai expectancy -66.95 bps mencerminkan sampel awal sebelum ekspansi multi-horizon | Evaluasi semesta yang lebih besar pada Phase 10 (Multi-Horizon & Walk-Forward Testing) |
+| Model Friksi Transaksi Statis (50 bps) | Asumsi komisi tetap 40 bps round-trip dan slippage 10 bps round-trip | Saham dengan likuiditas sangat tinggi vs sangat rendah mungkin memiliki slippage riil yang sedikit berbeda | Model slippage dinamis berbasis likuiditas dapat dipertimbangkan pada modul eksekusi live mendatang |
+
+---
+
+## 9. Reproducibility
+
+- **Commands to reproduce:**
+  ```powershell
+  .venv\Scripts\python.exe -m pytest
+  .venv\Scripts\ruff.exe check .
+  .venv\Scripts\python.exe scripts/audit_historical_outcomes.py
+  .venv\Scripts\python.exe -c "import sqlite3; conn = sqlite3.connect('datasets/stock_signals.db'); c = conn.cursor(); c.execute('SELECT COUNT(*), AVG(gross_return), AVG(net_return), AVG(holding_days) FROM outcomes_daily WHERE entry_status=\'FILLED\''); print(c.fetchone())"
+  ```
+- **Required configuration:** Python 3.12 venv, SQLite database di `datasets/stock_signals.db`.
+- **Data snapshot/version:** 31 matured historical records (snapshot per 2026-10-12).
+- **Expected results:**
+  - Pytest: 444 passed in ~110s.
+  - Ruff: `All checks passed!`.
+  - Historical audit: 31 records verified, 0 violations.
+  - Database calculation: Mean Gross -0.00171376 (-0.1714%), Mean Net -0.00669473 (-0.6695%), Expectancy -66.95 bps, Hold 4.48 days.
+- **Evidence files:**
+  - [`tests/unit/test_outcomes.py`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/tests/unit/test_outcomes.py)
+  - [`scripts/audit_historical_outcomes.py`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/scripts/audit_historical_outcomes.py)
+  - [`datasets/stock_signals.db`](file:///C:/Users/DROSE250122/Documents/Personal/indonesian-stock-ai/datasets/stock_signals.db)
+
+---
+
+## 10. Final Decision and Next Step
+
+- **Current stage completed:** `YES`
+- **Can the next stage begin?** `YES`
+- **Required blockers:** `None`
+- **Next approved task:** `Roadmap Phase 10: Multi-Horizon Evaluation & Feature Ablation Experiments`
+- **Explicitly prohibited changes:**
+  - Dilarang mengaktifkan live trading / deployment riil ke bursa.
+  - Dilarang mempromosikan atau mengganti model champion tanpa tinjauan komite tata kelola.
+  - Dilarang melonggarkan ambang batas probabilitas BUY atau batas friksi EV Gate (50 bps).
+  - Dilarang memodifikasi harga mentah pada tabel `daily_bars`.

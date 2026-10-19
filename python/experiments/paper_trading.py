@@ -36,7 +36,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from python.common.types import DailyBar
 from python.config.settings import settings
+from python.models.research_scoring import (
+    ResearchClassifierModel,
+    ResearchRegressorModel,
+)
 from scripts.audit_target_contract_runner import load_all_bars
+
+__all__ = [
+    "CHAMPION_MODELS",
+    "FEATURE_SCHEMA_30",
+    "FrozenPolicyBundle",
+    "MissingScoringArtifactError",
+    "PaperCandidate",
+    "PaperDecision",
+    "PaperTrade",
+    "PaperTradingEngine",
+    "PolicyDefinition",
+    "RESEARCH_SCORING_ARTIFACTS",
+    "ResearchClassifierModel",
+    "ResearchRegressorModel",
+    "classify_regime_three_tier",
+    "get_default_frozen_policies",
+]
 
 # Production champions that MUST NOT be used for research scoring
 CHAMPION_MODELS = {
@@ -46,8 +67,8 @@ CHAMPION_MODELS = {
 
 # Expected H=15 Variant B research artifacts
 RESEARCH_SCORING_ARTIFACTS = {
-    "LOW_PRICE": "models/registry/lgb_regressor_h15_variant_b.joblib",
-    "HIGHER_PRICE": "models/registry/lgb_full_classifier_h15_variant_b.joblib",
+    "LOW_PRICE": "artifacts/phase_11f/research_models/lgb_regressor_h15_variant_b.joblib",
+    "HIGHER_PRICE": "artifacts/phase_11f/research_models/lgb_full_classifier_h15_variant_b.joblib",
 }
 
 FEATURE_SCHEMA_30 = [
@@ -1135,9 +1156,11 @@ class PaperTradingEngine:
         """Generates comprehensive operational status and writes to JSON."""
         audit = self.audit_scoring_artifacts()
 
-        status_code = "READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)"
-        if audit["status"] != "PASS":
-            status_code = "READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)"
+        status_code = (
+            "READY_FOR_OBSERVATION"
+            if audit["status"] == "PASS"
+            else "READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)"
+        )
 
         # Check DB data quality
         conn = sqlite3.connect(self.db_path)
@@ -1269,15 +1292,14 @@ class PaperTradingEngine:
             tickers = [r[0] for r in mode_rows]
             prices = [r[1] for r in mode_rows]
             X_df = pd.DataFrame([r[2] for r in mode_rows])[self.frozen_bundle.feature_schema]
-            X_mat = X_df.fillna(0.0).to_numpy()
 
             if mode == "LOW_PRICE":
-                scores = model.predict(X_mat)
+                scores = model.predict(X_df)
             else:
                 scores = (
-                    model.predict_proba(X_mat)[:, 1]
+                    model.predict_proba(X_df)[:, 1]
                     if hasattr(model, "predict_proba")
-                    else model.predict(X_mat)
+                    else model.predict(X_df)
                 )
 
             cand_items = list(zip(tickers, prices, scores, strict=True))
@@ -1335,7 +1357,28 @@ class PaperTradingEngine:
         if scored_candidates:
             df_new_cands = pd.DataFrame([asdict(c) for c in scored_candidates])
             if cands_csv.exists():
-                df_new_cands.to_csv(cands_csv, mode="a", header=False, index=False)
+                df_existing = pd.read_csv(cands_csv)
+                existing_keys = set(
+                    zip(
+                        df_existing["date"].astype(str),
+                        df_existing["ticker"].astype(str),
+                        df_existing["mode"].astype(str),
+                        strict=False,
+                    )
+                )
+                df_new_cands["_dedup_key"] = list(
+                    zip(
+                        df_new_cands["date"].astype(str),
+                        df_new_cands["ticker"].astype(str),
+                        df_new_cands["mode"].astype(str),
+                        strict=False,
+                    )
+                )
+                df_to_add = df_new_cands[~df_new_cands["_dedup_key"].isin(existing_keys)].drop(
+                    columns=["_dedup_key"]
+                )
+                if not df_to_add.empty:
+                    df_to_add.to_csv(cands_csv, mode="a", header=False, index=False)
             else:
                 df_new_cands.to_csv(cands_csv, index=False)
 
@@ -1343,7 +1386,28 @@ class PaperTradingEngine:
         if new_decisions:
             df_new_decs = pd.DataFrame([asdict(d) for d in new_decisions])
             if decs_csv.exists():
-                df_new_decs.to_csv(decs_csv, mode="a", header=False, index=False)
+                df_existing_decs = pd.read_csv(decs_csv)
+                existing_dec_keys = set(
+                    zip(
+                        df_existing_decs["decision_date"].astype(str),
+                        df_existing_decs["ticker"].astype(str),
+                        df_existing_decs["mode"].astype(str),
+                        strict=False,
+                    )
+                )
+                df_new_decs["_dedup_key"] = list(
+                    zip(
+                        df_new_decs["decision_date"].astype(str),
+                        df_new_decs["ticker"].astype(str),
+                        df_new_decs["mode"].astype(str),
+                        strict=False,
+                    )
+                )
+                df_decs_to_add = df_new_decs[
+                    ~df_new_decs["_dedup_key"].isin(existing_dec_keys)
+                ].drop(columns=["_dedup_key"])
+                if not df_decs_to_add.empty:
+                    df_decs_to_add.to_csv(decs_csv, mode="a", header=False, index=False)
             else:
                 df_new_decs.to_csv(decs_csv, index=False)
 

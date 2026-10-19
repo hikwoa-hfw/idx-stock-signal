@@ -1,5 +1,5 @@
 {
-  "config_sha256": "2fa07ad5d2e10ad5c6b873338e648a5194b61bfbe84f02048cd6305e6c355bbd",
+  "config_sha256": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
   "created_at": "2026-10-19T23:00:00Z",
   "feature_schema": [
     "return_1d",
@@ -58,7 +58,7 @@
       },
       "horizon_days": 15,
       "mode": "HIGHER_PRICE",
-      "model_artifact_path": "models/registry/lgb_full_classifier_h15_variant_b.joblib",
+      "model_artifact_path": "artifacts/phase_11f/research_models/lgb_full_classifier_h15_variant_b.joblib",
       "portfolio_constraints": {
         "equity_cap_pct": 0.2,
         "initial_capital": 100000000.0,
@@ -104,7 +104,7 @@
       },
       "horizon_days": 15,
       "mode": "LOW_PRICE",
-      "model_artifact_path": "models/registry/lgb_regressor_h15_variant_b.joblib",
+      "model_artifact_path": "artifacts/phase_11f/research_models/lgb_regressor_h15_variant_b.joblib",
       "portfolio_constraints": {
         "equity_cap_pct": 0.2,
         "initial_capital": 100000000.0,

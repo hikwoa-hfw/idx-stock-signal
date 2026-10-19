@@ -2,22 +2,23 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11F — Forward Paper Trading & Frozen Policy Validation`
-- **Audit Date:** `2026-10-19 23:00 WIB`
+- **Current Phase:** `Phase 11F.1 — Research Scoring Artifact Finalization & Forward Observation Readiness`
+- **Audit Date:** `2026-10-19 23:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11F forward paper trading engine, CLI runner, empirical artifacts, and comprehensive test suite
-- **Overall Status:** `PASS (READY_FOR_OBSERVATION / BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)`
+- **Latest Commit SHA:** Working tree with Phase 11F.1 research scoring models, schema-enforcing wrappers, locked policy hash, and full test suite
+- **Overall Status:** `PASS (READY_FOR_OBSERVATION / OBSERVATION_SCHEDULE_ACTIVE)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Frozen forward paper-trading protocol and research policies codified for prospective market evaluation without modifying active production champions:
-    1. **Policy Freezing & Deterministic Hashing:** Formally froze primary research policies: `LOW_PRICE` (Top 3%, H=15 LightGBM Regressor, TP $+6.0\%$ / SL $-2.0\%$, Three-tier sizing $1.0\times / 0.5\times / 0.0\times$) and `HIGHER_PRICE` (Top 1%, H=15 Full LightGBM Classifier, TP $+6.0\%$ / SL $-2.0\%$, Three-tier sizing $1.0\times / 0.5\times / 0.0\times$). Trailing stops strictly excluded to prevent winning payoff truncation. Policy configuration hashed to canonical SHA-256: `2fa07ad5d2e10ad5c6b873338e648a5194b61bfbe84f02048cd6305e6c355bbd`.
-    2. **Scoring Artifact Audit & Fail-Closed Guard:** The audit confirmed that while walk-forward out-of-sample predictions exist from Phase 11C, exact persistent `.joblib` model binaries (`models/registry/lgb_regressor_h15_variant_b.joblib` and `models/registry/lgb_full_classifier_h15_variant_b.joblib`) were evaluated in-memory during Phase 11C and not serialized to disk. The fail-closed guard correctly flags `MISSING_SCORING_ARTIFACT`. In compliance with core governance, fallback to production champions is strictly forbidden.
-    3. **Forward Execution Simulation Validation (Historical Replay):** End-to-end replay on Phase 11C OOS predictions confirmed full execution fidelity under 50 bps round-trip nominal friction, lot sizing (100 shares), max 5 positions, 20% equity cap, pre-entry gap invalidations, and conservative SL precedence on ambiguous bars. Continuous portfolio drawdown was suppressed to a record low of **$6.33\%$** in `LOW_PRICE` (172 trades, $+0.08\%$ net return) and **$8.59\%$** in `HIGHER_PRICE` (309 trades, $+0.10\%$ net return).
-    4. **Decision:** Candidate policies are NOT promoted to production champion status. Current champions remain active and untouched. The forward paper-trading system is set to `READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)`.
-- **Next Permitted Action:** Await user authorization before serializing persistent H=15 research scoring model estimators or ingesting prospective daily bars.
+  - Frozen forward paper-trading protocol and research scoring artifacts finalized for prospective market evaluation without modifying active production champions:
+    1. **Research Scoring Estimators Serialized:** Fitted and serialized exact H=15 Variant B estimators up to cutoff `2026-09-25`: `lgb_regressor_h15_variant_b.joblib` (SHA-256: `84170b51...`) and `lgb_full_classifier_h15_variant_b.joblib` (SHA-256: `3192aa5c...`) in `artifacts/phase_11f/research_models/` with full metadata documentation.
+    2. **Strict Schema & Causal Imputation:** Codified `ResearchRegressorModel` and `ResearchClassifierModel` enforcing strict 30-feature schema ordering and training-derived median imputation.
+    3. **Canonical Policy Hash Locked:** Updated artifact references and locked canonical configuration SHA-256: `8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71`. Fail-closed audit transitioned from `BLOCKED` to `PASS`.
+    4. **Historical Replay & Test Count Reconciled:** Reconciled 309 continuous replay trades vs 298 fold-partitioned trades (+11 unpurged boundary trades). Verified 541 total passed tests (509 unit, 32 integration).
+    5. **Decision:** Candidate policies are NOT promoted to production champion status. Current champions remain active and untouched. The forward paper-trading system is set to `READY_FOR_OBSERVATION (OBSERVATION_SCHEDULE_ACTIVE)`.
+- **Next Permitted Action:** Execute daily prospective paper-trading scoring on new market bars at 16:15 WIB under the 3-month observation window.
 
 ---
 
@@ -69,6 +70,11 @@ The repository maintains dedicated, detailed reports for each major governance a
    - **Phase 11F:** Forward Paper Trading & Frozen Policy Validation
    - **Scope:** Protocol and policy freezing, configuration hashing (SHA-256: `2fa07ad5d2e10ad5c6b873338e648a5194b61bfbe84f02048cd6305e6c355bbd`), scoring artifact audit and fail-closed guard, forward execution simulation, discrete-event gap invalidations, 50 bps round-trip transaction friction, MFE/MAE tracking, and automated weekly reporting.
    - **Status:** `PASS (READY_FOR_OBSERVATION / BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)` (524 total suite tests passed; 21 unit tests added; champions preserved).
+
+10. [docs/18_phase_11f_research_scoring_and_observation_readiness_report.md](docs/18_phase_11f_research_scoring_and_observation_readiness_report.md)
+    - **Phase 11F.1:** Research Scoring Artifact Finalization & Forward Observation Readiness
+    - **Scope:** Reconstructed H=15 Variant B research scoring estimators (`artifacts/phase_11f/research_models/`), strict schema ordering and causal median imputation wrappers, canonical policy hash locking (`8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71`), fail-closed guard transition to PASS, continuous replay trade reconciliation (309 vs 298–301), test count reconciliation (541 passed: 509 unit, 32 integration), and 3-month operational observation schedule.
+    - **Status:** `PASS (READY_FOR_OBSERVATION)` (17 new unit tests added, 541 total suite tests passed; champions preserved).
 
 ---
 

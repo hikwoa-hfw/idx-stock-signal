@@ -71,6 +71,25 @@ def test_project_root_exists():
     assert (root / "infra" / "aws" / "template.yaml").is_file()
     assert (root / "infra" / "aws" / "Dockerfile").is_file()
     assert (root / "scripts" / "deploy_aws.py").is_file()
+    assert (root / "python" / "experiments" / "paper_trading.py").is_file()
+    assert (root / "scripts" / "run_forward_paper_trading.py").is_file()
+    assert (root / "python" / "models" / "research_scoring.py").is_file()
+    assert (root / "scripts" / "train_phase11f_research_models.py").is_file()
+    assert (root / "artifacts" / "phase_11f" / "frozen_policy_config.json").is_file()
+    assert (
+        root / "artifacts" / "phase_11f" / "research_models" / "lgb_regressor_h15_variant_b.joblib"
+    ).is_file()
+    assert (
+        root
+        / "artifacts"
+        / "phase_11f"
+        / "research_models"
+        / "lgb_full_classifier_h15_variant_b.joblib"
+    ).is_file()
+    assert (
+        root / "artifacts" / "phase_11f" / "research_models" / "research_model_metadata.json"
+    ).is_file()
+
 
 
 

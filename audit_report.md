@@ -2,22 +2,23 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11D — Dynamic Exit & Policy Selection Research`
-- **Audit Date:** `2026-10-19 20:30 WIB`
+- **Current Phase:** `Phase 11E — Dynamic Conviction Sizing & Volatility Trailing Protection Research`
+- **Audit Date:** `2026-10-19 22:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11D dynamic policy engine, CLI evaluation runner, and empirical artifacts
+- **Latest Commit SHA:** Working tree with Phase 11E sizing & trailing engine, CLI runner, empirical artifacts, and comprehensive test suite
 - **Overall Status:** `PASS (DO_NOT_PROMOTE)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Walk-forward dynamic policy evaluation across entry selectivity (Top 10% to 1%), point-in-time market regime conditioning, dynamic holding periods ($H \in \{3, 5, 10, 15\}$), and alternative TP/SL barriers under the 50 bps round-trip friction model demonstrates that:
-    1. **Bull Regime Filtering (`ihsg_vs_ema20 > 0`) is the single most powerful tail-risk reducer:** It cuts continuous drawdown from $45.50\% \rightarrow 16.65\%$ in `LOW_PRICE` and $62.67\% \rightarrow 23.43\%$ in `HIGHER_PRICE`, while cutting net losses by $>70\%$. Conversely, trading in bear regimes (`ihsg_vs_ema20 <= 0`) yields severe losses ($-0.65\%$ to $-0.67\%$ net return, PF $0.63$–$0.64$).
-    2. **Combined Policy achieves nominal pooled profitability:** Combining Top 3% entry selectivity, bull trend conditioning, 15-day holding horizon, and $+6\% / -2\%$ barriers yields $+0.08\%$ net return (PF $1.04$) with continuous drawdown suppressed to $9.59\%$ in `LOW_PRICE`. In `HIGHER_PRICE`, Top 1% selectivity with bull trend and $+6\% / -2\%$ yields $+0.13\%$ net return (PF $1.07$, continuous DD $9.77\%$).
-    3. **However, forward fold performance lacks uniform robustness:** In `LOW_PRICE`, Fold 1 ($+0.34\%$) drives the gain, while Folds 2 and 3 remain negative ($-0.10\%$ and $-0.16\%$). In `HIGHER_PRICE` Top 1%, Fold 2 is positive ($+0.44\%$), but Fold 1 ($-0.01\%$) and Fold 3 ($-0.11\%$) remain negative. Neither policy achieves uniform cross-fold profitability.
+  - Out-of-sample investigation of dynamic conviction sizing (Conservative binary, Three-tier regime, Smooth conviction) and volatility trailing protection (Breakeven ratchets, ATR trailing stops, Stepped profit locks) under the 50 bps round-trip friction model demonstrates that:
+    1. **Dynamic Position Sizing suppresses portfolio drawdown to record lows:** Three-tier regime sizing ($1.0\times$ Favorable, $0.5\times$ Mixed, $0.0\times$ Unfavorable) cuts continuous drawdown on the baseline from $46.01\% \rightarrow 14.74\%$ in `LOW_PRICE` and $62.67\% \rightarrow 24.23\%$ in `HIGHER_PRICE`. When applied on top of the Phase 11D selective policy (`comb_selective_sizing_alone`), continuous drawdown is suppressed to a record low of **$6.34\%$** in `LOW_PRICE` and **$8.83\%$** in `HIGHER_PRICE`, while maintaining cash reserves ($70.0\%$ to $81.3\%$ average cash exposure).
+    2. **Position sizing preserves, but does not create, net expectancy:** Baseline net return per trade remains negative ($-0.14\%$ in `LOW_PRICE`, $-0.26\%$ in `HIGHER_PRICE`). De-allocating capital in adverse or mixed regimes is strictly a capital preservation lever, not an expectancy generator.
+    3. **The Trailing Stop Payoff Truncation Paradox:** Trailing stops dramatically increase win rates (surging up to $43.67\%$–$44.48\%$ in `HIGHER_PRICE` and $36.41\%$ in `LOW_PRICE`). However, net trade expectancy and profit factor severely deteriorate (e.g. `HIGHER_PRICE` selective expectancy drops from $+0.13\% \rightarrow -0.06\%$ to $-0.14\%$, PF falls from $1.07 \rightarrow 0.88$–$0.93$). Premature trailing stop hits truncate full $+6.0\%$ target winners on routine daily retracements while preserving full initial stop-loss exposure ($-2.0\%$), asymmetrically shrinking the right tail of the return distribution.
+    4. **Persistent forward-fold deficit prevents production promotion:** While the combined selective sizing policy (`comb_selective_sizing_alone`) achieves positive pooled net return ($+0.08\%$ in `LOW_PRICE`, $+0.14\%$ in `HIGHER_PRICE`), forward test folds remain underwater (Fold 2: $-0.10\%$ and Fold 3: $-0.16\%$ in `LOW_PRICE`; Fold 1: $-0.01\%$ and Fold 3: $-0.11\%$ in `HIGHER_PRICE`).
   - **Decision:** Candidates and policies are NOT promoted to production champion status. Current champions remain active and untouched.
-- **Next Permitted Action:** Proceed to Phase 11E research design (Dynamic Conviction Sizing and Volatility Trailing Protection) upon user authorization. Do not begin Phase 11E automatically.
+- **Next Permitted Action:** Proceed to forward paper-trading design on newly observed market data upon user authorization. Do not begin paper trading or production changes automatically.
 
 ---
 
@@ -52,13 +53,18 @@ The repository maintains dedicated, detailed reports for each major governance a
 
 6. [docs/14_phase_11c_multi_horizon_return_evaluation_report.md](docs/14_phase_11c_multi_horizon_return_evaluation_report.md)
    - **Phase 11C:** Multi-Horizon Evaluation & Return Estimation
-   - **Scope:** Holding horizons ($H \in \{3, 5, 10, 15\}$ trading days), strict 15-day purge window walk-forward splits, LightGBM Regressor continuous return estimation vs zero & mean baselines, discrete-event simulated trading under 50 bps friction, and Expected Return vs discrete EV diagnostics. Corrected test count documentation to 480 passed unit/regression tests (previously noted as 478 in preliminary text).
+   - **Scope:** Holding horizons ($H \in \{3, 5, 10, 15\}$ trading days), strict 15-day purge window walk-forward splits, LightGBM Regressor continuous return estimation vs zero & mean baselines, discrete-event simulated trading under 50 bps friction, and Expected Return vs discrete EV diagnostics. Corrected test count documentation to 480 passed unit/regression tests.
    - **Status:** `PASS (DO_NOT_PROMOTE)` (Horizon extension dampens drawdown but fails to cross net profitability threshold; champions preserved).
 
 7. [docs/15_phase_11d_dynamic_exit_policy_evaluation_report.md](docs/15_phase_11d_dynamic_exit_policy_evaluation_report.md)
    - **Phase 11D:** Dynamic Exit & Policy Selection Research
    - **Scope:** Cross-sectional entry selectivity (Top 10%, 5%, 3%, 1%), point-in-time market regime conditioning (IHSG trend, breadth, volatility), dynamic holding periods ($H \in \{5, 10, 15\}$, max predicted return $H^*$, volatility-adaptive, regime-adaptive), dynamic TP/SL barriers (+6%/-2%, +4%/-2%, +5%/-1.5%, ATR-scaled), and combined walk-forward policy under 50 bps round-trip friction.
    - **Status:** `PASS (DO_NOT_PROMOTE)` (Regime conditioning cuts drawdowns by >60%, combined policy achieves +0.08% pooled net return in LOW_PRICE and +0.13% in HIGHER_PRICE Top 1%, but lack of uniform cross-fold robustness prevents deployment; 490 unit/regression tests passed; champions preserved).
+
+8. [docs/16_phase_11e_sizing_trailing_protection_report.md](docs/16_phase_11e_sizing_trailing_protection_report.md)
+   - **Phase 11E:** Dynamic Conviction Sizing & Volatility Trailing Protection Research
+   - **Scope:** Point-in-time regime conviction sizing (Fixed control, Conservative binary, Three-tier regime, Smooth conviction), volatility-based trailing protection (Breakeven ratchets, causal ATR trailing stops, Stepped profit locks), and combined sizing & trailing protection under 50 bps round-trip friction.
+   - **Status:** `PASS (DO_NOT_PROMOTE)` (Three-tier sizing cuts continuous portfolio drawdown to record low 6.34% in LOW_PRICE and 8.83% in HIGHER_PRICE; trailing stops increase win rate up to 44.5% but truncate winning payoffs and degrade net expectancy; persistent forward-fold deficit prevents promotion; 503 unit/regression tests passed; champions preserved).
 
 ---
 

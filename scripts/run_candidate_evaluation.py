@@ -53,6 +53,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to SQLite database (default: from settings).",
     )
+    parser.add_argument(
+        "--recompute-trading-only",
+        action="store_true",
+        help="Recompute trading simulation from saved predictions without retraining.",
+    )
     return parser.parse_args()
 
 
@@ -87,8 +92,10 @@ def print_comparison_table(mode: str, macro_df: pd.DataFrame, trading_df: pd.Dat
         "sl_rate",
         "expiry_rate",
         "avg_net_return",
+        "pooled_profit_factor",
         "mean_profit_factor",
-        "max_drawdown_pct",
+        "worst_fold_max_drawdown_pct",
+        "continuous_max_drawdown_pct",
     ]
     avail_trade_cols = [c for c in trade_cols if c in trading_df.columns]
     print(trading_df[avail_trade_cols].to_string(index=False))
@@ -108,6 +115,38 @@ def main() -> None:
 
     out_p = Path(args.output_dir)
     out_p.mkdir(parents=True, exist_ok=True)
+
+    if args.recompute_trading_only:
+        print("================================================================================")
+        print(" Phase 11B.1: Recomputing Trading Evaluation from Saved OOS Predictions")
+        print(f" Modes: {modes} | Slippage: 5 bps entry + 5 bps exit (10 bps round-trip)")
+        print(" RETRAINING PROHIBITED: Reusing existing candidate predictions.")
+        print("================================================================================\n")
+
+        results_by_mode = {}
+        for mode in modes:
+            t0 = time.time()
+            print(f"[*] Recomputing trading metrics for mode: {mode} ...")
+            res = runner.recompute_trading_from_saved_predictions(
+                mode=mode,
+                artifacts_dir=out_p,
+            )
+            elapsed = time.time() - t0
+            print(f"[+] Recomputed {mode} trading in {elapsed:.2f}s.")
+            results_by_mode[mode] = res
+
+            df_macro = pd.DataFrame(res["macro_summaries"])
+            df_trading = pd.DataFrame(res["trading_summaries"])
+            print_comparison_table(mode, df_macro, df_trading)
+
+        # Export all artifacts
+        print("[*] Exporting structured artifacts to", out_p.resolve())
+        exported = runner.export_artifacts(results_by_mode, output_dir=out_p)
+        for k, v in exported.items():
+            print(f"    - {k}: {v}")
+
+        print("\n[+] Phase 11B.1 trading metric reconciliation finished successfully.")
+        return
 
     print("================================================================================")
     print(" Phase 11B.1: Candidate Model Training & Evaluation Engine")

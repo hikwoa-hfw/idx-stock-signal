@@ -2,20 +2,20 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11B.1 — Candidate Model Training & Evaluation`
-- **Audit Date:** `2026-10-19 16:35 WIB`
+- **Current Phase:** `Phase 11B.1 — Candidate Model Training & Evaluation (Trading Metric Reconciliation)`
+- **Audit Date:** `2026-10-19 17:50 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11B.1 candidate evaluation pipeline
+- **Latest Commit SHA:** Working tree with Phase 11B.1 candidate evaluation and reconciled trading metrics
 - **Overall Status:** `PASS (DO_NOT_PROMOTE)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Candidate model training on **Variant B (Next-Session Open-Anchor Target)** eliminates pre-entry lookahead bias and reduces operational invalidations by 50% ($157 \rightarrow 79$).
-  - However, after 50 bps round-trip IDX friction, all candidates generate net negative returns ($-0.49\%$ to $-0.79\%$ per trade) and profit factors below 1.0.
+  - Candidate model training on **Variant B (Next-Session Open-Anchor Target)** eliminates pre-entry lookahead bias and reduces operational invalidations by 50% ($156 \rightarrow 80$).
+  - Under the reconciled 50 bps round-trip friction model (15 bps buy commission, 25 bps sell commission, 10 bps slippage allocated as 5 bps entry + 5 bps exit), all 16 candidate models generate net negative returns ($-0.33\%$ to $-0.92\%$ per trade) and profit factors below 1.0 ($0.52$ to $0.80$).
   - **Decision:** Candidates are NOT promoted to production champion status. Current champions remain active and untouched.
-- **Next Permitted Action:** Proceed to Phase 11C design review for dynamic EV thresholds and adaptive barrier exploration upon user authorization.
+- **Next Permitted Action:** Proceed to Phase 11C design review for dynamic EV thresholds and adaptive barrier exploration upon user authorization. Do not begin Phase 11C automatically.
 
 ---
 
@@ -44,8 +44,8 @@ The repository maintains dedicated, detailed reports for each major governance a
    - **Status:** `PASS` (Design decision resolved via empirical candidate evaluation).
 
 5. [docs/13_phase_11b_candidate_model_evaluation_report.md](docs/13_phase_11b_candidate_model_evaluation_report.md)
-   - **Phase 11B.1:** Candidate Model Training & Evaluation
-   - **Scope:** Walk-forward candidate model training across dual target contracts (Variant A vs Variant B), common-cohort evaluation, and discrete-event simulated trading with IDX friction.
+   - **Phase 11B.1:** Candidate Model Training & Evaluation (Trading Metric Reconciliation)
+   - **Scope:** Walk-forward candidate model training across dual target contracts (Variant A vs Variant B), common-cohort evaluation, discrete-event simulated trading with reconciled 50 bps friction (15 bps buy, 25 bps sell, 5 bps entry slip, 5 bps exit slip), true pooled profit factor vs mean fold profit factor, and worst-fold max drawdown vs continuous portfolio max drawdown.
    - **Status:** `PASS (DO_NOT_PROMOTE)` (Variant B validated for operational fidelity; champions preserved).
 
 ---

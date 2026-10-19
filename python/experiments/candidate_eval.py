@@ -380,6 +380,7 @@ class CandidateEvaluationRunner:
                 "date": [str(d) for d in test_dates],
                 "ticker": list(test_tickers),
                 "mode": [mode] * len(test_idx),
+                "va_entry_price": list(df_test["va_entry_price"]),
                 "va_binary_target": list(y_va_test),
                 "vb_status": list(df_test["vb_status"]),
                 "vb_binary_target": list(df_test["vb_binary_target"]),
@@ -533,7 +534,8 @@ class CandidateEvaluationRunner:
                         top_n_per_day=5,
                         commission_buy=0.0015,
                         commission_sell=0.0025,
-                        slippage_bps=10.0,
+                        slippage_entry_bps=5.0,
+                        slippage_exit_bps=5.0,
                     )
                     all_model_trades[m_id].extend(t_res["trades"])
                     t_stat = {
@@ -552,7 +554,11 @@ class CandidateEvaluationRunner:
         macro_summaries = self._compute_macro_summaries(fold_results, specs)
 
         # Aggregate trading statistics across folds
-        trading_summaries = self._aggregate_trading_summaries(all_model_trade_stats, specs)
+        trading_summaries = self._aggregate_trading_summaries(
+            all_model_trade_stats=all_model_trade_stats,
+            specs=specs,
+            all_model_trades=all_model_trades,
+        )
 
         return {
             "mode": mode,
@@ -578,17 +584,26 @@ class CandidateEvaluationRunner:
         top_n_per_day: int = 5,
         commission_buy: float = 0.0015,
         commission_sell: float = 0.0025,
-        slippage_bps: float = 10.0,
+        slippage_entry_bps: float = 5.0,
+        slippage_exit_bps: float = 5.0,
+        slippage_bps: Optional[float] = None,
     ) -> dict[str, Any]:
         """Simulates discrete-event trading with realistic Next-Open execution and gap protection.
 
-        Friction:
-        - Buy fee: 0.15% + 10 bps slippage
-        - Sell fee: 0.25% + 10 bps slippage
-        - Total round-trip friction: 50 bps
+        Friction Contract:
+        - Buy commission: 15 bps (0.0015)
+        - Sell commission: 25 bps (0.0025)
+        - Entry slippage: 5 bps (0.0005)
+        - Exit slippage: 5 bps (0.0005)
+        - Total nominal round-trip friction: 50 bps (0.0050)
         - Lot size: 100 shares
         - Equal weight allocation (cap 20% equity per position)
         """
+        if slippage_bps is not None:
+            # Backward-compatibility: split total round-trip slippage equally
+            slippage_entry_bps = float(slippage_bps) / 2.0
+            slippage_exit_bps = float(slippage_bps) / 2.0
+
         # Map test bars with predictions
         eval_df = df_test[["ticker", "date", "va_entry_price"]].copy()
         eval_df["y_prob"] = y_prob
@@ -601,6 +616,7 @@ class CandidateEvaluationRunner:
         total_eq = float(initial_capital)
         max_dd_amount = 0.0
         max_dd_pct = 0.0
+        daily_equity: list[tuple[date, float]] = []
 
         # Active position: ticker -> dict
         open_positions: dict[str, dict[str, Any]] = {}
@@ -679,7 +695,7 @@ class CandidateEvaluationRunner:
                         current_equity / max_positions,
                         current_equity * 0.20,
                     )
-                    fill_price = b_open * (1.0 + slippage_bps / 10000.0)
+                    fill_price = b_open * (1.0 + slippage_entry_bps / 10000.0)
                     raw_shares = cap_per_pos / fill_price
                     max_cash_shares = cash / (fill_price * (1.0 + commission_buy))
                     shares_f = min(raw_shares, max_cash_shares)
@@ -758,7 +774,7 @@ class CandidateEvaluationRunner:
                     exit_raw = float(bar_curr.close)
 
                 if exit_reason is not None and exit_raw is not None:
-                    exit_fill = exit_raw * (1.0 - slippage_bps / 10000.0)
+                    exit_fill = exit_raw * (1.0 - slippage_exit_bps / 10000.0)
                     gross_proceeds = pos["shares"] * exit_fill
                     exit_fee = gross_proceeds * commission_sell
                     net_proceeds = gross_proceeds - exit_fee
@@ -802,6 +818,7 @@ class CandidateEvaluationRunner:
                 for pos in open_positions.values()
             )
             total_eq = cash + eod_val
+            daily_equity.append((curr_d, total_eq))
             if total_eq > peak_equity:
                 peak_equity = total_eq
             dd_amt = peak_equity - total_eq
@@ -884,6 +901,7 @@ class CandidateEvaluationRunner:
             "unfilled_suspended": unfilled_suspended,
             "unfilled_capacity": unfilled_capacity,
             "unfilled_cash": unfilled_cash,
+            "daily_equity": daily_equity,
             "trades": completed_trades,
         }
 
@@ -953,8 +971,9 @@ class CandidateEvaluationRunner:
         self,
         all_model_trade_stats: dict[str, list[dict[str, Any]]],
         specs: list[CandidateModelSpec],
+        all_model_trades: Optional[dict[str, list[SimulatedTrade]]] = None,
     ) -> list[dict[str, Any]]:
-        """Aggregates simulated trading results across folds."""
+        """Aggregates simulated trading results across folds with explicit metric definitions."""
         summaries: list[dict[str, Any]] = []
 
         for spec in specs:
@@ -983,10 +1002,50 @@ class CandidateEvaluationRunner:
                 else 0.0
             )
 
+            # Fold-level profit factors and mean fold profit factor
             pf_vals = [s["profit_factor"] for s in stats if math.isfinite(s["profit_factor"])]
             mean_pf = float(np.mean(pf_vals)) if pf_vals else 0.0
 
-            max_dd = max(s["max_drawdown_pct"] for s in stats) if stats else 0.0
+            # True pooled profit factor across all completed trades (sum gains / sum losses)
+            if all_model_trades and m_id in all_model_trades and all_model_trades[m_id]:
+                trades = all_model_trades[m_id]
+                pooled_gain = sum(t.net_pnl for t in trades if t.net_pnl > 0)
+                pooled_loss = sum(abs(t.net_pnl) for t in trades if t.net_pnl < 0)
+                pooled_pf = (
+                    (pooled_gain / pooled_loss)
+                    if pooled_loss > 0
+                    else (float("inf") if pooled_gain > 0 else 0.0)
+                )
+            else:
+                pooled_pf = mean_pf
+
+            # Worst-fold maximum drawdown (highest peak-to-trough drop within any single fold)
+            worst_fold_dd = max(s["max_drawdown_pct"] for s in stats) if stats else 0.0
+
+            # Continuous portfolio maximum drawdown across chained walk-forward test folds
+            has_daily_equity = all(s.get("daily_equity") for s in stats)
+            if has_daily_equity:
+                continuous_equity_series: list[float] = []
+                cum_scale = 1.0
+                for s in stats:
+                    fold_daily = s["daily_equity"]
+                    init_cap = float(s.get("initial_capital", 100_000_000.0))
+                    for _, eq in fold_daily:
+                        continuous_equity_series.append(cum_scale * eq)
+                    final_eq = float(s.get("final_equity", init_cap))
+                    cum_scale *= (final_eq / init_cap) if init_cap > 0 else 1.0
+
+                peak = continuous_equity_series[0] if continuous_equity_series else 100_000_000.0
+                max_cont_dd = 0.0
+                for eq_val in continuous_equity_series:
+                    if eq_val > peak:
+                        peak = eq_val
+                    dd = (peak - eq_val) / peak if peak > 0 else 0.0
+                    if dd > max_cont_dd:
+                        max_cont_dd = dd
+                continuous_max_dd = max_cont_dd * 100.0
+            else:
+                continuous_max_dd = worst_fold_dd
 
             entry = {
                 "model_id": m_id,
@@ -1004,8 +1063,12 @@ class CandidateEvaluationRunner:
                 "expiry_count": exp_tot,
                 "expiry_rate": round(exp_tot / total_trades, 4) if total_trades > 0 else 0.0,
                 "avg_net_return": round(avg_net_ret, 4),
+                "pooled_profit_factor": round(pooled_pf, 2) if math.isfinite(pooled_pf) else 999.0,
                 "mean_profit_factor": round(mean_pf, 2),
-                "max_drawdown_pct": round(max_dd, 2),
+                "worst_fold_max_drawdown_pct": round(worst_fold_dd, 2),
+                "continuous_max_drawdown_pct": round(continuous_max_dd, 2),
+                # Backward-compatibility alias
+                "max_drawdown_pct": round(worst_fold_dd, 2),
             }
             summaries.append(entry)
 
@@ -1054,12 +1117,18 @@ class CandidateEvaluationRunner:
             exported_files[f"{mode}_fold_csv"] = str(mode_fold_csv_path)
             all_fold_rows.extend(mode_fold_df.to_dict(orient="records"))
 
-            # Trading summary CSV
+            # Trading summary CSV & JSON
             mode_trading_df = pd.DataFrame(data["trading_summaries"])
             mode_trading_df["mode"] = mode
             mode_trading_csv_path = out_p / f"candidate_trading_results_{mode}.csv"
             mode_trading_df.to_csv(mode_trading_csv_path, index=False)
             exported_files[f"{mode}_trading_csv"] = str(mode_trading_csv_path)
+
+            mode_trading_json_path = out_p / f"candidate_trading_results_{mode}.json"
+            with open(mode_trading_json_path, "w", encoding="utf-8") as f:
+                json.dump(data["trading_summaries"], f, indent=2, default=str)
+            exported_files[f"{mode}_trading_json"] = str(mode_trading_json_path)
+
             all_trading_rows.extend(mode_trading_df.to_dict(orient="records"))
 
             # Out of sample predictions CSV
@@ -1084,4 +1153,103 @@ class CandidateEvaluationRunner:
         agg_trading_df.to_csv(agg_trading_csv, index=False)
         exported_files["agg_trading_csv"] = str(agg_trading_csv)
 
+        agg_trading_json = out_p / "candidate_trading_aggregate.json"
+        with open(agg_trading_json, "w", encoding="utf-8") as f:
+            json.dump(all_trading_rows, f, indent=2, default=str)
+        exported_files["agg_trading_json"] = str(agg_trading_json)
+
         return exported_files
+
+    def recompute_trading_from_saved_predictions(
+        self,
+        mode: str,
+        artifacts_dir: Union[str, Path] = "artifacts/candidate_eval",
+        commission_buy: float = 0.0015,
+        commission_sell: float = 0.0025,
+        slippage_entry_bps: float = 5.0,
+        slippage_exit_bps: float = 5.0,
+    ) -> dict[str, Any]:
+        """Recomputes discrete-event trading evaluation from saved predictions without retraining.
+
+        Enforces 50 bps round-trip nominal friction:
+        - 15 bps buy commission
+        - 25 bps sell commission
+        - 5 bps entry slippage + 5 bps exit slippage (10 bps round-trip slippage)
+        """
+        out_p = Path(artifacts_dir)
+        oos_file = out_p / f"candidate_oos_predictions_{mode}.csv"
+        if not oos_file.exists():
+            raise FileNotFoundError(f"Saved OOS predictions file not found: {oos_file}")
+
+        df_universe, bars_by_ticker = self.load_universe_and_target_data(mode)
+        oos_df = pd.read_csv(oos_file)
+        oos_df["date"] = pd.to_datetime(oos_df["date"]).dt.date
+
+        if "va_entry_price" not in oos_df.columns:
+            lookup_df = df_universe[["ticker", "date", "va_entry_price"]].drop_duplicates(
+                subset=["ticker", "date"]
+            )
+            oos_df = oos_df.merge(lookup_df, on=["ticker", "date"], how="left")
+
+        specs = self.get_candidate_specs(mode)
+        folds = sorted(oos_df["fold"].unique())
+
+        all_model_trades: dict[str, list[SimulatedTrade]] = {s.model_id: [] for s in specs}
+        all_model_trade_stats: dict[str, list[dict[str, Any]]] = {s.model_id: [] for s in specs}
+
+        for fold_idx in folds:
+            fold_df = oos_df[oos_df["fold"] == fold_idx].copy()
+            for spec in specs:
+                m_id = spec.model_id
+                prob_col = f"prob_{m_id}"
+                if prob_col not in fold_df.columns:
+                    raise KeyError(f"Column {prob_col} not found in {oos_file}")
+
+                y_prob = fold_df[prob_col].to_numpy(dtype=np.float64)
+                t_res = self._simulate_fold_trading(
+                    df_test=fold_df,
+                    y_prob=y_prob,
+                    bars_by_ticker=bars_by_ticker,
+                    initial_capital=100_000_000.0,
+                    max_positions=5,
+                    top_n_per_day=5,
+                    commission_buy=commission_buy,
+                    commission_sell=commission_sell,
+                    slippage_entry_bps=slippage_entry_bps,
+                    slippage_exit_bps=slippage_exit_bps,
+                )
+                all_model_trades[m_id].extend(t_res["trades"])
+                t_stat = {
+                    "fold": int(fold_idx),
+                    "model_id": m_id,
+                    **{k: v for k, v in t_res.items() if k != "trades"},
+                }
+                all_model_trade_stats[m_id].append(t_stat)
+
+        trading_summaries = self._aggregate_trading_summaries(
+            all_model_trade_stats=all_model_trade_stats,
+            specs=specs,
+            all_model_trades=all_model_trades,
+        )
+
+        # Load existing JSON artifact to preserve predictive metrics (macro_summaries, etc.)
+        json_path = out_p / f"candidate_results_{mode}.json"
+        if json_path.exists():
+            with open(json_path, "r", encoding="utf-8") as f:
+                base_data = json.load(f)
+        else:
+            base_data = {
+                "mode": mode,
+                "n_splits": self.n_splits,
+                "purge_days": self.purge_days,
+                "random_state": self.random_state,
+                "total_universe_samples": len(df_universe),
+                "macro_summaries": [],
+                "fold_results": [],
+            }
+
+        base_data["trading_summaries"] = trading_summaries
+        base_data["trading_fold_stats"] = all_model_trade_stats
+        base_data["oos_predictions"] = oos_df
+
+        return base_data

@@ -386,3 +386,200 @@ def test_export_artifacts_completeness(tmp_path):
     for f_path in exported.values():
         assert Path(f_path).exists()
 
+
+def test_slippage_friction_allocation():
+    """Verify that 5 bps entry + 5 bps exit slippage is accurately applied."""
+    runner = CandidateEvaluationRunner()
+
+    df_test = pd.DataFrame(
+        {
+            "ticker": ["SLIP_TEST"],
+            "date": [date(2026, 1, 1)],
+            "va_entry_price": [100.0],
+        }
+    )
+    y_prob = np.array([0.9])
+
+    bars = {
+        "SLIP_TEST": [
+            make_bar("SLIP_TEST", date(2026, 1, 1), 100.0, 101.0, 99.0, 100.0),
+            make_bar("SLIP_TEST", date(2026, 1, 2), 100.0, 106.0, 100.0, 105.5),
+        ]
+    }
+
+    # Add 10 dummy candidates to meet min_candidates=10 requirement on Day 1 and Day 2
+    day1_dummies = [
+        pd.DataFrame(
+            {
+                "ticker": [f"D_{i}"],
+                "date": [date(2026, 1, 1)],
+                "va_entry_price": [100.0],
+            }
+        )
+        for i in range(10)
+    ]
+    day2_dummies = [
+        pd.DataFrame(
+            {
+                "ticker": [f"D_{i}"],
+                "date": [date(2026, 1, 2)],
+                "va_entry_price": [100.0],
+            }
+        )
+        for i in range(10)
+    ]
+    for i in range(10):
+        t_name = f"D_{i}"
+        bars[t_name] = [
+            make_bar(t_name, date(2026, 1, 1), 100.0, 101.0, 99.0, 100.0),
+            make_bar(t_name, date(2026, 1, 2), 100.0, 101.0, 99.0, 100.0),
+        ]
+
+    df_full = pd.concat([df_test] + day1_dummies + day2_dummies, ignore_index=True)
+    y_prob_full = np.concatenate([y_prob, np.full(10, 0.1), np.full(10, 0.1)])
+
+    res = runner._simulate_fold_trading(
+        df_test=df_full,
+        y_prob=y_prob_full,
+        bars_by_ticker=bars,
+        commission_buy=0.0015,
+        commission_sell=0.0025,
+        slippage_entry_bps=5.0,
+        slippage_exit_bps=5.0,
+    )
+
+    assert res["completed_trades"] == 1
+    trade = res["trades"][0]
+    assert trade.ticker == "SLIP_TEST"
+    # Entry raw is 100.0; fill_price with 5 bps slippage is 100.0 * 1.0005 = 100.05
+    assert trade.entry_price == 100.05
+    # TP barrier is 100.05 * 1.05 = 105.0525; exit fill with 5 bps slippage:
+    # 105.0525 * (1 - 0.0005)
+    expected_exit = 105.0525 * (1.0 - 0.0005)
+    assert abs(trade.exit_price - expected_exit) < 1e-4
+
+
+def test_pooled_vs_mean_profit_factor_and_drawdown_distinction():
+    """Verify distinct computation of pooled PF vs mean PF and worst-fold vs continuous drawdown."""
+    from python.experiments.candidate_eval import SimulatedTrade
+
+    runner = CandidateEvaluationRunner()
+    specs = runner.get_candidate_specs("LOW_PRICE")
+
+    # Trade 1 in Fold 1: gain = 200, loss = 0
+    t1 = SimulatedTrade(
+        ticker="AAA",
+        signal_date=date(2026, 1, 1),
+        entry_date=date(2026, 1, 2),
+        exit_date=date(2026, 1, 3),
+        entry_price=100.0,
+        exit_price=105.0,
+        shares=1000,
+        gross_pnl=5000.0,
+        net_pnl=2000.0,
+        net_return=0.02,
+        exit_reason="TP",
+        holding_days=1,
+        signal_prob=0.8,
+    )
+    # Trade 2 in Fold 2: gain = 0, loss = 1000
+    t2 = SimulatedTrade(
+        ticker="BBB",
+        signal_date=date(2026, 2, 1),
+        entry_date=date(2026, 2, 2),
+        exit_date=date(2026, 2, 3),
+        entry_price=100.0,
+        exit_price=98.0,
+        shares=1000,
+        gross_pnl=-2000.0,
+        net_pnl=-1000.0,
+        net_return=-0.01,
+        exit_reason="SL",
+        holding_days=1,
+        signal_prob=0.8,
+    )
+
+    trade_stats = {
+        "VB_lgb_full": [
+            {
+                "fold": 1,
+                "total_signals": 10,
+                "completed_trades": 1,
+                "invalidated_total": 0,
+                "unfilled_total": 9,
+                "win_rate": 1.0,
+                "tp_count": 1,
+                "sl_count": 0,
+                "expiry_count": 0,
+                "avg_net_return": 0.02,
+                "profit_factor": 2.0,
+                "max_drawdown_pct": 10.0,
+                "initial_capital": 100_000_000.0,
+                "final_equity": 102_000_000.0,
+                "daily_equity": [
+                    (date(2026, 1, 2), 100_000_000.0),
+                    (date(2026, 1, 3), 102_000_000.0),
+                ],
+            },
+            {
+                "fold": 2,
+                "total_signals": 10,
+                "completed_trades": 1,
+                "invalidated_total": 0,
+                "unfilled_total": 9,
+                "win_rate": 0.0,
+                "tp_count": 0,
+                "sl_count": 1,
+                "expiry_count": 0,
+                "avg_net_return": -0.01,
+                "profit_factor": 0.5,
+                "max_drawdown_pct": 20.0,
+                "initial_capital": 100_000_000.0,
+                "final_equity": 99_000_000.0,
+                "daily_equity": [
+                    (date(2026, 2, 2), 100_000_000.0),
+                    (date(2026, 2, 3), 99_000_000.0),
+                ],
+            },
+        ]
+    }
+    all_trades = {"VB_lgb_full": [t1, t2]}
+
+    summaries = runner._aggregate_trading_summaries(
+        all_model_trade_stats=trade_stats,
+        specs=specs,
+        all_model_trades=all_trades,
+    )
+    s = next(entry for entry in summaries if entry["model_id"] == "VB_lgb_full")
+
+    # Pooled profit factor = 2000 / 1000 = 2.0
+    assert s["pooled_profit_factor"] == 2.0
+    # Mean profit factor = (2.0 + 0.5) / 2 = 1.25
+    assert s["mean_profit_factor"] == 1.25
+    # Worst fold max drawdown = max(10.0, 20.0) = 20.0
+    assert s["worst_fold_max_drawdown_pct"] == 20.0
+    # Continuous max drawdown:
+    # Fold 1 peaks at 102M.
+    # Fold 2 starts at 102M, drops to 102M * 0.99 = 100.98M. Drawdown = (102 - 100.98) / 102 = 1.0%
+    assert s["continuous_max_drawdown_pct"] >= 1.0
+
+
+def test_recompute_trading_from_saved_predictions():
+    """Verify that recompute_trading_from_saved_predictions simulates trading."""
+    runner = CandidateEvaluationRunner()
+    res = runner.recompute_trading_from_saved_predictions(
+        mode="LOW_PRICE",
+        artifacts_dir="artifacts/candidate_eval",
+    )
+    assert res["mode"] == "LOW_PRICE"
+    assert "trading_summaries" in res
+    assert len(res["trading_summaries"]) == 8
+    vb = next(s for s in res["trading_summaries"] if s["model_id"] == "VB_lgb_full")
+    assert vb["completed_trades"] > 0
+    assert vb["pooled_profit_factor"] > 0.0
+    assert vb["mean_profit_factor"] > 0.0
+    assert vb["worst_fold_max_drawdown_pct"] > 0.0
+    assert vb["continuous_max_drawdown_pct"] > 0.0
+
+
+

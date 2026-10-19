@@ -2,20 +2,22 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11B.1 — Candidate Model Training & Evaluation (Trading Metric Reconciliation)`
-- **Audit Date:** `2026-10-19 17:50 WIB`
+- **Current Phase:** `Phase 11C — Multi-Horizon Evaluation & Return Estimation`
+- **Audit Date:** `2026-10-19 18:55 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11B.1 candidate evaluation and reconciled trading metrics
+- **Latest Commit SHA:** Working tree with Phase 11C multi-horizon evaluation pipeline and empirical findings
 - **Overall Status:** `PASS (DO_NOT_PROMOTE)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Candidate model training on **Variant B (Next-Session Open-Anchor Target)** eliminates pre-entry lookahead bias and reduces operational invalidations by 50% ($156 \rightarrow 80$).
-  - Under the reconciled 50 bps round-trip friction model (15 bps buy commission, 25 bps sell commission, 10 bps slippage allocated as 5 bps entry + 5 bps exit), all 16 candidate models generate net negative returns ($-0.33\%$ to $-0.92\%$ per trade) and profit factors below 1.0 ($0.52$ to $0.80$).
+  - Walk-forward multi-horizon evaluation across holding horizons ($H \in \{3, 5, 10, 15\}$ trading days) and continuous return estimation under Variant B execution with a 15-day purge window confirms that extending holding horizons substantially cushions portfolio drawdown (continuous multi-year drawdown falls from $\sim 95\%$ to $45.50\%$ in `LOW_PRICE` and $62.09\%$ in `HIGHER_PRICE`) and cuts trading churn by $>50\%$.
+  - However, under the production 50 bps round-trip friction model (15 bps buy, 25 bps sell, 5 bps entry slip, 5 bps exit slip), **all evaluated configurations generate net negative returns** ($-0.33\%$ to $-1.00\%$ per trade) and profit factors below 1.0 ($0.47$ to $0.80$).
+  - LightGBM Regressors demonstrate positive correlation with realized returns ($r = +0.06$ to $+0.10$ in `LOW_PRICE`; $+0.03$ to $+0.05$ in `HIGHER_PRICE`), selecting more disciplined trades than raw binary classifiers.
+  - Expected return filtering exhibits severe macro-regime dependency (profitable in Fold 1 bull market; negative in Fold 3 bear market).
   - **Decision:** Candidates are NOT promoted to production champion status. Current champions remain active and untouched.
-- **Next Permitted Action:** Proceed to Phase 11C design review for dynamic EV thresholds and adaptive barrier exploration upon user authorization. Do not begin Phase 11C automatically.
+- **Next Permitted Action:** Proceed to Phase 11D research design upon user authorization. Do not begin Phase 11D automatically.
 
 ---
 
@@ -45,8 +47,13 @@ The repository maintains dedicated, detailed reports for each major governance a
 
 5. [docs/13_phase_11b_candidate_model_evaluation_report.md](docs/13_phase_11b_candidate_model_evaluation_report.md)
    - **Phase 11B.1:** Candidate Model Training & Evaluation (Trading Metric Reconciliation)
-   - **Scope:** Walk-forward candidate model training across dual target contracts (Variant A vs Variant B), common-cohort evaluation, discrete-event simulated trading with reconciled 50 bps friction (15 bps buy, 25 bps sell, 5 bps entry slip, 5 bps exit slip), true pooled profit factor vs mean fold profit factor, and worst-fold max drawdown vs continuous portfolio max drawdown.
+   - **Scope:** Walk-forward candidate model training across dual target contracts (Variant A vs Variant B), common-cohort evaluation, discrete-event simulated trading with reconciled 50 bps friction (15 bps buy, 25 bps sell, 5 bps entry slip, 5 bps exit slip), true pooled profit factor vs mean fold profit factor, and worst-fold max drawdown vs continuous portfolio max drawdown. Executive summary reconciled to $-0.33\%$ to $-0.92\%$ net return range.
    - **Status:** `PASS (DO_NOT_PROMOTE)` (Variant B validated for operational fidelity; champions preserved).
+
+6. [docs/14_phase_11c_multi_horizon_return_evaluation_report.md](docs/14_phase_11c_multi_horizon_return_evaluation_report.md)
+   - **Phase 11C:** Multi-Horizon Evaluation & Return Estimation
+   - **Scope:** Holding horizons ($H \in \{3, 5, 10, 15\}$ trading days), strict 15-day purge window walk-forward splits, LightGBM Regressor continuous return estimation vs zero & mean baselines, discrete-event simulated trading under 50 bps friction, and Expected Return vs discrete EV diagnostics.
+   - **Status:** `PASS (DO_NOT_PROMOTE)` (Horizon extension dampens drawdown but fails to cross net profitability threshold; champions preserved).
 
 ---
 

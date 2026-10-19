@@ -1,0 +1,139 @@
+{
+  "config_sha256": "2fa07ad5d2e10ad5c6b873338e648a5194b61bfbe84f02048cd6305e6c355bbd",
+  "created_at": "2026-10-19T23:00:00Z",
+  "feature_schema": [
+    "return_1d",
+    "return_3d",
+    "return_5d",
+    "return_10d",
+    "return_20d",
+    "ema20",
+    "ema50",
+    "ema200",
+    "close_vs_ema20",
+    "close_vs_ema50",
+    "ema20_vs_ema50",
+    "ema50_vs_ema200",
+    "rsi14",
+    "rsi_change_5d",
+    "atr14",
+    "atr_pct",
+    "realized_vol_5d",
+    "realized_vol_20d",
+    "daily_range_pct",
+    "volume_ratio_5d",
+    "volume_ratio_20d",
+    "value_ratio_20d",
+    "rel_strength_ihsg_20d",
+    "rel_strength_sector_20d",
+    "ihsg_return_5d",
+    "ihsg_return_20d",
+    "ihsg_vs_ema20",
+    "ihsg_vs_ema50",
+    "market_breadth",
+    "market_volatility"
+  ],
+  "governance_invariants": [
+    "No production champion model promotion permitted in Phase 11F.",
+    "Never fall back to production champions for research scoring.",
+    "Fail closed if H=15 Variant B scoring artifacts are unavailable.",
+    "Strictly forward paper trading on new bars; no trailing stops in primary evaluation.",
+    "50 bps nominal round-trip transaction friction applied to all fills.",
+    "Conservative execution precedence: stop-loss precedes take-profit on ambiguous bars."
+  ],
+  "policies": {
+    "HIGHER_PRICE": {
+      "friction_model": {
+        "commission_buy_pct": 0.0015,
+        "commission_sell_pct": 0.0025,
+        "nominal_round_trip_bps": 50.0,
+        "slippage_entry_bps": 5.0,
+        "slippage_exit_bps": 5.0
+      },
+      "gap_invalidation_rules": {
+        "gap_down_sl_pct": 0.02,
+        "gap_up_tp_pct": 0.06,
+        "max_open_dev_pct": 0.05,
+        "volume_min": 1.0
+      },
+      "horizon_days": 15,
+      "mode": "HIGHER_PRICE",
+      "model_artifact_path": "models/registry/lgb_full_classifier_h15_variant_b.joblib",
+      "portfolio_constraints": {
+        "equity_cap_pct": 0.2,
+        "initial_capital": 100000000.0,
+        "lot_size": 100,
+        "max_concurrent_positions": 5
+      },
+      "regime_filter": "ihsg_vs_ema20 > 0",
+      "score_metric": "prob_lgb_full",
+      "selectivity_top_pct": 0.01,
+      "sizing_tiers": {
+        "favorable": {
+          "condition": "ihsg_vs_ema20 > 0 and market_breadth >= 0.50",
+          "multiplier": 1.0
+        },
+        "mixed": {
+          "condition": "not (favorable or unfavorable)",
+          "multiplier": 0.5
+        },
+        "unfavorable": {
+          "condition": "ihsg_vs_ema20 <= 0 and market_breadth < 0.50",
+          "multiplier": 0.0
+        }
+      },
+      "sl_pct": 0.02,
+      "target_contract": "Variant B (Next-Open Executable)",
+      "tie_breaker": "score desc, ticker asc",
+      "tp_pct": 0.06,
+      "trailing_stop_enabled": false
+    },
+    "LOW_PRICE": {
+      "friction_model": {
+        "commission_buy_pct": 0.0015,
+        "commission_sell_pct": 0.0025,
+        "nominal_round_trip_bps": 50.0,
+        "slippage_entry_bps": 5.0,
+        "slippage_exit_bps": 5.0
+      },
+      "gap_invalidation_rules": {
+        "gap_down_sl_pct": 0.02,
+        "gap_up_tp_pct": 0.06,
+        "max_open_dev_pct": 0.05,
+        "volume_min": 1.0
+      },
+      "horizon_days": 15,
+      "mode": "LOW_PRICE",
+      "model_artifact_path": "models/registry/lgb_regressor_h15_variant_b.joblib",
+      "portfolio_constraints": {
+        "equity_cap_pct": 0.2,
+        "initial_capital": 100000000.0,
+        "lot_size": 100,
+        "max_concurrent_positions": 5
+      },
+      "regime_filter": "ihsg_vs_ema20 > 0",
+      "score_metric": "pred_return_lgb",
+      "selectivity_top_pct": 0.03,
+      "sizing_tiers": {
+        "favorable": {
+          "condition": "ihsg_vs_ema20 > 0 and market_breadth >= 0.50",
+          "multiplier": 1.0
+        },
+        "mixed": {
+          "condition": "not (favorable or unfavorable)",
+          "multiplier": 0.5
+        },
+        "unfavorable": {
+          "condition": "ihsg_vs_ema20 <= 0 and market_breadth < 0.50",
+          "multiplier": 0.0
+        }
+      },
+      "sl_pct": 0.02,
+      "target_contract": "Variant B (Next-Open Executable)",
+      "tie_breaker": "score desc, ticker asc",
+      "tp_pct": 0.06,
+      "trailing_stop_enabled": false
+    }
+  },
+  "version": "Phase-11F-Frozen-Policy-v1"
+}

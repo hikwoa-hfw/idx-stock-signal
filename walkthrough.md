@@ -1,120 +1,127 @@
-# Walkthrough — Phase 11E: Dynamic Conviction Sizing & Volatility Trailing Protection Research
+# Walkthrough — Phase 11F: Forward Paper Trading & Frozen Policy Validation
 
-## Overview
+## Session Overview
 
-In Phase 11E, we investigated whether point-in-time regime conviction position sizing and volatility-based trailing protection can improve portfolio risk-adjusted performance without relying on fragile pooled profitability:
-1. **Dynamic Position Sizing (Experiment A):** Conditioning trade allocation on point-in-time regime indicators (Fixed control, Conservative binary, Three-tier regime sizing, and Smooth conviction scaling).
-2. **Volatility-Based Trailing Protection (Experiment B):** Evaluating ratcheting and volatility trailing stops (Breakeven ratchets at +2.5% and +3.0%, causal ATR $1.0\times$ and $1.5\times$ trailing stops, and Stepped profit locks).
-3. **Combined Policy Matrix (Experiment C):** Testing whether sizing and trailing protection have complementary or overlapping effects when combined with Phase 11D selective policies.
-4. **Walk-Forward Dispersion & Regime Allocation:** Measuring continuous compounding portfolio returns, continuous maximum drawdown, capital concentration, and fold-level stability across expanding test folds under the mandatory 50 bps round-trip friction model.
+Completed **Phase 11F — Forward Paper Trading & Frozen Policy Validation** review and hardening for the Indonesian Stock AI dual-mode signals. This phase builds the prospective evaluation engine, deterministically freezes the primary research policies, validates scoring artifacts with fail-closed guards, executes historical replay validation under 50 bps round-trip transaction friction, maintains frozen reference benchmarks, and provides comprehensive operational reporting.
 
-All experiments were executed strictly offline without retraining production champion models, modifying champion registry artifacts, or altering live BUY thresholds.
-
----
-
-## Detailed Task Breakdown & Code Modifications
-
-### 1. Research Engine: `python/experiments/sizing_trailing_eval.py`
-- **Engine Architecture & Discrete-Event Simulation (`SizingTrailingEvaluationEngine`, lines 77–690):**
-  - Integrated 50 bps round-trip friction model (15 bps buy, 25 bps sell, 5 bps entry slip, 5 bps exit slip).
-  - Enforced 100-share IDX lot sizing, maximum 5 concurrent positions, and 20% equity cap per position.
-  - Implemented dynamic sizing multiplier $w_t \in [0.0, 1.0]$: $\text{cap\_per\_pos} = \min(\text{equity} / 5, \text{equity} \times 0.20) \times w_t$.
-  - Added tracking for `skipped_regime_sizing` when $w_t \le 0.0$ and explicit allocation metrics by regime (`FAVORABLE`, `MIXED`, `UNFAVORABLE`).
-  - Implemented tightening-only trailing stops: evaluated on day $d$ using stop known at start of day; watermark and stop tighten at EOD based on observed High for subsequent day's Open/Low; stops strictly tighten and never loosen.
-  - Handled opening gaps down below trailing stops: fill at Open (Variant B execution contract).
-  - Conservative same-day exit resolution: SL takes precedence over TP on ambiguous wide-range bars.
-- **Predeclared Sizing Rules (lines 740–795):**
-  - `sizing_fixed_control`: $1.0\times$ allocation (20% cap) across all market conditions.
-  - `sizing_conservative_binary`: $1.0\times$ when `ihsg_vs_ema20 > 0`, $0.0\times$ when `ihsg_vs_ema20 <= 0`.
-  - `sizing_three_tier_regime`: $1.0\times$ Favorable (`ihsg_vs_ema20 > 0` & `breadth >= 0.50`), $0.5\times$ Mixed, $0.0\times$ Unfavorable (`ihsg_vs_ema20 <= 0` & `breadth < 0.50`).
-  - `sizing_smooth_conviction`: $w_t = \text{clip}\left(\frac{\text{ihsg\_vs\_ema20} + 0.02}{0.04}, 0.0, 1.0\right)$.
-- **Predeclared Trailing Stop Rules (lines 800–850):**
-  - `make_breakeven_ratchet_rule(0.025, 0.0050)`: Moves stop to $+0.50\%$ (breakeven net of friction) after $+2.5\%$ watermark.
-  - `make_breakeven_ratchet_rule(0.030, 0.0050)`: Moves stop to $+0.50\%$ after $+3.0\%$ watermark.
-  - `make_atr_trailing_rule(1.0, 0.025)` & `make_atr_trailing_rule(1.5, 0.025)`: Causal ATR trailing stop with distance $k \times \text{ATR}$, activated after $+2.5\%$ move.
-  - `make_stepped_profit_lock_rule`: $+2.5\%$ move locks $+0.50\%$; $+4.0\%$ move locks $+2.0\%$.
-- **Continuous Compounding Equity & Aggregation (lines 855–1045):**
-  - Compounded daily equity across chained test folds (Folds 1 $\rightarrow$ 2 $\rightarrow$ 3).
-  - Computed continuous portfolio maximum drawdown, worst-fold maximum drawdown, trade expectancy, pooled profit factor, and turnover.
-
-### 2. CLI Evaluation Runner: `scripts/run_sizing_trailing_evaluation.py`
-- Built reproducible CLI runner generating aligned ASCII summary tables:
-  - Table 1: Baseline Reference Baselines (Phase 11D Replication).
-  - Table 2: Experiment A: Dynamic Position Sizing.
-  - Table 3: Experiment B: Volatility Trailing Protection.
-  - Table 4: Experiment C: Combined Policies.
-  - Table 5: Regime Sizing & Capital Allocation Breakdown.
-- Completed full multi-mode evaluation in 68.4 seconds.
-
-### 3. Comprehensive Unit Tests: `tests/unit/test_sizing_trailing_evaluation.py`
-- Implemented 13 targeted unit tests:
-  - `test_engine_initialization`: Initialization, parameters, and friction contracts.
-  - `test_sizing_rules_logic`: Mathematical verification of all 4 sizing rules across regime cases.
-  - `test_sizing_zero_allocation_skips_orders`: Zero-multiplier orders skipped, recorded, no cash consumed.
-  - `test_sizing_multiplier_scales_capital_allocation`: Capital scaling and lot rounding verification.
-  - `test_trailing_stop_tightens_and_never_loosens`: Ratchet tightening behavior and pullback resistance.
-  - `test_atr_trailing_and_stepped_lock_rules`: ATR distance scaling and stepped profit lock mechanics.
-  - `test_trailing_stop_exit_execution`: Trailing stop trigger, exit reason `TRAILING_SL`, net profit protection.
-  - `test_trailing_gap_down_execution`: Variant B gap-down fill at Open price rather than stop price.
-  - `test_simultaneous_tp_and_trailing_sl_precedence`: Conservative precedence on ambiguous wide-range bars.
-  - `test_continuous_equity_chaining_math`: Compounding scale and continuous drawdown math across folds.
-  - `test_capital_competition_ranking`: Priority queue tie-breaking (score desc, ticker asc) with capacity caps.
-  - `test_remaining_open_positions_tracking`: Tracking of positions remaining open at end of evaluation period.
-  - `test_compute_fold_training_stats_causality`: Purge window and causal training stats computation.
-
-### 4. Documentation & Governance
-- `docs/16_phase_11e_sizing_trailing_protection_report.md`:
-  - Formal audit report matching `docs/AGENT_REPORT_TEMPLATE.md`.
-  - Executive decision: `DO_NOT_PROMOTE`.
-  - Comprehensive empirical evidence tables across all experiments and folds (reconciled TP/SL rates in Section 5.3 and remaining open positions).
-- `audit_report.md`:
-  - Updated current operational state to Phase 11E with 503 passed tests.
-  - Added entry 8 to index.
-- `summary.md`:
-  - Appended entry 60 preserving cumulative historical log integrity.
+During this review session:
+1. Reconciled historical benchmark metrics in `frozen_reference_benchmarks.csv`: corrected Phase 11D `net_portfolio_return_pct` (from `0.0%` to actual backtest returns: `+2.12%` for `LOW_PRICE` and `+8.57%` for `HIGHER_PRICE`) and cash exposure (from `time_in_market_pct` to actual `avg_cash_exposure_pct`: `77.35%` and `62.92%`).
+2. Implemented end-to-end prospective scoring in `step_prospective_date`: when model artifacts exist, the engine loads `.joblib` estimators via `joblib.load`, extracts `FEATURE_SCHEMA_30` features, computes model inference, ranks candidates, enforces regime filters and sizing multipliers, and records prospective candidates and decisions.
+3. Overhauled unit tests in `tests/unit/test_forward_paper_trading.py`: replaced shallow tautological assertions with deep simulation execution tests (testing gap invalidation counters, order rejections, zero cash spent, capacity limits, conservative SL precedence on ambiguous bars, MFE/MAE excursions, and mock artifact prospective scoring).
+4. Expanded test coverage to 21 unit tests, achieving a 100% pass rate across the full workspace suite (524 tests passed, 0 failures, 100% ruff clean).
 
 ---
 
-## Key Empirical Findings
+## 1. Task Breakdown & Code Modifications
 
-1. **Replication of Frozen Baselines:**
-   - Baseline numbers match Phase 11D exactly: `LOW_PRICE` H=15 regressor (856 trades, $-0.33\%$ net return, PF $0.80$, continuous DD $46.01\%$), `HIGHER_PRICE` H=15 full classifier (980 trades, $-0.49\%$ net return, PF $0.72$, continuous DD $62.67\%$).
-2. **Experiment A (Dynamic Sizing):**
-   - Three-Tier Regime Sizing cuts continuous portfolio drawdown from $46.01\% \rightarrow 14.74\%$ in `LOW_PRICE` and from $62.67\% \rightarrow 24.23\%$ in `HIGHER_PRICE`.
-   - Sizing cuts portfolio turnover by more than half while maintaining $>61\%$ cash reserves.
-   - However, sizing does not improve per-trade net expectancy ($-0.14\%$ in `LOW_PRICE`, $-0.26\%$ in `HIGHER_PRICE`). It is purely a capital preservation tool.
-3. **Experiment B (Trailing Protection & The Payoff Truncation Paradox):**
-   - Trailing stops increase win rate by $+5.4\%$ to $+10.9\%$ (surging up to $44.5\%$ in `HIGHER_PRICE`).
-   - However, net trade expectancy and profit factor uniformly deteriorate: in `HIGHER_PRICE` selective, expectancy drops from $+0.13\% \rightarrow -0.06\%$ to $-0.14\%$, and profit factor falls from $1.07 \rightarrow 0.88$–$0.93$.
-   - Normal daily volatility retracements trigger trailing stops prematurely, exchanging $+5.5\%$ target winners for marginal $+0.5\%$ or $+2.0\%$ exits while leaving full $-2.0\%$ initial stop losses intact.
-4. **Experiment C (Combined Sizing & Selective Entry):**
-   - Combining Three-Tier Sizing with Phase 11D Selective Entry (`comb_selective_sizing_alone`) achieves the lowest continuous portfolio drawdown in the history of the project:
-     - `LOW_PRICE`: Continuous DD **$6.34\%$**, worst fold DD $5.86\%$, trade net return **$+0.08\%$**, PF $1.02$, turnover $27.9\text{x}$, cash exposure $81.3\%$.
-     - `HIGHER_PRICE`: Continuous DD **$8.83\%$**, worst fold DD $8.83\%$, trade net return **$+0.14\%$**, PF $1.06$, turnover $47.0\text{x}$, cash exposure $70.0\%$.
-   - Adding trailing stops degrades performance, confirming that Sizing and Trailing Protection do not have positive synergy.
-5. **Cross-Fold Forward Inconsistency:**
-   - In `comb_selective_sizing_alone`, positive returns are driven by single favorable folds (Fold 1 in `LOW_PRICE`, Fold 2 in `HIGHER_PRICE`). Forward test folds remain negative (Folds 2 & 3 in `LOW_PRICE`; Folds 1 & 3 in `HIGHER_PRICE`).
-   - Governance Decision: `DO_NOT_PROMOTE`. Production champions remain unchanged.
+### 1.1 Core Engine: `python/experiments/paper_trading.py`
+- **Imports (Lines 20–35):**
+  - Added `import joblib` to third-party dependencies block.
+- **Reference Benchmarks (Lines 490–525):**
+  - Reconciled Phase 11D benchmark records to match empirical findings from Phase 11D/11E:
+    * `LOW_PRICE`: `net_portfolio_return_pct: 2.12`, `avg_cash_exposure_pct: 77.35`
+    * `HIGHER_PRICE`: `net_portfolio_return_pct: 8.57`, `avg_cash_exposure_pct: 62.92`
+- **Prospective Date Scoring (`step_prospective_date`, Lines 1198–1347):**
+  - Added `base_dir` parameter for dependency injection during tests and custom deployments.
+  - Fail-closed guard: checks `audit_scoring_artifacts(base_dir=base_dir)`. If research scoring artifacts are missing, raises `MissingScoringArtifactError`. Fallback to production champions is strictly forbidden.
+  - Prospective inference: when artifacts exist, queries `features_daily` and `daily_bars` for `eval_date`, filters price modes (50–300 for `LOW_PRICE`, >300 for `HIGHER_PRICE`), runs model prediction, applies deterministic sorting (`score desc, ticker asc`), enforces `ihsg_vs_ema20 > 0`, scales allocation via three-tier regime conviction, and saves records to `paper_trading_candidates.csv` and `paper_trading_decisions.csv`.
+
+### 1.2 Unit Tests: `tests/unit/test_forward_paper_trading.py` (Lines 1–640)
+- Overhauled test suite to 21 unit tests covering real simulation behavior:
+  - `TestPolicyConfigurationAndHashing`: Deterministic SHA-256 computation (`2fa07ad5d2e10ad5c6b873338e648a5194b61bfbe84f02048cd6305e6c355bbd`), parameter sensitivity, 30-feature schema verification.
+  - `TestRegimeSizingTiers`: Point-in-time three-tier sizing classification (1.0x, 0.5x, 0.0x).
+  - `TestDeterministicTieBreaking`: Sorting candidates by `score desc, ticker asc` in both list sorting and engine simulation ranking.
+  - `TestExecutionFidelityAndGapInvalidations`:
+    * `test_gap_down_invalidation_in_simulation`: verifies simulated Day 1 Open $\le$ SL increments `invalidated_gap_down`, produces 0 trades, and leaves cash untouched (100,000,000 IDR).
+    * `test_gap_up_invalidation_in_simulation`: verifies simulated Day 1 Open $\ge$ TP increments `invalidated_gap_up`, produces 0 trades, and consumes 0 cash.
+    * `test_excessive_deviation_invalidation_in_simulation`: verifies simulated Day 1 Open deviation $> 5\%$ increments `invalidated_excessive_dev`, produces 0 trades, and consumes 0 cash.
+    * `test_suspended_or_zero_volume_unfilled_in_simulation`: verifies simulated Day 1 Volume $\le 0$ increments `unfilled_suspended` and consumes 0 cash.
+    * `test_lot_size_and_cash_accounting`: verifies 100-share lot rounding and capital protection.
+    * `test_fee_accounting_50bps_nominal`: verifies 50 bps round-trip nominal transaction friction.
+    * `test_ambiguous_bar_conservative_sl_precedence_in_simulation`: executes trade where High $\ge$ TP and Low $\le$ SL on the same bar, verifying exit reason resolves to `"SL"`.
+    * `test_mfe_mae_tracking`: executes multi-day trade and verifies `highest_watermark`, `lowest_watermark`, `mfe_pct`, and `mae_pct`.
+  - `TestFailClosedScoringArtifactGuard`:
+    * `test_scoring_artifacts_audit_missing_fails_closed`: verifies missing H=15 Variant B artifacts flag `BLOCKED_ON_SCORING_ARTIFACT`.
+    * `test_prospective_scoring_halts_on_missing_artifact`: verifies `step_prospective_date` raises `MissingScoringArtifactError`.
+    * `test_champion_fallback_strictly_forbidden`: verifies champions are blocked from substitution.
+    * `test_prospective_scoring_executes_with_mock_artifacts`: creates mock `.joblib` estimators and validates prospective scoring on bull date (`2026-09-18`, generating decisions) and bear date (`2026-10-14`, filtering decisions to 0).
+  - `TestOperationalStatusAndBenchmarks`:
+    * `test_export_frozen_policy_config`: verifies config JSON structure and hash.
+    * `test_export_frozen_reference_benchmarks`: verifies 6 benchmark rows, checking Phase 11D and 11E reconciled metrics.
+    * `test_operational_status_generation`: verifies status JSON structure and content.
+
+### 1.3 Machine-Readable Artifacts: `artifacts/phase_11f/`
+- `frozen_policy_config.json`: Canonical policy parameters, feature schema, sizing tiers, and SHA-256 hash.
+- `frozen_reference_benchmarks.csv`: Reconciled benchmark comparator records for Phase 11D, Phase 11E, and production champions.
+- `paper_trading_candidates.csv`: 134,382 decision candidate records with rank, score, and eligibility.
+- `paper_trading_decisions.csv`: 1,528 selected decision orders with sizing multiplier and planned barriers.
+- `paper_trading_trades.csv`: 481 completed simulated trades with fills, PnL, net return, MFE, and MAE.
+- `paper_trading_daily_equity.csv`: Daily cash, equity, and continuous drawdown records.
+- `paper_trading_operational_status.json`: Operational status, audit flags, data quality metrics, and error logs.
+
+### 1.4 Governance & Audit Documentation
+- `docs/17_phase_11f_forward_paper_trading_report.md`: Universal template report with executive decision `READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)`, reconciled Table 5.2 benchmarks.
+- `audit_report.md`: Updated Current Operational State to Phase 11F, Entry 9 test count updated to 524 total suite tests and 21 unit tests.
+- `summary.md`: Appended and updated Entry 61 with benchmark reconciliation, prospective scoring implementation, and 21 unit tests.
+
+---
+
+## 2. Verification Record
+
+1. **Unit Tests:**
+   ```bash
+   .venv\Scripts\python.exe -m pytest tests/unit/test_forward_paper_trading.py -v
+   # Result: 21 passed in 2.03s
+   ```
+2. **Full Workspace Regression Suite:**
+   ```bash
+   .venv\Scripts\python.exe -m pytest -q
+   # Result: 524 passed in 100% full suite
+   ```
+3. **Linter & Code Hygiene:**
+   ```bash
+   .venv\Scripts\python.exe -m ruff check .
+   # Result: All checks passed! (0 errors)
+   ```
+4. **Operational Status & Fail-Closed Guard:**
+   ```bash
+   .venv\Scripts\python.exe scripts/run_forward_paper_trading.py --status
+   # Result: READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)
+   # Missing Artifacts: 2 (H=15 Variant B models)
+   # Fallback Allowed: False
+
+   .venv\Scripts\python.exe scripts/run_forward_paper_trading.py --date 2026-10-19
+   # Result: FAIL_CLOSED: MissingScoringArtifactError
+   ```
+5. **Historical Replay Simulation:**
+   ```bash
+   .venv\Scripts\python.exe scripts/run_forward_paper_trading.py --run-replay
+   # Result:
+   # [LOW_PRICE] Trades: 172 | Win: 30.81% | Net: +0.0008 | PF: 1.02 | Max DD: 6.33%
+   # [HIGHER_PRICE] Trades: 309 | Win: 33.33% | Net: +0.0010 | PF: 1.04 | Max DD: 8.59%
+   ```
 
 ---
 
 ## Testing Checklist
 
-After checking out the working tree or reviewing Phase 11E artifacts, verify the following:
+After pulling these changes, verify:
 
-- [ ] **Unit Tests:** Run `pytest tests/unit/test_sizing_trailing_evaluation.py` and verify all 13 tests pass.
-- [ ] **Full Regression Suite:** Run `pytest` and verify all 503 tests pass with 0 failures.
-- [ ] **Code Linter:** Run `ruff check .` and confirm 0 errors.
-- [ ] **CLI Execution:** Run `python scripts/run_sizing_trailing_evaluation.py` and verify execution completes in under 90 seconds.
-- [ ] **Artifact Presence:** Verify that 10 files exist in `artifacts/phase_11e/`:
-  - [ ] `artifacts/phase_11e/policy_metrics_LOW_PRICE.json`
-  - [ ] `artifacts/phase_11e/policy_metrics_HIGHER_PRICE.json`
-  - [ ] `artifacts/phase_11e/policy_summary_all.csv`
-  - [ ] `artifacts/phase_11e/policy_summary_by_fold.csv`
-  - [ ] `artifacts/phase_11e/baseline_reference_summary.csv`
-  - [ ] `artifacts/phase_11e/experiment_a_sizing_summary.csv`
-  - [ ] `artifacts/phase_11e/experiment_b_trailing_summary.csv`
-  - [ ] `artifacts/phase_11e/experiment_c_combined_summary.csv`
-  - [ ] `artifacts/phase_11e/regime_allocation_breakdown.csv`
-  - [ ] `artifacts/phase_11e/phase_11e_selected_trades_sample.csv`
-- [ ] **Champion Immutability:** Verify active production champions remain `lightgbm_classification_20261014_093522` and `lightgbm_classification_20261014_093607`.
+- [ ] Run `.venv\Scripts\python.exe -m pytest tests/unit/test_forward_paper_trading.py -v` and confirm all 21 unit tests pass.
+- [ ] Run `.venv\Scripts\python.exe -m pytest -q` and confirm all 524 tests in the workspace pass with 0 failures.
+- [ ] Run `.venv\Scripts\python.exe -m ruff check .` and confirm 0 lint errors across the workspace.
+- [ ] Run `.venv\Scripts\python.exe scripts/run_forward_paper_trading.py --status` and verify status code `READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)`.
+- [ ] Run `.venv\Scripts\python.exe scripts/run_forward_paper_trading.py --export-benchmarks` and verify config hash `2fa07ad5d2e10ad5c6b873338e648a5194b61bfbe84f02048cd6305e6c355bbd`.
+- [ ] Verify that `artifacts/phase_11f/` contains all 7 required files:
+  - `frozen_policy_config.json`
+  - `frozen_reference_benchmarks.csv`
+  - `paper_trading_candidates.csv`
+  - `paper_trading_decisions.csv`
+  - `paper_trading_trades.csv`
+  - `paper_trading_daily_equity.csv`
+  - `paper_trading_operational_status.json`
+- [ ] Run `.venv\Scripts\python.exe scripts/run_forward_paper_trading.py --date 2026-10-19` and confirm fail-closed exit with code 1.
+- [ ] Run `.venv\Scripts\python.exe scripts/run_forward_paper_trading.py --run-replay` and confirm replay logs 172 trades on `LOW_PRICE` and 309 trades on `HIGHER_PRICE`.
+- [ ] Inspect `audit_report.md` to confirm Phase 11F status and Entry 9 in the index (524 tests).
+- [ ] Inspect `summary.md` to confirm strictly append-only Entry 61.
+- [ ] Confirm active production champions (`lightgbm_classification_20261014_093522` and `lightgbm_classification_20261014_093607`) remain untouched.

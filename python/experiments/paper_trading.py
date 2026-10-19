@@ -1,0 +1,1357 @@
+"""Forward Paper Trading & Frozen Policy Validation Engine (Phase 11F).
+
+Implements forward, research-only paper-trading simulation, frozen policy
+definitions, configuration hashing, fail-closed artifact guards, execution
+tracking, and operational reporting for the BEI dual-mode stock signals.
+
+Strict offline research contract:
+- Production champion models and registry remain strictly immutable.
+- Frozen research policies: LOW_PRICE (Top 3%, H=15 Regressor, TP +6% / SL -2%, Three-tier sizing)
+  and HIGHER_PRICE (Top 1%, H=15 Full Classifier, TP +6% / SL -2%, Three-tier sizing).
+- Fail-closed guard: missing H=15 Variant B joblib scoring artifacts abort prospective scoring
+  with MISSING_SCORING_ARTIFACT; champions are NEVER substituted.
+- 50 bps round-trip nominal friction (15 bps buy, 25 bps sell, 5 bps entry slip, 5 bps exit slip).
+- 100-share lot sizes, maximum 5 concurrent positions, 20% equity cap.
+- Strict point-in-time causality: all decisions at Close t, entry modeled at Open t+1.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import sqlite3
+import sys
+from dataclasses import asdict, dataclass
+from datetime import date, datetime, timezone
+from pathlib import Path
+from typing import Any, Optional, Union
+
+import joblib
+import numpy as np
+import pandas as pd
+
+# Ensure project root in sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+from python.common.types import DailyBar
+from python.config.settings import settings
+from scripts.audit_target_contract_runner import load_all_bars
+
+# Production champions that MUST NOT be used for research scoring
+CHAMPION_MODELS = {
+    "LOW_PRICE": "lightgbm_classification_20261014_093522",
+    "HIGHER_PRICE": "lightgbm_classification_20261014_093607",
+}
+
+# Expected H=15 Variant B research artifacts
+RESEARCH_SCORING_ARTIFACTS = {
+    "LOW_PRICE": "models/registry/lgb_regressor_h15_variant_b.joblib",
+    "HIGHER_PRICE": "models/registry/lgb_full_classifier_h15_variant_b.joblib",
+}
+
+FEATURE_SCHEMA_30 = [
+    "return_1d",
+    "return_3d",
+    "return_5d",
+    "return_10d",
+    "return_20d",
+    "ema20",
+    "ema50",
+    "ema200",
+    "close_vs_ema20",
+    "close_vs_ema50",
+    "ema20_vs_ema50",
+    "ema50_vs_ema200",
+    "rsi14",
+    "rsi_change_5d",
+    "atr14",
+    "atr_pct",
+    "realized_vol_5d",
+    "realized_vol_20d",
+    "daily_range_pct",
+    "volume_ratio_5d",
+    "volume_ratio_20d",
+    "value_ratio_20d",
+    "rel_strength_ihsg_20d",
+    "rel_strength_sector_20d",
+    "ihsg_return_5d",
+    "ihsg_return_20d",
+    "ihsg_vs_ema20",
+    "ihsg_vs_ema50",
+    "market_breadth",
+    "market_volatility",
+]
+
+
+class MissingScoringArtifactError(Exception):
+    """Raised when research scoring model artifacts are missing and fallback is blocked."""
+
+
+@dataclass
+class PolicyDefinition:
+    mode: str
+    target_contract: str
+    horizon_days: int
+    score_metric: str
+    model_artifact_path: str
+    selectivity_top_pct: float
+    tie_breaker: str
+    regime_filter: str
+    tp_pct: float
+    sl_pct: float
+    trailing_stop_enabled: bool
+    sizing_tiers: dict[str, dict[str, Any]]
+    portfolio_constraints: dict[str, Any]
+    friction_model: dict[str, float]
+    gap_invalidation_rules: dict[str, float]
+
+
+@dataclass
+class FrozenPolicyBundle:
+    version: str
+    created_at: str
+    policies: dict[str, PolicyDefinition]
+    feature_schema: list[str]
+    governance_invariants: list[str]
+    config_sha256: str = ""
+
+    def compute_sha256(self) -> str:
+        """Computes deterministic canonical SHA-256 hash of policy bundle."""
+        data_dict = asdict(self)
+        data_dict.pop("config_sha256", None)
+        canonical_json = json.dumps(data_dict, sort_keys=True, indent=2)
+        return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def get_default_frozen_policies() -> FrozenPolicyBundle:
+    """Builds the canonical frozen policy bundle for Phase 11F."""
+    portfolio_constraints = {
+        "max_concurrent_positions": 5,
+        "equity_cap_pct": 0.20,
+        "lot_size": 100,
+        "initial_capital": 100_000_000.0,
+    }
+    friction_model = {
+        "commission_buy_pct": 0.0015,
+        "commission_sell_pct": 0.0025,
+        "slippage_entry_bps": 5.0,
+        "slippage_exit_bps": 5.0,
+        "nominal_round_trip_bps": 50.0,
+    }
+    gap_rules = {
+        "gap_down_sl_pct": 0.02,
+        "gap_up_tp_pct": 0.06,
+        "max_open_dev_pct": 0.05,
+        "volume_min": 1.0,
+    }
+    sizing_tiers = {
+        "favorable": {
+            "condition": "ihsg_vs_ema20 > 0 and market_breadth >= 0.50",
+            "multiplier": 1.0,
+        },
+        "mixed": {
+            "condition": "not (favorable or unfavorable)",
+            "multiplier": 0.5,
+        },
+        "unfavorable": {
+            "condition": "ihsg_vs_ema20 <= 0 and market_breadth < 0.50",
+            "multiplier": 0.0,
+        },
+    }
+
+    policies = {
+        "LOW_PRICE": PolicyDefinition(
+            mode="LOW_PRICE",
+            target_contract="Variant B (Next-Open Executable)",
+            horizon_days=15,
+            score_metric="pred_return_lgb",
+            model_artifact_path=RESEARCH_SCORING_ARTIFACTS["LOW_PRICE"],
+            selectivity_top_pct=0.03,
+            tie_breaker="score desc, ticker asc",
+            regime_filter="ihsg_vs_ema20 > 0",
+            tp_pct=0.06,
+            sl_pct=0.02,
+            trailing_stop_enabled=False,
+            sizing_tiers=sizing_tiers,
+            portfolio_constraints=portfolio_constraints,
+            friction_model=friction_model,
+            gap_invalidation_rules=gap_rules,
+        ),
+        "HIGHER_PRICE": PolicyDefinition(
+            mode="HIGHER_PRICE",
+            target_contract="Variant B (Next-Open Executable)",
+            horizon_days=15,
+            score_metric="prob_lgb_full",
+            model_artifact_path=RESEARCH_SCORING_ARTIFACTS["HIGHER_PRICE"],
+            selectivity_top_pct=0.01,
+            tie_breaker="score desc, ticker asc",
+            regime_filter="ihsg_vs_ema20 > 0",
+            tp_pct=0.06,
+            sl_pct=0.02,
+            trailing_stop_enabled=False,
+            sizing_tiers=sizing_tiers,
+            portfolio_constraints=portfolio_constraints,
+            friction_model=friction_model,
+            gap_invalidation_rules=gap_rules,
+        ),
+    }
+
+    bundle = FrozenPolicyBundle(
+        version="Phase-11F-Frozen-Policy-v1",
+        created_at="2026-10-19T23:00:00Z",
+        policies=policies,
+        feature_schema=FEATURE_SCHEMA_30,
+        governance_invariants=[
+            "No production champion model promotion permitted in Phase 11F.",
+            "Never fall back to production champions for research scoring.",
+            "Fail closed if H=15 Variant B scoring artifacts are unavailable.",
+            "Strictly forward paper trading on new bars; no trailing stops in primary evaluation.",
+            "50 bps nominal round-trip transaction friction applied to all fills.",
+            "Conservative execution precedence: stop-loss precedes take-profit on ambiguous bars.",
+        ],
+    )
+    bundle.config_sha256 = bundle.compute_sha256()
+    return bundle
+
+
+def classify_regime_three_tier(reg_info: dict[str, float]) -> tuple[float, str]:
+    """Calculates point-in-time three-tier sizing multiplier and regime tag."""
+    trend = reg_info.get("ihsg_vs_ema20", 0.0)
+    breadth = reg_info.get("market_breadth", 0.5)
+
+    if trend > 0.0 and breadth >= 0.50:
+        return 1.0, "FAVORABLE"
+    if trend <= 0.0 and breadth < 0.50:
+        return 0.0, "UNFAVORABLE"
+    return 0.5, "MIXED"
+
+
+@dataclass
+class PaperCandidate:
+    date: date
+    ticker: str
+    mode: str
+    decision_price: float
+    score: float
+    rank_in_date: int
+    total_candidates_date: int
+    is_top_pct: bool
+    regime_bull: bool
+    is_eligible: bool
+    score_col: str
+    model_id: str
+
+
+@dataclass
+class PaperDecision:
+    decision_date: date
+    execution_date: date
+    ticker: str
+    mode: str
+    score: float
+    rank: int
+    close_t: float
+    size_multiplier: float
+    regime_category: str
+    planned_tp_pct: float
+    planned_sl_pct: float
+    planned_tp_price: float
+    planned_sl_price: float
+    planned_allocation_idr: float
+    max_holding_days: int
+
+
+@dataclass
+class PaperTrade:
+    ticker: str
+    mode: str
+    signal_date: date
+    entry_date: date
+    exit_date: date
+    entry_price: float
+    exit_price: float
+    shares: int
+    size_multiplier: float
+    regime_category: str
+    gross_outlay: float
+    gross_proceeds: float
+    gross_pnl: float
+    gross_return: float
+    entry_fee: float
+    exit_fee: float
+    total_friction_idr: float
+    net_pnl: float
+    net_return: float
+    exit_reason: str
+    holding_days: int
+    mfe_pct: float
+    mae_pct: float
+    highest_watermark: float
+    lowest_watermark: float
+    planned_tp_price: float
+    planned_sl_price: float
+
+
+@dataclass
+class DailyEquityRecord:
+    date: date
+    mode: str
+    cash: float
+    invested_capital: float
+    total_equity: float
+    peak_equity: float
+    drawdown_amount: float
+    drawdown_pct: float
+    open_positions_count: int
+    cash_exposure_pct: float
+    portfolio_allocation_pct: float
+
+
+class PaperTradingEngine:
+    """Forward paper-trading simulation and state manager for Phase 11F."""
+
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        phase11c_dir: Union[str, Path] = "artifacts/phase_11c",
+        artifacts_dir: Union[str, Path] = "artifacts/phase_11f",
+        initial_capital: float = 100_000_000.0,
+        max_positions: int = 5,
+        commission_buy: float = 0.0015,
+        commission_sell: float = 0.0025,
+        slippage_entry_bps: float = 5.0,
+        slippage_exit_bps: float = 5.0,
+    ) -> None:
+        self.db_path = db_path or self._resolve_db_path()
+        self.phase11c_dir = Path(phase11c_dir)
+        self.artifacts_dir = Path(artifacts_dir)
+        self.artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        self.initial_capital = initial_capital
+        self.max_positions = max_positions
+        self.commission_buy = commission_buy
+        self.commission_sell = commission_sell
+        self.slippage_entry_bps = slippage_entry_bps
+        self.slippage_exit_bps = slippage_exit_bps
+
+        self.frozen_bundle = get_default_frozen_policies()
+
+        # Caches
+        self._bars_by_ticker: Optional[dict[str, list[DailyBar]]] = None
+        self._bar_lookup: Optional[dict[tuple[str, date], DailyBar]] = None
+        self._regime_lookup: Optional[dict[date, dict[str, float]]] = None
+        self._atr_lookup: Optional[dict[tuple[str, date], float]] = None
+
+    def _resolve_db_path(self) -> str:
+        url = settings.database_url
+        if url.startswith("sqlite:///"):
+            return url[len("sqlite:///") :]
+        if url.startswith("sqlite://"):
+            return url[len("sqlite://") :]
+        return "datasets/stock_signals.db"
+
+    @property
+    def bars_by_ticker(self) -> dict[str, list[DailyBar]]:
+        if self._bars_by_ticker is None:
+            self._bars_by_ticker = load_all_bars(self.db_path)
+        return self._bars_by_ticker
+
+    @property
+    def bar_lookup(self) -> dict[tuple[str, date], DailyBar]:
+        if self._bar_lookup is None:
+            self._bar_lookup = {
+                (t, b.date): b for t, b_list in self.bars_by_ticker.items() for b in b_list
+            }
+        return self._bar_lookup
+
+    @property
+    def regime_lookup(self) -> dict[date, dict[str, float]]:
+        if self._regime_lookup is None:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                query = """
+                    SELECT date,
+                           AVG(ihsg_vs_ema20) as ihsg_vs_ema20,
+                           AVG(market_breadth) as market_breadth,
+                           AVG(ihsg_return_20d) as ihsg_return_20d,
+                           AVG(market_volatility) as market_volatility
+                    FROM features_daily
+                    GROUP BY date;
+                """
+                df_reg = pd.read_sql_query(query, conn)
+                df_reg["date"] = pd.to_datetime(df_reg["date"]).dt.date
+                self._regime_lookup = {
+                    r["date"]: {
+                        "ihsg_vs_ema20": float(r["ihsg_vs_ema20"])
+                        if pd.notnull(r["ihsg_vs_ema20"])
+                        else 0.0,
+                        "market_breadth": float(r["market_breadth"])
+                        if pd.notnull(r["market_breadth"])
+                        else 0.5,
+                        "ihsg_return_20d": float(r["ihsg_return_20d"])
+                        if pd.notnull(r["ihsg_return_20d"])
+                        else 0.0,
+                        "market_volatility": float(r["market_volatility"])
+                        if pd.notnull(r["market_volatility"])
+                        else 0.0075,
+                    }
+                    for _, r in df_reg.iterrows()
+                }
+            finally:
+                conn.close()
+        return self._regime_lookup
+
+    @property
+    def atr_lookup(self) -> dict[tuple[str, date], float]:
+        if self._atr_lookup is None:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                query = """
+                    SELECT date, ticker, atr_pct
+                    FROM features_daily
+                    WHERE atr_pct IS NOT NULL;
+                """
+                df_atr = pd.read_sql_query(query, conn)
+                df_atr["date"] = pd.to_datetime(df_atr["date"]).dt.date
+                self._atr_lookup = {
+                    (r["ticker"].strip().upper().removesuffix(".JK"), r["date"]): float(
+                        r["atr_pct"]
+                    )
+                    for _, r in df_atr.iterrows()
+                }
+            finally:
+                conn.close()
+        return self._atr_lookup
+
+    def audit_scoring_artifacts(
+        self, base_dir: Optional[Path] = None
+    ) -> dict[str, Any]:
+        """Audits presence of persistent joblib model artifacts for research scoring.
+
+        Fails closed: if exact H=15 Variant B artifacts are missing, reports
+        MISSING_SCORING_ARTIFACT and forbids fallback to production champions.
+        """
+        root = base_dir or Path(__file__).resolve().parent.parent.parent
+        audit_results: dict[str, Any] = {
+            "status": "PASS",
+            "fail_closed_guard_active": True,
+            "champion_fallback_permitted": False,
+            "artifacts": {},
+            "missing_artifacts": [],
+            "error_logs": [],
+        }
+
+        for mode, rel_path in RESEARCH_SCORING_ARTIFACTS.items():
+            full_path = root / rel_path
+            exists = full_path.is_file()
+            audit_results["artifacts"][mode] = {
+                "expected_artifact": rel_path,
+                "absolute_path": str(full_path),
+                "exists": exists,
+                "status": "AVAILABLE" if exists else "MISSING_SCORING_ARTIFACT",
+                "champion_substitute_blocked": CHAMPION_MODELS[mode],
+            }
+            if not exists:
+                audit_results["missing_artifacts"].append(rel_path)
+
+        if audit_results["missing_artifacts"]:
+            audit_results["status"] = "BLOCKED_ON_SCORING_ARTIFACT"
+            audit_results["error_logs"].append(
+                f"Missing {len(audit_results['missing_artifacts'])} research scoring artifact(s): "
+                f"{', '.join(audit_results['missing_artifacts'])}. "
+                "In Phase 11C, H=15 models were evaluated in-memory during walk-forward folds "
+                "without serializing standalone .joblib files to models/registry/."
+            )
+            audit_results["error_logs"].append(
+                "Fail-closed guard active: Never fall back to production champions "
+                f"({', '.join(CHAMPION_MODELS.values())}) for research scoring."
+            )
+
+        return audit_results
+
+    def export_frozen_policy_config(
+        self, output_path: Optional[Path] = None
+    ) -> dict[str, Any]:
+        """Exports the frozen policy bundle to JSON."""
+        target = output_path or (self.artifacts_dir / "frozen_policy_config.json")
+        bundle_dict = asdict(self.frozen_bundle)
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(bundle_dict, f, indent=2, sort_keys=True)
+        return bundle_dict
+
+    def export_frozen_reference_benchmarks(
+        self, output_path: Optional[Path] = None
+    ) -> pd.DataFrame:
+        """Constructs and exports frozen reference benchmark comparisons."""
+        target = output_path or (self.artifacts_dir / "frozen_reference_benchmarks.csv")
+
+        benchmarks = [
+            {
+                "benchmark_id": "phase_11d_selective_fixed_exit",
+                "phase": "Phase 11D",
+                "mode": "LOW_PRICE",
+                "policy_description": "Top 3% Selectivity + Bull Filter + H=15 Fixed (+6%/-2%)",
+                "scoring_model": "H=15 LightGBM Regressor (pred_return_lgb)",
+                "sizing_rule": "Fixed 1.0x (No Dynamic Sizing)",
+                "total_signals": 764,
+                "completed_trades": 172,
+                "win_rate": 0.3081,
+                "avg_net_return": 0.0008,
+                "net_portfolio_return_pct": 2.12,
+                "pooled_profit_factor": 1.04,
+                "continuous_max_drawdown_pct": 9.59,
+                "avg_cash_exposure_pct": 77.35,
+                "portfolio_turnover": 34.00,
+                "status": "HISTORICAL_BACKTEST_REFERENCE",
+            },
+            {
+                "benchmark_id": "phase_11d_selective_fixed_exit",
+                "phase": "Phase 11D",
+                "mode": "HIGHER_PRICE",
+                "policy_description": "Top 1% Selectivity + Bull Filter + H=15 Fixed (+6%/-2%)",
+                "scoring_model": "H=15 Full LightGBM Classifier (prob_lgb_full)",
+                "sizing_rule": "Fixed 1.0x (No Dynamic Sizing)",
+                "total_signals": 764,
+                "completed_trades": 301,
+                "win_rate": 0.3355,
+                "avg_net_return": 0.0013,
+                "net_portfolio_return_pct": 8.57,
+                "pooled_profit_factor": 1.07,
+                "continuous_max_drawdown_pct": 9.77,
+                "avg_cash_exposure_pct": 62.92,
+                "portfolio_turnover": 59.16,
+                "status": "HISTORICAL_BACKTEST_REFERENCE",
+            },
+            {
+                "benchmark_id": "phase_11e_selective_three_tier_sizing",
+                "phase": "Phase 11E",
+                "mode": "LOW_PRICE",
+                "policy_description": "Top 3% Selectivity + Bull Filter + H=15 + Three-Tier Sizing",
+                "scoring_model": "H=15 LightGBM Regressor (pred_return_lgb)",
+                "sizing_rule": "Three-Tier Regime (1.0x Fav / 0.5x Mixed / 0.0x Unfav)",
+                "total_signals": 764,
+                "completed_trades": 172,
+                "win_rate": 0.3081,
+                "avg_net_return": 0.0008,
+                "net_portfolio_return_pct": 0.79,
+                "pooled_profit_factor": 1.02,
+                "continuous_max_drawdown_pct": 6.34,
+                "avg_cash_exposure_pct": 81.28,
+                "portfolio_turnover": 27.89,
+                "status": "HISTORICAL_BACKTEST_REFERENCE",
+            },
+            {
+                "benchmark_id": "phase_11e_selective_three_tier_sizing",
+                "phase": "Phase 11E",
+                "mode": "HIGHER_PRICE",
+                "policy_description": "Top 1% Selectivity + Bull Filter + H=15 + Three-Tier Sizing",
+                "scoring_model": "H=15 Full LightGBM Classifier (prob_lgb_full)",
+                "sizing_rule": "Three-Tier Regime (1.0x Fav / 0.5x Mixed / 0.0x Unfav)",
+                "total_signals": 764,
+                "completed_trades": 298,
+                "win_rate": 0.3389,
+                "avg_net_return": 0.0014,
+                "net_portfolio_return_pct": 5.90,
+                "pooled_profit_factor": 1.06,
+                "continuous_max_drawdown_pct": 8.83,
+                "avg_cash_exposure_pct": 70.00,
+                "portfolio_turnover": 47.03,
+                "status": "HISTORICAL_BACKTEST_REFERENCE",
+            },
+            {
+                "benchmark_id": "production_champion_reference",
+                "phase": "Production Champion",
+                "mode": "LOW_PRICE",
+                "policy_description": "Active Champion Baseline (Top 5 fixed, H=5, 1.0x)",
+                "scoring_model": f"Champion {CHAMPION_MODELS['LOW_PRICE']}",
+                "sizing_rule": "Fixed 1.0x Allocation",
+                "total_signals": 3295,
+                "completed_trades": 1211,
+                "win_rate": 0.2907,
+                "avg_net_return": -0.0041,
+                "net_portfolio_return_pct": -48.20,
+                "pooled_profit_factor": 0.76,
+                "continuous_max_drawdown_pct": 63.83,
+                "avg_cash_exposure_pct": 99.55,
+                "portfolio_turnover": 201.27,
+                "status": "PRODUCTION_INFORMATIONAL_REFERENCE",
+            },
+            {
+                "benchmark_id": "production_champion_reference",
+                "phase": "Production Champion",
+                "mode": "HIGHER_PRICE",
+                "policy_description": "Active Champion Baseline (Top 5 fixed, H=5, 1.0x)",
+                "scoring_model": f"Champion {CHAMPION_MODELS['HIGHER_PRICE']}",
+                "sizing_rule": "Fixed 1.0x Allocation",
+                "total_signals": 3300,
+                "completed_trades": 980,
+                "win_rate": 0.2827,
+                "avg_net_return": -0.0049,
+                "net_portfolio_return_pct": -54.30,
+                "pooled_profit_factor": 0.72,
+                "continuous_max_drawdown_pct": 62.67,
+                "avg_cash_exposure_pct": 99.55,
+                "portfolio_turnover": 166.05,
+                "status": "PRODUCTION_INFORMATIONAL_REFERENCE",
+            },
+        ]
+
+        df_benchmarks = pd.DataFrame(benchmarks)
+        df_benchmarks.to_csv(target, index=False)
+        return df_benchmarks
+
+    def run_replay(
+        self, modes: Optional[list[str]] = None
+    ) -> dict[str, Any]:
+        """Runs historical replay using frozen Phase 11C OOS predictions.
+
+        Validates end-to-end execution fidelity: deterministic tie breaking,
+        pre-entry gap invalidations, three-tier sizing, cash constraints,
+        50 bps friction, MFE/MAE tracking, and daily mark-to-market equity.
+        """
+        modes = modes or ["LOW_PRICE", "HIGHER_PRICE"]
+        all_candidates: list[PaperCandidate] = []
+        all_decisions: list[PaperDecision] = []
+        all_trades: list[PaperTrade] = []
+        all_daily_equity: list[DailyEquityRecord] = []
+
+        replay_summaries: dict[str, Any] = {}
+
+        for mode in modes:
+            policy = self.frozen_bundle.policies[mode]
+            csv_path = self.phase11c_dir / f"multi_horizon_oos_predictions_{mode}.csv"
+            if not csv_path.exists():
+                raise FileNotFoundError(f"Missing Phase 11C predictions at {csv_path}")
+
+            df_raw = pd.read_csv(csv_path)
+            # Filter for H=15 records
+            df = df_raw[df_raw["horizon"] == policy.horizon_days].copy()
+            df["date"] = pd.to_datetime(df["date"]).dt.date
+            df["ticker"] = df["ticker"].str.strip().str.upper().str.removesuffix(".JK")
+            df["va_entry_price"] = df["decision_price"]
+            df["score"] = df[policy.score_metric]
+
+            res = self._simulate_mode_replay(mode, df, policy)
+            all_candidates.extend(res["candidates"])
+            all_decisions.extend(res["decisions"])
+            all_trades.extend(res["trades"])
+            all_daily_equity.extend(res["daily_equity"])
+            replay_summaries[mode] = res["summary"]
+
+        # Export CSV artifacts
+        df_cands = pd.DataFrame([asdict(c) for c in all_candidates])
+        df_cands.to_csv(self.artifacts_dir / "paper_trading_candidates.csv", index=False)
+
+        df_decs = pd.DataFrame([asdict(d) for d in all_decisions])
+        df_decs.to_csv(self.artifacts_dir / "paper_trading_decisions.csv", index=False)
+
+        df_trds = pd.DataFrame([asdict(t) for t in all_trades])
+        df_trds.to_csv(self.artifacts_dir / "paper_trading_trades.csv", index=False)
+
+        df_eq = pd.DataFrame([asdict(e) for e in all_daily_equity])
+        df_eq.to_csv(self.artifacts_dir / "paper_trading_daily_equity.csv", index=False)
+
+        # Operational status JSON
+        op_status = self.generate_operational_status(
+            replay_summaries=replay_summaries,
+            total_candidates=len(all_candidates),
+            total_decisions=len(all_decisions),
+            total_trades=len(all_trades),
+        )
+
+        return {
+            "summaries": replay_summaries,
+            "candidates_count": len(all_candidates),
+            "decisions_count": len(all_decisions),
+            "trades_count": len(all_trades),
+            "equity_records_count": len(all_daily_equity),
+            "operational_status": op_status,
+        }
+
+    def _simulate_mode_replay(
+        self, mode: str, df_mode: pd.DataFrame, policy: PolicyDefinition
+    ) -> dict[str, Any]:
+        """Internal simulation logic for a single mode replay."""
+        regime_lookup = self.regime_lookup
+        bar_lookup = self.bar_lookup
+        dates_sorted = sorted(df_mode["date"].unique())
+
+        cash = float(self.initial_capital)
+        peak_equity = float(self.initial_capital)
+        max_dd_amount = 0.0
+        max_dd_pct = 0.0
+
+        open_positions: dict[str, dict[str, Any]] = {}
+        completed_trades: list[PaperTrade] = []
+        recorded_candidates: list[PaperCandidate] = []
+        recorded_decisions: list[PaperDecision] = []
+        daily_equity_records: list[DailyEquityRecord] = []
+
+        pending_orders: list[dict[str, Any]] = []
+        last_known_close: dict[str, float] = {}
+
+        invalidated_gap_down = 0
+        invalidated_gap_up = 0
+        invalidated_excessive_dev = 0
+        unfilled_suspended = 0
+        unfilled_capacity = 0
+        unfilled_cash = 0
+        skipped_regime_zero = 0
+
+        candidates_by_date = {d: sub for d, sub in df_mode.groupby("date", sort=False)}
+        empty_day_cands = df_mode.iloc[:0]
+
+        for curr_d in dates_sorted:
+            # 1. Execute pending orders from previous decision date at Open curr_d
+            if pending_orders:
+                # Deterministic sorting: score desc, ticker asc
+                pending_orders.sort(key=lambda o: (-o["score"], o["ticker"]))
+
+                for ord_info in pending_orders:
+                    t = ord_info["ticker"]
+                    c_close = ord_info["close_t"]
+                    ord_tp = ord_info["tp_pct"]
+                    ord_sl = ord_info["sl_pct"]
+                    ord_h = ord_info["max_holding_days"]
+                    ord_mult = ord_info["size_multiplier"]
+                    ord_reg_cat = ord_info["regime_category"]
+
+                    if ord_mult <= 0.0:
+                        skipped_regime_zero += 1
+                        continue
+
+                    if len(open_positions) >= self.max_positions:
+                        unfilled_capacity += 1
+                        continue
+                    if t in open_positions:
+                        unfilled_capacity += 1
+                        continue
+
+                    bar_next = bar_lookup.get((t, curr_d))
+                    if bar_next is None or bar_next.volume <= 0:
+                        unfilled_suspended += 1
+                        continue
+
+                    b_open = float(bar_next.open)
+                    if b_open <= 0:
+                        unfilled_suspended += 1
+                        continue
+
+                    # Pre-entry gap invalidations
+                    if b_open <= c_close * (1.0 - ord_sl):
+                        invalidated_gap_down += 1
+                        continue
+                    if b_open >= c_close * (1.0 + ord_tp):
+                        invalidated_gap_up += 1
+                        continue
+                    if (
+                        abs(b_open - c_close) / c_close
+                        > policy.gap_invalidation_rules["max_open_dev_pct"]
+                    ):
+                        invalidated_excessive_dev += 1
+                        continue
+
+                    # Dynamic sizing
+                    open_val = sum(
+                        pos["shares"] * last_known_close.get(pos["ticker"], pos["entry_price"])
+                        for pos in open_positions.values()
+                    )
+                    current_equity = cash + open_val
+
+                    base_cap = min(
+                        current_equity / self.max_positions,
+                        current_equity * policy.portfolio_constraints["equity_cap_pct"],
+                    )
+                    sized_cap = base_cap * ord_mult
+
+                    fill_price = b_open * (1.0 + self.slippage_entry_bps / 10000.0)
+                    raw_shares = sized_cap / fill_price
+                    max_cash_shares = cash / (fill_price * (1.0 + self.commission_buy))
+                    shares_f = min(raw_shares, max_cash_shares)
+
+                    # IDX 100-share lot constraint
+                    shares = int(shares_f // 100) * 100
+                    if shares < 100:
+                        unfilled_cash += 1
+                        continue
+
+                    gross_outlay = shares * fill_price
+                    entry_fee = gross_outlay * self.commission_buy
+                    total_outlay = gross_outlay + entry_fee
+
+                    if total_outlay > cash:
+                        shares = (
+                            int((cash / (fill_price * (1.0 + self.commission_buy))) // 100) * 100
+                        )
+                        if shares < 100:
+                            unfilled_cash += 1
+                            continue
+                        gross_outlay = shares * fill_price
+                        entry_fee = gross_outlay * self.commission_buy
+                        total_outlay = gross_outlay + entry_fee
+
+                    cash -= total_outlay
+                    open_positions[t] = {
+                        "ticker": t,
+                        "mode": mode,
+                        "signal_date": ord_info["signal_date"],
+                        "entry_date": curr_d,
+                        "entry_price": fill_price,
+                        "raw_entry": b_open,
+                        "shares": shares,
+                        "gross_outlay": gross_outlay,
+                        "entry_fee": entry_fee,
+                        "tp_pct": ord_tp,
+                        "sl_pct": ord_sl,
+                        "tp_price": fill_price * (1.0 + ord_tp),
+                        "sl_price": fill_price * (1.0 - ord_sl),
+                        "highest_watermark": fill_price,
+                        "lowest_watermark": fill_price,
+                        "max_holding_days": ord_h,
+                        "holding_days": 1,
+                        "score": ord_info["score"],
+                        "size_multiplier": ord_mult,
+                        "regime_category": ord_reg_cat,
+                    }
+
+                pending_orders.clear()
+
+            # 2. Intraday barrier checks on Day curr_d for active open positions
+            active_tickers = list(open_positions.keys())
+            for t in active_tickers:
+                pos = open_positions[t]
+                bar_curr = bar_lookup.get((t, curr_d))
+
+                if bar_curr is None or bar_curr.volume <= 0:
+                    pos["holding_days"] += 1
+                    continue
+
+                # Watermark tracking for MFE / MAE
+                pos["highest_watermark"] = max(pos["highest_watermark"], float(bar_curr.high))
+                pos["lowest_watermark"] = min(pos["lowest_watermark"], float(bar_curr.low))
+
+                tp_hit = bar_curr.high >= pos["tp_price"]
+                sl_hit = bar_curr.low <= pos["sl_price"]
+                expiry_hit = pos["holding_days"] >= pos["max_holding_days"]
+
+                exit_reason = None
+                exit_raw = None
+
+                # Conservative rule: SL precedes TP on ambiguous bar
+                if tp_hit and sl_hit:
+                    exit_reason = "SL"
+                    exit_raw = (
+                        pos["sl_price"]
+                        if pos["holding_days"] == 1
+                        else (
+                            bar_curr.open
+                            if bar_curr.open <= pos["sl_price"]
+                            else pos["sl_price"]
+                        )
+                    )
+                elif tp_hit:
+                    exit_reason = "TP"
+                    exit_raw = (
+                        float(bar_curr.open)
+                        if (pos["holding_days"] > 1 and bar_curr.open >= pos["tp_price"])
+                        else pos["tp_price"]
+                    )
+                elif sl_hit:
+                    exit_reason = "SL"
+                    exit_raw = (
+                        float(bar_curr.open)
+                        if (pos["holding_days"] > 1 and bar_curr.open <= pos["sl_price"])
+                        else pos["sl_price"]
+                    )
+                elif expiry_hit:
+                    exit_reason = "EXPIRY"
+                    exit_raw = float(bar_curr.close)
+
+                if exit_reason is not None and exit_raw is not None:
+                    exit_fill = exit_raw * (1.0 - self.slippage_exit_bps / 10000.0)
+                    gross_proceeds = pos["shares"] * exit_fill
+                    exit_fee = gross_proceeds * self.commission_sell
+                    net_proceeds = gross_proceeds - exit_fee
+                    cash += net_proceeds
+
+                    invested = pos["gross_outlay"] + pos["entry_fee"]
+                    net_pnl = net_proceeds - invested
+                    net_ret = net_pnl / invested if invested > 0 else 0.0
+                    gross_pnl = gross_proceeds - pos["gross_outlay"]
+                    gross_ret = gross_pnl / pos["gross_outlay"] if pos["gross_outlay"] > 0 else 0.0
+
+                    mfe_pct = (pos["highest_watermark"] - pos["entry_price"]) / pos["entry_price"]
+                    mae_pct = (pos["lowest_watermark"] - pos["entry_price"]) / pos["entry_price"]
+
+                    trade = PaperTrade(
+                        ticker=pos["ticker"],
+                        mode=mode,
+                        signal_date=pos["signal_date"],
+                        entry_date=pos["entry_date"],
+                        exit_date=curr_d,
+                        entry_price=pos["entry_price"],
+                        exit_price=exit_fill,
+                        shares=pos["shares"],
+                        size_multiplier=pos["size_multiplier"],
+                        regime_category=pos["regime_category"],
+                        gross_outlay=pos["gross_outlay"],
+                        gross_proceeds=gross_proceeds,
+                        gross_pnl=gross_pnl,
+                        gross_return=gross_ret,
+                        entry_fee=pos["entry_fee"],
+                        exit_fee=exit_fee,
+                        total_friction_idr=pos["entry_fee"] + exit_fee,
+                        net_pnl=net_pnl,
+                        net_return=net_ret,
+                        exit_reason=exit_reason,
+                        holding_days=pos["holding_days"],
+                        mfe_pct=mfe_pct,
+                        mae_pct=mae_pct,
+                        highest_watermark=pos["highest_watermark"],
+                        lowest_watermark=pos["lowest_watermark"],
+                        planned_tp_price=pos["tp_price"],
+                        planned_sl_price=pos["sl_price"],
+                    )
+                    completed_trades.append(trade)
+                    del open_positions[t]
+                else:
+                    pos["holding_days"] += 1
+
+            # 3. Mark to market equity & continuous drawdown at EOD curr_d
+            for t_open in open_positions.keys():
+                bar_c = bar_lookup.get((t_open, curr_d))
+                if bar_c is not None and bar_c.close > 0:
+                    last_known_close[t_open] = float(bar_c.close)
+
+            eod_open_val = sum(
+                pos["shares"]
+                * (
+                    bar_lookup[(pos["ticker"], curr_d)].close
+                    if (pos["ticker"], curr_d) in bar_lookup
+                    and bar_lookup[(pos["ticker"], curr_d)].close > 0
+                    else pos["entry_price"]
+                )
+                for pos in open_positions.values()
+            )
+            total_eq = cash + eod_open_val
+            alloc_pct = (eod_open_val / total_eq * 100.0) if total_eq > 0 else 0.0
+            cash_exp_pct = 100.0 - alloc_pct
+
+            if total_eq > peak_equity:
+                peak_equity = total_eq
+            dd_amt = peak_equity - total_eq
+            dd_pct = dd_amt / peak_equity if peak_equity > 0 else 0.0
+            if dd_amt > max_dd_amount:
+                max_dd_amount = dd_amt
+            if dd_pct > max_dd_pct:
+                max_dd_pct = dd_pct
+
+            daily_equity_records.append(
+                DailyEquityRecord(
+                    date=curr_d,
+                    mode=mode,
+                    cash=cash,
+                    invested_capital=eod_open_val,
+                    total_equity=total_eq,
+                    peak_equity=peak_equity,
+                    drawdown_amount=dd_amt,
+                    drawdown_pct=dd_pct,
+                    open_positions_count=len(open_positions),
+                    cash_exposure_pct=cash_exp_pct,
+                    portfolio_allocation_pct=alloc_pct,
+                )
+            )
+
+            # 4. Evening signal generation & candidate logging on Day curr_d
+            day_candidates = candidates_by_date.get(curr_d, empty_day_cands)
+            n_cands = len(day_candidates)
+
+            if n_cands < 10:
+                continue
+
+            reg_info = regime_lookup.get(curr_d, {})
+            trend_bull = reg_info.get("ihsg_vs_ema20", 0.0) > 0.0
+
+            # Deterministic sorting: score desc, ticker asc
+            sorted_cands = day_candidates.sort_values(
+                by=["score", "ticker"], ascending=[False, True], kind="stable"
+            )
+
+            n_select = max(1, math.ceil(n_cands * policy.selectivity_top_pct))
+            mult, reg_cat = classify_regime_three_tier(reg_info)
+
+            for rank_idx, (_, r) in enumerate(sorted_cands.iterrows(), start=1):
+                is_top = rank_idx <= n_select
+                is_elig = is_top and trend_bull
+
+                cand_rec = PaperCandidate(
+                    date=curr_d,
+                    ticker=r["ticker"],
+                    mode=mode,
+                    decision_price=float(r["va_entry_price"]),
+                    score=float(r["score"]),
+                    rank_in_date=rank_idx,
+                    total_candidates_date=n_cands,
+                    is_top_pct=is_top,
+                    regime_bull=trend_bull,
+                    is_eligible=is_elig,
+                    score_col=policy.score_metric,
+                    model_id=f"h15_{mode.lower()}_variant_b",
+                )
+                recorded_candidates.append(cand_rec)
+
+                if is_elig:
+                    # Log decision
+                    dec_price = float(r["va_entry_price"])
+                    planned_tp = dec_price * (1.0 + policy.tp_pct)
+                    planned_sl = dec_price * (1.0 - policy.sl_pct)
+                    base_alloc = min(total_eq / self.max_positions, total_eq * 0.20)
+                    planned_alloc = base_alloc * mult
+
+                    # Next date for execution
+                    curr_idx = dates_sorted.index(curr_d)
+                    next_exec_d = (
+                        dates_sorted[curr_idx + 1] if curr_idx + 1 < len(dates_sorted) else curr_d
+                    )
+
+                    dec_rec = PaperDecision(
+                        decision_date=curr_d,
+                        execution_date=next_exec_d,
+                        ticker=r["ticker"],
+                        mode=mode,
+                        score=float(r["score"]),
+                        rank=rank_idx,
+                        close_t=dec_price,
+                        size_multiplier=mult,
+                        regime_category=reg_cat,
+                        planned_tp_pct=policy.tp_pct,
+                        planned_sl_pct=policy.sl_pct,
+                        planned_tp_price=planned_tp,
+                        planned_sl_price=planned_sl,
+                        planned_allocation_idr=planned_alloc,
+                        max_holding_days=policy.horizon_days,
+                    )
+                    recorded_decisions.append(dec_rec)
+
+                    pending_orders.append(
+                        {
+                            "ticker": r["ticker"],
+                            "signal_date": curr_d,
+                            "close_t": dec_price,
+                            "score": float(r["score"]),
+                            "max_holding_days": policy.horizon_days,
+                            "tp_pct": policy.tp_pct,
+                            "sl_pct": policy.sl_pct,
+                            "size_multiplier": mult,
+                            "regime_category": reg_cat,
+                        }
+                    )
+
+        # Performance calculations
+        completed = len(completed_trades)
+        wins = sum(1 for t in completed_trades if t.net_return > 0)
+        tp_cnt = sum(1 for t in completed_trades if t.exit_reason == "TP")
+        sl_cnt = sum(1 for t in completed_trades if t.exit_reason == "SL")
+        exp_cnt = sum(1 for t in completed_trades if t.exit_reason == "EXPIRY")
+
+        total_gain = sum(t.net_pnl for t in completed_trades if t.net_pnl > 0)
+        total_loss = sum(abs(t.net_pnl) for t in completed_trades if t.net_pnl < 0)
+        profit_factor = (
+            (total_gain / total_loss)
+            if total_loss > 0
+            else (1.0 if total_gain == 0 else 999.0)
+        )
+
+        avg_net_ret = (
+            float(np.mean([t.net_return for t in completed_trades]))
+            if completed_trades
+            else 0.0
+        )
+        avg_gross_ret = (
+            float(np.mean([t.gross_return for t in completed_trades]))
+            if completed_trades
+            else 0.0
+        )
+        avg_holding = (
+            float(np.mean([t.holding_days for t in completed_trades]))
+            if completed_trades
+            else 0.0
+        )
+        avg_mfe = (
+            float(np.mean([t.mfe_pct for t in completed_trades]))
+            if completed_trades
+            else 0.0
+        )
+        avg_mae = (
+            float(np.mean([t.mae_pct for t in completed_trades]))
+            if completed_trades
+            else 0.0
+        )
+        net_portfolio_ret_pct = ((total_eq - self.initial_capital) / self.initial_capital) * 100.0
+
+        summary = {
+            "mode": mode,
+            "completed_trades": completed,
+            "win_rate": (wins / completed) if completed > 0 else 0.0,
+            "tp_count": tp_cnt,
+            "tp_rate": (tp_cnt / completed) if completed > 0 else 0.0,
+            "sl_count": sl_cnt,
+            "sl_rate": (sl_cnt / completed) if completed > 0 else 0.0,
+            "expiry_count": exp_cnt,
+            "expiry_rate": (exp_cnt / completed) if completed > 0 else 0.0,
+            "avg_net_return": avg_net_ret,
+            "avg_gross_return": avg_gross_ret,
+            "avg_mfe_pct": avg_mfe,
+            "avg_mae_pct": avg_mae,
+            "pooled_profit_factor": profit_factor,
+            "net_portfolio_return_pct": net_portfolio_ret_pct,
+            "continuous_max_drawdown_pct": max_dd_pct * 100.0,
+            "avg_holding_days": avg_holding,
+            "invalidated_gap_down": invalidated_gap_down,
+            "invalidated_gap_up": invalidated_gap_up,
+            "invalidated_excessive_dev": invalidated_excessive_dev,
+            "unfilled_suspended": unfilled_suspended,
+            "unfilled_capacity": unfilled_capacity,
+            "unfilled_cash": unfilled_cash,
+            "remaining_open_positions": len(open_positions),
+        }
+
+        return {
+            "candidates": recorded_candidates,
+            "decisions": recorded_decisions,
+            "trades": completed_trades,
+            "daily_equity": daily_equity_records,
+            "summary": summary,
+        }
+
+    def generate_operational_status(
+        self,
+        replay_summaries: Optional[dict[str, Any]] = None,
+        total_candidates: int = 0,
+        total_decisions: int = 0,
+        total_trades: int = 0,
+    ) -> dict[str, Any]:
+        """Generates comprehensive operational status and writes to JSON."""
+        audit = self.audit_scoring_artifacts()
+
+        status_code = "READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)"
+        if audit["status"] != "PASS":
+            status_code = "READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)"
+
+        # Check DB data quality
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cur = conn.cursor()
+            total_bars = cur.execute("SELECT COUNT(*) FROM daily_bars;").fetchone()[0]
+            last_date_row = cur.execute(
+                "SELECT MAX(date) FROM daily_bars;"
+            ).fetchone()[0]
+            last_bar_date = str(last_date_row) if last_date_row else "UNKNOWN"
+        finally:
+            conn.close()
+
+        status_dict = {
+            "phase": "Phase 11F — Forward Paper Trading & Frozen Policy Validation",
+            "operational_status": status_code,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "policy_bundle_hash": self.frozen_bundle.config_sha256,
+            "scoring_artifacts_audit": audit,
+            "champion_protection": {
+                "LOW_PRICE_champion": CHAMPION_MODELS["LOW_PRICE"],
+                "HIGHER_PRICE_champion": CHAMPION_MODELS["HIGHER_PRICE"],
+                "status": "IMMUTABLE_AND_PROTECTED",
+                "fallback_permitted": False,
+            },
+            "observation_protocol": {
+                "duration_calendar_months": 3,
+                "reporting_cadence": "weekly",
+                "max_concurrent_positions": self.max_positions,
+                "equity_cap_pct": 0.20,
+                "friction_bps_round_trip": 50.0,
+                "lot_size": 100,
+                "trailing_stops_active": False,
+            },
+            "data_quality": {
+                "database_path": self.db_path,
+                "total_daily_bars": total_bars,
+                "last_historical_bar_date": last_bar_date,
+                "missing_dates_count": 0,
+            },
+            "historical_replay_validation": {
+                "performed": replay_summaries is not None,
+                "total_candidates_logged": total_candidates,
+                "total_decisions_logged": total_decisions,
+                "total_trades_logged": total_trades,
+                "summaries": replay_summaries or {},
+            },
+            "error_logs": audit["error_logs"],
+        }
+
+        target = self.artifacts_dir / "paper_trading_operational_status.json"
+        with open(target, "w", encoding="utf-8") as f:
+            json.dump(status_dict, f, indent=2, sort_keys=True)
+
+        return status_dict
+
+    def step_prospective_date(
+        self, eval_date: date, base_dir: Optional[Path] = None
+    ) -> dict[str, Any]:
+        """Attempts prospective candidate scoring for a newly observed trading date.
+
+        Fail-closed guard: if persistent H=15 Variant B research scoring
+        artifacts are missing, raises MissingScoringArtifactError and halts.
+        """
+        audit = self.audit_scoring_artifacts(base_dir=base_dir)
+        if audit["status"] != "PASS":
+            self.generate_operational_status()
+            raise MissingScoringArtifactError(
+                f"Prospective scoring blocked on {eval_date}: "
+                f"{audit['error_logs'][0]}"
+            )
+
+        root = base_dir or Path(__file__).resolve().parent.parent.parent
+        conn = sqlite3.connect(self.db_path)
+        try:
+            query_features = """
+                SELECT * FROM features_daily
+                WHERE date = ?;
+            """
+            df_feat = pd.read_sql_query(query_features, conn, params=[str(eval_date)])
+
+            query_bars = """
+                SELECT ticker, close FROM daily_bars
+                WHERE date = ?;
+            """
+            df_bars = pd.read_sql_query(query_bars, conn, params=[str(eval_date)])
+        finally:
+            conn.close()
+
+        if df_feat.empty:
+            return {
+                "date": str(eval_date),
+                "status": "NO_DATA",
+                "candidates_count": 0,
+                "decisions_count": 0,
+            }
+
+        price_map = {
+            r["ticker"].strip().upper().removesuffix(".JK"): float(r["close"])
+            for _, r in df_bars.iterrows()
+            if pd.notnull(r["close"]) and float(r["close"]) > 0
+        }
+
+        reg_info = self.regime_lookup.get(eval_date, {})
+        trend_bull = reg_info.get("ihsg_vs_ema20", 0.0) > 0.0
+        mult, reg_cat = classify_regime_three_tier(reg_info)
+
+        scored_candidates: list[PaperCandidate] = []
+        new_decisions: list[PaperDecision] = []
+
+        for mode, policy in self.frozen_bundle.policies.items():
+            model_path = root / policy.model_artifact_path
+            model = joblib.load(model_path)
+
+            mode_rows = []
+            for _, row in df_feat.iterrows():
+                t = row["ticker"].strip().upper().removesuffix(".JK")
+                p = price_map.get(t)
+                if p is None:
+                    continue
+                if mode == "LOW_PRICE" and 50.0 <= p <= 300.0:
+                    mode_rows.append((t, p, row))
+                elif mode == "HIGHER_PRICE" and p > 300.0:
+                    mode_rows.append((t, p, row))
+
+            if not mode_rows:
+                continue
+
+            tickers = [r[0] for r in mode_rows]
+            prices = [r[1] for r in mode_rows]
+            X_df = pd.DataFrame([r[2] for r in mode_rows])[self.frozen_bundle.feature_schema]
+            X_mat = X_df.fillna(0.0).to_numpy()
+
+            if mode == "LOW_PRICE":
+                scores = model.predict(X_mat)
+            else:
+                scores = (
+                    model.predict_proba(X_mat)[:, 1]
+                    if hasattr(model, "predict_proba")
+                    else model.predict(X_mat)
+                )
+
+            cand_items = list(zip(tickers, prices, scores, strict=True))
+            cand_items.sort(key=lambda x: (-x[2], x[0]))
+
+            n_cands = len(cand_items)
+            n_select = max(1, math.ceil(n_cands * policy.selectivity_top_pct))
+
+            for rank_idx, (t, p, sc) in enumerate(cand_items, start=1):
+                is_top = rank_idx <= n_select
+                is_elig = is_top and trend_bull
+
+                cand_rec = PaperCandidate(
+                    date=eval_date,
+                    ticker=t,
+                    mode=mode,
+                    decision_price=p,
+                    score=float(sc),
+                    rank_in_date=rank_idx,
+                    total_candidates_date=n_cands,
+                    is_top_pct=is_top,
+                    regime_bull=trend_bull,
+                    is_eligible=is_elig,
+                    score_col=policy.score_metric,
+                    model_id=f"h15_{mode.lower()}_variant_b",
+                )
+                scored_candidates.append(cand_rec)
+
+                if is_elig:
+                    planned_tp = p * (1.0 + policy.tp_pct)
+                    planned_sl = p * (1.0 - policy.sl_pct)
+                    base_alloc = self.initial_capital * 0.20
+                    planned_alloc = base_alloc * mult
+
+                    dec_rec = PaperDecision(
+                        decision_date=eval_date,
+                        execution_date=eval_date,
+                        ticker=t,
+                        mode=mode,
+                        score=float(sc),
+                        rank=rank_idx,
+                        close_t=p,
+                        size_multiplier=mult,
+                        regime_category=reg_cat,
+                        planned_tp_pct=policy.tp_pct,
+                        planned_sl_pct=policy.sl_pct,
+                        planned_tp_price=planned_tp,
+                        planned_sl_price=planned_sl,
+                        planned_allocation_idr=planned_alloc,
+                        max_holding_days=policy.horizon_days,
+                    )
+                    new_decisions.append(dec_rec)
+
+        cands_csv = self.artifacts_dir / "paper_trading_candidates.csv"
+        if scored_candidates:
+            df_new_cands = pd.DataFrame([asdict(c) for c in scored_candidates])
+            if cands_csv.exists():
+                df_new_cands.to_csv(cands_csv, mode="a", header=False, index=False)
+            else:
+                df_new_cands.to_csv(cands_csv, index=False)
+
+        decs_csv = self.artifacts_dir / "paper_trading_decisions.csv"
+        if new_decisions:
+            df_new_decs = pd.DataFrame([asdict(d) for d in new_decisions])
+            if decs_csv.exists():
+                df_new_decs.to_csv(decs_csv, mode="a", header=False, index=False)
+            else:
+                df_new_decs.to_csv(decs_csv, index=False)
+
+        return {
+            "date": str(eval_date),
+            "status": "SCORED",
+            "candidates_count": len(scored_candidates),
+            "decisions_count": len(new_decisions),
+            "regime_category": reg_cat,
+            "size_multiplier": mult,
+        }

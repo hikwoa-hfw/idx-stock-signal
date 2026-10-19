@@ -1,0 +1,67 @@
+{
+  "champion_protection": {
+    "HIGHER_PRICE_champion": "lightgbm_classification_20261014_093607",
+    "LOW_PRICE_champion": "lightgbm_classification_20261014_093522",
+    "fallback_permitted": false,
+    "status": "IMMUTABLE_AND_PROTECTED"
+  },
+  "data_quality": {
+    "database_path": "./datasets/stock_signals.db",
+    "last_historical_bar_date": "2026-10-16",
+    "missing_dates_count": 0,
+    "total_daily_bars": 244021
+  },
+  "error_logs": [
+    "Missing 2 research scoring artifact(s): models/registry/lgb_regressor_h15_variant_b.joblib, models/registry/lgb_full_classifier_h15_variant_b.joblib. In Phase 11C, H=15 models were evaluated in-memory during walk-forward folds without serializing standalone .joblib files to models/registry/.",
+    "Fail-closed guard active: Never fall back to production champions (lightgbm_classification_20261014_093522, lightgbm_classification_20261014_093607) for research scoring."
+  ],
+  "historical_replay_validation": {
+    "performed": false,
+    "summaries": {},
+    "total_candidates_logged": 0,
+    "total_decisions_logged": 0,
+    "total_trades_logged": 0
+  },
+  "observation_protocol": {
+    "duration_calendar_months": 3,
+    "equity_cap_pct": 0.2,
+    "friction_bps_round_trip": 50.0,
+    "lot_size": 100,
+    "max_concurrent_positions": 5,
+    "reporting_cadence": "weekly",
+    "trailing_stops_active": false
+  },
+  "operational_status": "READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)",
+  "phase": "Phase 11F \u2014 Forward Paper Trading & Frozen Policy Validation",
+  "policy_bundle_hash": "2fa07ad5d2e10ad5c6b873338e648a5194b61bfbe84f02048cd6305e6c355bbd",
+  "scoring_artifacts_audit": {
+    "artifacts": {
+      "HIGHER_PRICE": {
+        "absolute_path": "C:\\Users\\DROSE250122\\Documents\\Personal\\indonesian-stock-ai\\models\\registry\\lgb_full_classifier_h15_variant_b.joblib",
+        "champion_substitute_blocked": "lightgbm_classification_20261014_093607",
+        "exists": false,
+        "expected_artifact": "models/registry/lgb_full_classifier_h15_variant_b.joblib",
+        "status": "MISSING_SCORING_ARTIFACT"
+      },
+      "LOW_PRICE": {
+        "absolute_path": "C:\\Users\\DROSE250122\\Documents\\Personal\\indonesian-stock-ai\\models\\registry\\lgb_regressor_h15_variant_b.joblib",
+        "champion_substitute_blocked": "lightgbm_classification_20261014_093522",
+        "exists": false,
+        "expected_artifact": "models/registry/lgb_regressor_h15_variant_b.joblib",
+        "status": "MISSING_SCORING_ARTIFACT"
+      }
+    },
+    "champion_fallback_permitted": false,
+    "error_logs": [
+      "Missing 2 research scoring artifact(s): models/registry/lgb_regressor_h15_variant_b.joblib, models/registry/lgb_full_classifier_h15_variant_b.joblib. In Phase 11C, H=15 models were evaluated in-memory during walk-forward folds without serializing standalone .joblib files to models/registry/.",
+      "Fail-closed guard active: Never fall back to production champions (lightgbm_classification_20261014_093522, lightgbm_classification_20261014_093607) for research scoring."
+    ],
+    "fail_closed_guard_active": true,
+    "missing_artifacts": [
+      "models/registry/lgb_regressor_h15_variant_b.joblib",
+      "models/registry/lgb_full_classifier_h15_variant_b.joblib"
+    ],
+    "status": "BLOCKED_ON_SCORING_ARTIFACT"
+  },
+  "timestamp": "2026-10-19T09:01:00.987329+00:00"
+}

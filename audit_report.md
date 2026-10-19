@@ -2,20 +2,20 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11B.0 — Final Target Contract Audit`
-- **Audit Date:** `2026-10-16 17:20 WIB`
+- **Current Phase:** `Phase 11B.1 — Candidate Model Training & Evaluation`
+- **Audit Date:** `2026-10-19 16:35 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** `ff84511823d8f73ea073939b54e0d0010a88964d`
-- **Overall Status:** `NEEDS_DESIGN_DECISION`
+- **Latest Commit SHA:** Working tree with Phase 11B.1 candidate evaluation pipeline
+- **Overall Status:** `PASS (DO_NOT_PROMOTE)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
-- **Primary Technical Blocker / Required Decision:**
-  - Selection of target contract for candidate model retraining in Phase 11B:
-    - **Design Option A (Recommended):** Retrain candidate challenger models on **Variant B (Executable-Entry Market-On-Open Target)**, excluding pre-entry invalidated rows ($\le -2\%$ gap-down or $\ge +5\%$ gap-up). Eliminates pre-entry lookahead bias and aligns training directly with execution.
-    - **Design Option B:** Dual-target parallel training (train separate candidate models on Variant A and Variant B for comparative backtesting).
-- **Next Permitted Action:** Proceed to Phase 11B.1 (Candidate Model Retraining) upon receipt of user/coordinator approval.
+- **Primary Empirical Finding & Decision:**
+  - Candidate model training on **Variant B (Next-Session Open-Anchor Target)** eliminates pre-entry lookahead bias and reduces operational invalidations by 50% ($157 \rightarrow 79$).
+  - However, after 50 bps round-trip IDX friction, all candidates generate net negative returns ($-0.49\%$ to $-0.79\%$ per trade) and profit factors below 1.0.
+  - **Decision:** Candidates are NOT promoted to production champion status. Current champions remain active and untouched.
+- **Next Permitted Action:** Proceed to Phase 11C design review for dynamic EV thresholds and adaptive barrier exploration upon user authorization.
 
 ---
 
@@ -41,7 +41,12 @@ The repository maintains dedicated, detailed reports for each major governance a
 4. [docs/12_phase_11b_target_contract_audit_report.md](docs/12_phase_11b_target_contract_audit_report.md)
    - **Phase 11B.0:** Final Target Contract Audit
    - **Scope:** Discrepancy reconciliation between Close-anchor labels (Variant A) and executable Market-On-Open entries (Variant B). Universal report template compliance, pre-entry gap invalidation quantification, and common-cohort label flip analysis.
-   - **Status:** `NEEDS_DESIGN_DECISION` (Full reconciliation complete, ready for retraining decision).
+   - **Status:** `PASS` (Design decision resolved via empirical candidate evaluation).
+
+5. [docs/13_phase_11b_candidate_model_evaluation_report.md](docs/13_phase_11b_candidate_model_evaluation_report.md)
+   - **Phase 11B.1:** Candidate Model Training & Evaluation
+   - **Scope:** Walk-forward candidate model training across dual target contracts (Variant A vs Variant B), common-cohort evaluation, and discrete-event simulated trading with IDX friction.
+   - **Status:** `PASS (DO_NOT_PROMOTE)` (Variant B validated for operational fidelity; champions preserved).
 
 ---
 

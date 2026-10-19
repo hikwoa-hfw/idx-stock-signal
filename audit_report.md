@@ -2,22 +2,22 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11C — Multi-Horizon Evaluation & Return Estimation`
-- **Audit Date:** `2026-10-19 18:55 WIB`
+- **Current Phase:** `Phase 11D — Dynamic Exit & Policy Selection Research`
+- **Audit Date:** `2026-10-19 20:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11C multi-horizon evaluation pipeline and empirical findings
+- **Latest Commit SHA:** Working tree with Phase 11D dynamic policy engine, CLI evaluation runner, and empirical artifacts
 - **Overall Status:** `PASS (DO_NOT_PROMOTE)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Walk-forward multi-horizon evaluation across holding horizons ($H \in \{3, 5, 10, 15\}$ trading days) and continuous return estimation under Variant B execution with a 15-day purge window confirms that extending holding horizons substantially cushions portfolio drawdown (continuous multi-year drawdown falls from $\sim 95\%$ to $45.50\%$ in `LOW_PRICE` and $62.09\%$ in `HIGHER_PRICE`) and cuts trading churn by $>50\%$.
-  - However, under the production 50 bps round-trip friction model (15 bps buy, 25 bps sell, 5 bps entry slip, 5 bps exit slip), **all evaluated configurations generate net negative returns** ($-0.33\%$ to $-1.00\%$ per trade) and profit factors below 1.0 ($0.47$ to $0.80$).
-  - LightGBM Regressors demonstrate positive correlation with realized returns ($r = +0.06$ to $+0.10$ in `LOW_PRICE`; $+0.03$ to $+0.05$ in `HIGHER_PRICE`), selecting more disciplined trades than raw binary classifiers.
-  - Expected return filtering exhibits severe macro-regime dependency (profitable in Fold 1 bull market; negative in Fold 3 bear market).
-  - **Decision:** Candidates are NOT promoted to production champion status. Current champions remain active and untouched.
-- **Next Permitted Action:** Proceed to Phase 11D research design upon user authorization. Do not begin Phase 11D automatically.
+  - Walk-forward dynamic policy evaluation across entry selectivity (Top 10% to 1%), point-in-time market regime conditioning, dynamic holding periods ($H \in \{3, 5, 10, 15\}$), and alternative TP/SL barriers under the 50 bps round-trip friction model demonstrates that:
+    1. **Bull Regime Filtering (`ihsg_vs_ema20 > 0`) is the single most powerful tail-risk reducer:** It cuts continuous drawdown from $45.50\% \rightarrow 16.65\%$ in `LOW_PRICE` and $62.67\% \rightarrow 23.43\%$ in `HIGHER_PRICE`, while cutting net losses by $>70\%$. Conversely, trading in bear regimes (`ihsg_vs_ema20 <= 0`) yields severe losses ($-0.65\%$ to $-0.67\%$ net return, PF $0.63$–$0.64$).
+    2. **Combined Policy achieves nominal pooled profitability:** Combining Top 3% entry selectivity, bull trend conditioning, 15-day holding horizon, and $+6\% / -2\%$ barriers yields $+0.08\%$ net return (PF $1.04$) with continuous drawdown suppressed to $9.59\%$ in `LOW_PRICE`. In `HIGHER_PRICE`, Top 1% selectivity with bull trend and $+6\% / -2\%$ yields $+0.13\%$ net return (PF $1.07$, continuous DD $9.77\%$).
+    3. **However, forward fold performance lacks uniform robustness:** In `LOW_PRICE`, Fold 1 ($+0.34\%$) drives the gain, while Folds 2 and 3 remain negative ($-0.10\%$ and $-0.16\%$). In `HIGHER_PRICE` Top 1%, Fold 2 is positive ($+0.44\%$), but Fold 1 ($-0.01\%$) and Fold 3 ($-0.11\%$) remain negative. Neither policy achieves uniform cross-fold profitability.
+  - **Decision:** Candidates and policies are NOT promoted to production champion status. Current champions remain active and untouched.
+- **Next Permitted Action:** Proceed to Phase 11E research design (Dynamic Conviction Sizing and Volatility Trailing Protection) upon user authorization. Do not begin Phase 11E automatically.
 
 ---
 
@@ -52,8 +52,13 @@ The repository maintains dedicated, detailed reports for each major governance a
 
 6. [docs/14_phase_11c_multi_horizon_return_evaluation_report.md](docs/14_phase_11c_multi_horizon_return_evaluation_report.md)
    - **Phase 11C:** Multi-Horizon Evaluation & Return Estimation
-   - **Scope:** Holding horizons ($H \in \{3, 5, 10, 15\}$ trading days), strict 15-day purge window walk-forward splits, LightGBM Regressor continuous return estimation vs zero & mean baselines, discrete-event simulated trading under 50 bps friction, and Expected Return vs discrete EV diagnostics.
+   - **Scope:** Holding horizons ($H \in \{3, 5, 10, 15\}$ trading days), strict 15-day purge window walk-forward splits, LightGBM Regressor continuous return estimation vs zero & mean baselines, discrete-event simulated trading under 50 bps friction, and Expected Return vs discrete EV diagnostics. Corrected test count documentation to 480 passed unit/regression tests (previously noted as 478 in preliminary text).
    - **Status:** `PASS (DO_NOT_PROMOTE)` (Horizon extension dampens drawdown but fails to cross net profitability threshold; champions preserved).
+
+7. [docs/15_phase_11d_dynamic_exit_policy_evaluation_report.md](docs/15_phase_11d_dynamic_exit_policy_evaluation_report.md)
+   - **Phase 11D:** Dynamic Exit & Policy Selection Research
+   - **Scope:** Cross-sectional entry selectivity (Top 10%, 5%, 3%, 1%), point-in-time market regime conditioning (IHSG trend, breadth, volatility), dynamic holding periods ($H \in \{5, 10, 15\}$, max predicted return $H^*$, volatility-adaptive, regime-adaptive), dynamic TP/SL barriers (+6%/-2%, +4%/-2%, +5%/-1.5%, ATR-scaled), and combined walk-forward policy under 50 bps round-trip friction.
+   - **Status:** `PASS (DO_NOT_PROMOTE)` (Regime conditioning cuts drawdowns by >60%, combined policy achieves +0.08% pooled net return in LOW_PRICE and +0.13% in HIGHER_PRICE Top 1%, but lack of uniform cross-fold robustness prevents deployment; 490 unit/regression tests passed; champions preserved).
 
 ---
 

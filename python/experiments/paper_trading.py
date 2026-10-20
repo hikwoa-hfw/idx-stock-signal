@@ -44,9 +44,12 @@ from scripts.audit_target_contract_runner import load_all_bars
 
 __all__ = [
     "CHAMPION_MODELS",
+    "DataQualityError",
     "FEATURE_SCHEMA_30",
     "FIRST_PROSPECTIVE_DATE",
     "FrozenPolicyBundle",
+    "InvalidProspectiveDateError",
+    "MissedSessionError",
     "MissingScoringArtifactError",
     "PaperCandidate",
     "PaperDecision",
@@ -56,10 +59,13 @@ __all__ = [
     "RESEARCH_SCORING_ARTIFACTS",
     "ResearchClassifierModel",
     "ResearchRegressorModel",
+    "STATUS_APPROVED_PENDING_FIRST_OBSERVATION",
     "STATUS_BLOCKED_ON_SCORING_ARTIFACT",
+    "STATUS_BLOCKED_ON_STATE_CORRUPTION",
     "STATUS_OBSERVATION_ACTIVE",
     "STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL",
     "STATUS_SCORING_ARTIFACTS_READY",
+    "StateIntegrityError",
     "UserApprovalRequiredError",
     "classify_regime_three_tier",
     "get_default_frozen_policies",
@@ -67,8 +73,10 @@ __all__ = [
 
 # Lifecycle and operational status constants
 STATUS_BLOCKED_ON_SCORING_ARTIFACT = "BLOCKED_ON_SCORING_ARTIFACT"
+STATUS_BLOCKED_ON_STATE_CORRUPTION = "BLOCKED_ON_STATE_CORRUPTION"
 STATUS_SCORING_ARTIFACTS_READY = "SCORING_ARTIFACTS_READY"
 STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL = "READY_FOR_OBSERVATION_PENDING_USER_APPROVAL"
+STATUS_APPROVED_PENDING_FIRST_OBSERVATION = "APPROVED_PENDING_FIRST_OBSERVATION"
 STATUS_OBSERVATION_ACTIVE = "OBSERVATION_ACTIVE"
 FIRST_PROSPECTIVE_DATE = date(2026, 10, 19)
 
@@ -124,6 +132,22 @@ class MissingScoringArtifactError(Exception):
 
 class UserApprovalRequiredError(Exception):
     """Raised when prospective date scoring is attempted without explicit user approval."""
+
+
+class InvalidProspectiveDateError(Exception):
+    """Raised when an invalid, historical, or non-monotonic prospective date is requested."""
+
+
+class MissedSessionError(Exception):
+    """Raised when an active trading session was skipped, requiring sequential recovery."""
+
+
+class DataQualityError(Exception):
+    """Raised when price bars or features fail completeness, freshness, or schema checks."""
+
+
+class StateIntegrityError(Exception):
+    """Raised when persistent paper trading state is corrupt, invalid, or hash-mismatched."""
 
 
 @dataclass
@@ -1236,8 +1260,12 @@ class PaperTradingEngine:
 
     def _default_state(self) -> dict[str, Any]:
         return {
+            "version": "1.1",
             "phase": "Phase 11F — Forward Paper Trading & Frozen Policy Validation",
             "policy_bundle_hash": self.frozen_bundle.config_sha256,
+            "user_approved": False,
+            "approval_timestamp": None,
+            "approval_data_cutoff": None,
             "initial_capital": float(self.initial_capital),
             "cash": float(self.initial_capital),
             "peak_equity": float(self.initial_capital),
@@ -1269,16 +1297,79 @@ class PaperTradingEngine:
         target = self.artifacts_dir / "paper_trading_state.json"
         if not target.is_file():
             return self._default_state()
+
         try:
             with open(target, "r", encoding="utf-8") as f:
                 state = json.load(f)
-            default = self._default_state()
-            for k, v in default.items():
-                if k not in state:
-                    state[k] = v
-            return state
-        except Exception:
-            return self._default_state()
+        except Exception as e:
+            raise StateIntegrityError(
+                f"Corrupted paper trading state at {target}: invalid JSON ({e}). "
+                "Fail-closed: state must be manually inspected and recovered."
+            ) from e
+
+        if not isinstance(state, dict):
+            raise StateIntegrityError(
+                f"Corrupted paper trading state at {target}: root object must be a dictionary, "
+                f"got {type(state).__name__}."
+            )
+
+        required_fields = [
+            "version",
+            "policy_bundle_hash",
+            "cash",
+            "peak_equity",
+            "max_drawdown_amount",
+            "max_drawdown_pct",
+            "first_observation_date",
+            "first_prospective_run_timestamp",
+            "last_decision_date",
+            "last_execution_date",
+            "processed_dates",
+            "pending_orders",
+            "order_history",
+            "open_positions",
+            "completed_trades",
+            "daily_equity_history",
+            "last_known_close",
+            "unfilled_summary",
+        ]
+        missing = [f for f in required_fields if f not in state]
+        if missing:
+            raise StateIntegrityError(
+                f"Corrupted paper trading state at {target}: missing required fields: {missing}."
+            )
+
+        state_hash = state.get("policy_bundle_hash")
+        expected_hash = self.frozen_bundle.config_sha256
+        if state_hash != expected_hash:
+            raise StateIntegrityError(
+                f"Incompatible policy bundle hash in {target}: "
+                f"found '{state_hash}', expected '{expected_hash}'."
+            )
+
+        if not isinstance(state["cash"], (int, float)) or state["cash"] < 0:
+            raise StateIntegrityError(f"Corrupted cash balance in state: {state['cash']}")
+        if not isinstance(state["open_positions"], dict):
+            raise StateIntegrityError(
+                f"Corrupted open_positions type in state: {type(state['open_positions'])}"
+            )
+        if not isinstance(state["processed_dates"], list):
+            raise StateIntegrityError(
+                f"Corrupted processed_dates type in state: {type(state['processed_dates'])}"
+            )
+        if not isinstance(state["pending_orders"], list):
+            raise StateIntegrityError(
+                f"Corrupted pending_orders type in state: {type(state['pending_orders'])}"
+            )
+
+        if "user_approved" not in state:
+            state["user_approved"] = False
+        if "approval_timestamp" not in state:
+            state["approval_timestamp"] = None
+        if "approval_data_cutoff" not in state:
+            state["approval_data_cutoff"] = None
+
+        return state
 
     def save_state(self, state: dict[str, Any]) -> None:
         target = self.artifacts_dir / "paper_trading_state.json"
@@ -1300,6 +1391,79 @@ class PaperTradingEngine:
             p = self.artifacts_dir / f
             if p.is_file():
                 p.unlink()
+
+    def migrate_state(self, backup: bool = True) -> dict[str, Any]:
+        """Explicitly migrates state file to latest schema, preserving a backup copy."""
+        target = self.artifacts_dir / "paper_trading_state.json"
+        if not target.is_file():
+            return self._default_state()
+
+        if backup:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            bak_path = target.with_name(f"{target.stem}_backup_{ts}.json")
+            import shutil
+
+            shutil.copy2(target, bak_path)
+
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                raw_state = json.load(f)
+        except Exception as e:
+            raise StateIntegrityError(
+                f"Cannot migrate unparseable state file: {e}"
+            ) from e
+
+        if not isinstance(raw_state, dict):
+            raise StateIntegrityError(
+                f"Cannot migrate non-dict state: {type(raw_state)}"
+            )
+
+        default = self._default_state()
+        for k, v in default.items():
+            if k not in raw_state:
+                raw_state[k] = v
+        raw_state["version"] = "1.1"
+        raw_state["policy_bundle_hash"] = self.frozen_bundle.config_sha256
+
+        self.save_state(raw_state)
+        return raw_state
+
+    def get_latest_market_data_date(self) -> Optional[str]:
+        """Queries database for the latest historical bar date."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cur = conn.cursor()
+            row = cur.execute("SELECT MAX(date) FROM daily_bars;").fetchone()
+            return str(row[0]) if row and row[0] else None
+        finally:
+            conn.close()
+
+    def approve_observation(
+        self,
+        cutoff_date: Optional[Union[date, str]] = None,
+        base_dir: Optional[Path] = None,
+    ) -> dict[str, Any]:
+        """Records explicit user approval and market cutoff without mutating trades."""
+        state = self.load_state()
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        if cutoff_date is not None:
+            cutoff_str = str(cutoff_date)
+        else:
+            cutoff_str = self.get_latest_market_data_date() or "UNKNOWN"
+
+        state["user_approved"] = True
+        state["approval_timestamp"] = now_iso
+        state["approval_data_cutoff"] = cutoff_str
+        self.save_state(state)
+
+        status = self.generate_operational_status(base_dir=base_dir)
+        return {
+            "user_approved": True,
+            "approval_timestamp": now_iso,
+            "approval_data_cutoff": cutoff_str,
+            "operational_status": status["operational_status"],
+        }
 
     def get_next_trading_date(self, current_date: date) -> date:
         """Finds next trading date from database bars or falls back to next business weekday."""
@@ -1330,16 +1494,38 @@ class PaperTradingEngine:
     ) -> dict[str, Any]:
         """Generates comprehensive operational status and writes to JSON."""
         audit = self.audit_scoring_artifacts(base_dir=base_dir)
-        state = self.load_state()
-        has_started = state.get("first_observation_date") is not None
 
-        if audit["status"] != "PASS":
+        state_corrupt = False
+        state_error = None
+        try:
+            state = self.load_state()
+        except StateIntegrityError as e:
+            state_corrupt = True
+            state_error = str(e)
+            state = self._default_state()
+
+        has_started = bool(
+            not state_corrupt
+            and state.get("first_observation_date") is not None
+            and state.get("first_prospective_run_timestamp") is not None
+            and len(state.get("processed_dates", [])) > 0
+        )
+        is_approved = bool(state.get("user_approved", False) or user_approved)
+
+        if state_corrupt:
+            operational_status = STATUS_BLOCKED_ON_STATE_CORRUPTION
+            scoring_artifacts_status = audit.get(
+                "scoring_artifacts_status", STATUS_BLOCKED_ON_SCORING_ARTIFACT
+            )
+        elif audit["status"] != "PASS":
             operational_status = STATUS_BLOCKED_ON_SCORING_ARTIFACT
             scoring_artifacts_status = STATUS_BLOCKED_ON_SCORING_ARTIFACT
         else:
             scoring_artifacts_status = STATUS_SCORING_ARTIFACTS_READY
-            if user_approved or has_started:
+            if has_started:
                 operational_status = STATUS_OBSERVATION_ACTIVE
+            elif is_approved:
+                operational_status = STATUS_APPROVED_PENDING_FIRST_OBSERVATION
             else:
                 operational_status = STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL
 
@@ -1398,11 +1584,20 @@ class PaperTradingEngine:
         )
         current_cash = float(state.get("cash", self.initial_capital))
 
+        error_logs = list(audit["error_logs"])
+        if state_error:
+            error_logs.append(state_error)
+
         status_dict = {
             "phase": "Phase 11F — Forward Paper Trading & Frozen Policy Validation",
             "operational_status": operational_status,
             "scoring_artifacts_status": scoring_artifacts_status,
-            "user_approved": user_approved or has_started,
+            "user_approved": is_approved,
+            "approval_metadata": {
+                "user_approved": is_approved,
+                "approval_timestamp": state.get("approval_timestamp"),
+                "approval_data_cutoff": state.get("approval_data_cutoff"),
+            },
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "policy_bundle_hash": self.frozen_bundle.config_sha256,
             "cutoff_metadata": {
@@ -1478,7 +1673,7 @@ class PaperTradingEngine:
                 "total_trades_logged": total_trades,
                 "summaries": replay_summaries or {},
             },
-            "error_logs": audit["error_logs"],
+            "error_logs": error_logs,
         }
 
         target = self.artifacts_dir / "paper_trading_operational_status.json"
@@ -1507,15 +1702,27 @@ class PaperTradingEngine:
                 f"Prospective scoring blocked on {eval_date}: {audit['error_logs'][0]}"
             )
 
-        if not user_approved:
+        state = self.load_state()
+
+        # Approval check
+        is_approved = bool(state.get("user_approved", False) or user_approved)
+        if not is_approved:
             raise UserApprovalRequiredError(
                 "Prospective observation date scoring requires explicit user approval."
             )
 
-        state = self.load_state()
+        # Cutoff date check: prospective decision date must be strictly later than approval cutoff
+        cutoff_str = state.get("approval_data_cutoff")
+        if cutoff_str is not None:
+            cutoff_d = pd.to_datetime(cutoff_str).date()
+            if eval_date <= cutoff_d:
+                raise InvalidProspectiveDateError(
+                    f"Decision date {eval_date} is at or before the approval market data cutoff "
+                    f"{cutoff_d}. Historical prospective observation is prohibited."
+                )
 
         # Idempotency check: if session already processed, return existing state
-        if str(eval_date) in state["processed_dates"]:
+        if str(eval_date) in state.get("processed_dates", []):
             return {
                 "date": str(eval_date),
                 "status": "ALREADY_PROCESSED",
@@ -1534,6 +1741,25 @@ class PaperTradingEngine:
                 ),
             }
 
+        # Monotonicity & sequential session check
+        if state.get("processed_dates"):
+            last_d_str = state["processed_dates"][-1]
+            last_d = pd.to_datetime(last_d_str).date()
+            if eval_date < last_d:
+                raise InvalidProspectiveDateError(
+                    f"Decision date {eval_date} is earlier than last processed date {last_d}. "
+                    "Non-monotonic out-of-order date execution is prohibited."
+                )
+            if state.get("approval_data_cutoff") is not None:
+                expected_next = self.get_next_trading_date(last_d)
+                if eval_date > expected_next:
+                    raise MissedSessionError(
+                        f"Missed trading session detected. Expected next trading date was "
+                        f"{expected_next}, but received {eval_date}. Prospective observation "
+                        "must process every active trading session sequentially without gaps. "
+                        f"Recovery action: ingest and step through {expected_next} first."
+                    )
+
         root = base_dir or Path(__file__).resolve().parent.parent.parent
         conn = sqlite3.connect(self.db_path)
         try:
@@ -1544,7 +1770,7 @@ class PaperTradingEngine:
             df_feat = pd.read_sql_query(query_features, conn, params=[str(eval_date)])
 
             query_bars = """
-                SELECT ticker, open, high, low, close, volume FROM daily_bars
+                SELECT date, ticker, open, high, low, close, volume FROM daily_bars
                 WHERE date = ?;
             """
             df_bars = pd.read_sql_query(query_bars, conn, params=[str(eval_date)])
@@ -1575,6 +1801,7 @@ class PaperTradingEngine:
                             "volume": float(b.volume),
                         }
 
+        # Handle non-trading sessions (e.g. weekend/holiday where both bars and features are absent)
         if not bars_today and df_feat.empty:
             return {
                 "date": str(eval_date),
@@ -1584,22 +1811,117 @@ class PaperTradingEngine:
                 "orders_processed": 0,
                 "orders_filled": 0,
                 "positions_closed": 0,
+                "open_positions_count": len(state["open_positions"]),
+                "pending_orders_count": len(state["pending_orders"]),
+                "cash": float(state["cash"]),
+                "total_equity": (
+                    float(state["daily_equity_history"][-1]["total_equity"])
+                    if state["daily_equity_history"]
+                    else float(state["cash"])
+                ),
             }
+
+        # Data Quality Check 1: Missing daily price bars when features exist
+        if not bars_today:
+            raise DataQualityError(
+                f"Data quality failure on {eval_date}: daily price bars are missing "
+                "while features exist."
+            )
+
+        # Data Quality Check 2: Missing features when bars exist
+        if df_feat.empty:
+            raise DataQualityError(
+                f"Data quality failure on {eval_date}: feature rows in features_daily are missing "
+                "while price bars exist."
+            )
+
+        # Data Quality Check 3: Date correspondence
+        if not df_bars.empty and any(
+            str(r["date"]) != str(eval_date) for _, r in df_bars.iterrows()
+        ):
+            raise DataQualityError(
+                f"Data quality failure on {eval_date}: price bar date mismatch found in daily_bars."
+            )
+        if any(str(r["date"]) != str(eval_date) for _, r in df_feat.iterrows()):
+            raise DataQualityError(
+                f"Data quality failure on {eval_date}: feature date mismatch "
+                "found in features_daily."
+            )
+
+        # Data Quality Check 4: Required columns
+        missing_cols = [
+            c for c in self.frozen_bundle.feature_schema if c not in df_feat.columns
+        ]
+        if missing_cols:
+            raise DataQualityError(
+                f"Data quality failure on {eval_date}: missing required feature columns "
+                f"{missing_cols}."
+            )
+
+        # Data Quality Check 5: Common ticker coverage
+        feat_tickers = {
+            str(t).strip().upper().removesuffix(".JK") for t in df_feat["ticker"]
+        }
+        bar_tickers = {t for t, b in bars_today.items() if b["close"] > 0}
+        common_tickers = feat_tickers.intersection(bar_tickers)
+        if not common_tickers:
+            raise DataQualityError(
+                f"Data quality failure on {eval_date}: zero valid joined tickers between "
+                "features and positive close bars."
+            )
+
+        # Data Quality Check 6: Invalid infinite values and entirely null columns
+        df_common_feat = df_feat[
+            df_feat["ticker"].str.strip().str.upper().str.removesuffix(".JK").isin(common_tickers)
+        ]
+        feat_matrix = df_common_feat[self.frozen_bundle.feature_schema].values
+        if np.isinf(feat_matrix).any():
+            raise DataQualityError(
+                f"Data quality failure on {eval_date}: invalid infinite values (Inf) "
+                "detected in feature matrix."
+            )
+        all_null_cols = [
+            c for c in self.frozen_bundle.feature_schema if df_common_feat[c].isna().all()
+        ]
+        if all_null_cols:
+            raise DataQualityError(
+                f"Data quality failure on {eval_date}: feature columns entirely null: "
+                f"{all_null_cols}."
+            )
 
         # -----------------------------------------------------------------
         # 1. Execute Pending Orders from Previous Decision Dates at Open
         # -----------------------------------------------------------------
         pending_orders = list(state.get("pending_orders", []))
-        orders_to_process = [
-            o
-            for o in pending_orders
-            if str(o.get("scheduled_execution_date", eval_date)) <= str(eval_date)
-        ]
-        remaining_pending = [
-            o
-            for o in pending_orders
-            if str(o.get("scheduled_execution_date", eval_date)) > str(eval_date)
-        ]
+        orders_to_process = []
+        remaining_pending = []
+
+        for o in pending_orders:
+            sched_d = str(o.get("scheduled_execution_date", eval_date))
+            if sched_d == str(eval_date):
+                orders_to_process.append(o)
+            elif sched_d < str(eval_date):
+                # Stale order from missed session: fail-closed in approved prospective observation
+                if state.get("approval_data_cutoff") is not None:
+                    raise MissedSessionError(
+                        f"Missed execution session detected for pending order {o.get('ticker')} "
+                        f"scheduled on {sched_d}. Cannot silently fill at later open {eval_date}. "
+                        "Recovery action: reconcile portfolio state or cancel expired order."
+                    )
+                # In unapproved test mode, expire order without silently filling at later open
+                state["order_history"].append(
+                    {
+                        "order_id": f"ORD-{o.get('decision_date')}-{o.get('ticker')}",
+                        "ticker": o.get("ticker"),
+                        "mode": o.get("mode"),
+                        "decision_date": o.get("decision_date"),
+                        "execution_date": str(eval_date),
+                        "status": "EXPIRED_MISSED_SESSION",
+                        "reason": f"Execution date {sched_d} passed before session {eval_date}",
+                    }
+                )
+            else:
+                remaining_pending.append(o)
         orders_filled_count = 0
         orders_processed_count = len(orders_to_process)
 
@@ -2181,7 +2503,7 @@ class PaperTradingEngine:
             df_eq.to_csv(eq_csv, index=False)
 
         # Refresh operational status JSON
-        self.generate_operational_status(user_approved=user_approved, base_dir=base_dir)
+        self.generate_operational_status(user_approved=is_approved, base_dir=base_dir)
 
         return {
             "date": str(eval_date),

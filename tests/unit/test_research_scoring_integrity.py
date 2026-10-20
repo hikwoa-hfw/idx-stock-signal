@@ -31,6 +31,7 @@ from python.experiments.paper_trading import (
     CHAMPION_MODELS,
     FEATURE_SCHEMA_30,
     RESEARCH_SCORING_ARTIFACTS,
+    STATUS_APPROVED_PENDING_FIRST_OBSERVATION,
     STATUS_BLOCKED_ON_SCORING_ARTIFACT,
     STATUS_OBSERVATION_ACTIVE,
     STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL,
@@ -461,15 +462,36 @@ class TestResearchScoringIntegrity:
         assert status["user_approved"] is False
 
     def test_operational_status_observation_active(self, repo_root: Path, tmp_path: Path):
-        """Verifies artifacts ready and user_approved=True -> OBSERVATION_ACTIVE."""
+        """Verifies artifacts ready and user_approved=True without run
+        -> APPROVED_PENDING_FIRST_OBSERVATION.
+        """
         engine = PaperTradingEngine(
             db_path=str(repo_root / "datasets/stock_signals.db"),
             artifacts_dir=tmp_path / "artifacts",
         )
         status = engine.generate_operational_status(user_approved=True)
-        assert status["operational_status"] == STATUS_OBSERVATION_ACTIVE
+        assert status["operational_status"] == STATUS_APPROVED_PENDING_FIRST_OBSERVATION
         assert status["scoring_artifacts_status"] == STATUS_SCORING_ARTIFACTS_READY
         assert status["user_approved"] is True
+
+    def test_operational_status_active_only_after_persisted_first_run(
+        self, repo_root: Path, tmp_path: Path
+    ):
+        """Verifies OBSERVATION_ACTIVE requires approval and persisted first prospective run."""
+        engine = PaperTradingEngine(
+            db_path=str(repo_root / "datasets/stock_signals.db"),
+            artifacts_dir=tmp_path / "artifacts",
+        )
+        state = engine._default_state()
+        state["user_approved"] = True
+        state["first_observation_date"] = "2026-10-19"
+        state["first_prospective_run_timestamp"] = "2026-10-19T09:00:00Z"
+        state["processed_dates"] = ["2026-10-19"]
+        engine.save_state(state)
+
+        status = engine.generate_operational_status()
+        assert status["operational_status"] == STATUS_OBSERVATION_ACTIVE
+        assert status["prospective_lifecycle"]["has_started"] is True
 
     def test_step_prospective_date_without_user_approval_raises(
         self, repo_root: Path, tmp_path: Path

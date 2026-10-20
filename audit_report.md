@@ -2,24 +2,23 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11F.3 — Complete Prospective Paper-Trading Lifecycle`
-- **Audit Date:** `2026-10-20 12:30 WIB`
+- **Current Phase:** `Phase 11F.4 — Final Fail-Closed Readiness Corrections`
+- **Audit Date:** `2026-10-20 14:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11F.3 prospective lifecycle engine, persistent state management, and 562 passed tests
-- **Overall Status:** `PASS (READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)`
+- **Latest Commit SHA:** Working tree with Phase 11F.4 fail-closed readiness corrections, persistent approval & cutoff decoupling, strict data quality guards, state integrity protection, and 76 passed paper trading unit tests
+- **Overall Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Completed missing execution and position-management lifecycle for prospective forward paper trading:
-    1. **Execution Date Scheduling Defect Fixed:** `PaperDecision.execution_date` is now strictly scheduled for next eligible trading session $t+1$ (`get_next_trading_date()`), completely eliminating same-day execution claims under Variant B Market-On-Open policy.
-    2. **Complete Multi-Session Execution Lifecycle:** Built session-start fills at Open $t+1$ with pre-entry gap invalidations ($\le -2\%$, $\ge +6\%$, dev $> 5\%$, volume $\le 0$), barrier monitoring (TP $+6\%$, SL $-2\%$, conservative precedence, 15-day expiry), 50 bps round-trip friction, and EOD mark-to-market equity/drawdown tracking.
-    3. **Persistent State Management:** Implemented `paper_trading_state.json` maintaining orders, open positions, completed trades, daily equity, and cash balances across process invocations with atomic writes and strict idempotency (`processed_dates`).
-    4. **Prospective Operational Status:** Updated `--status` output to format live observation metrics (pending orders, open positions, MTM equity, PnL, cash, drawdown, unfilled counts).
-    5. **Governance & Approval Gate:** Enforced human authorization guard (`UserApprovalRequiredError`); observation status transitions to `OBSERVATION_ACTIVE` only after an approved prospective run succeeds. Observation was not started during this task.
-    6. **Decision:** Candidate models remain unpromoted; production champions remain active and protected. System is `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`.
-- **Next Permitted Action:** Await explicit user authorization (`--user-approved`) before initiating forward observation on or after `2026-10-19`. Do not execute prospective scoring without approval.
+  - Completed Phase 11F.4 fail-closed readiness corrections:
+    1. **Decoupled User Approval from Observation Activation:** Persistent approval fields (`user_approved`, `approval_timestamp`, `approval_data_cutoff`), dedicated CLI `--approve-observation`, distinct `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`. Calling `--status --user-approved` cannot activate observation; observation transitions to `OBSERVATION_ACTIVE` only after an approved run succeeds and is persisted.
+    2. **Dynamic Cutoff & Monotonicity Guards:** Dynamic `approval_data_cutoff` prevents backdated or historical prospective runs (`InvalidProspectiveDateError`). Non-monotonic date execution blocked. Gaps between sessions and stale pending orders fail closed with `MissedSessionError`.
+    3. **Strict Data Quality Guards:** Missing bars, missing features, date mismatches, missing required columns, zero-join ticker coverage, and infinite feature values fail closed independently with `DataQualityError`.
+    4. **Fail-Closed State Integrity:** Root dictionary validation, required fields check, policy bundle hash verification; corrupted state raises `StateIntegrityError` without silent overwriting. `migrate_state(backup=True)` creates timestamped backup copy.
+    5. **Decision:** Production champions protected and active. Candidate models remain research-only. Zero prospective observation started.
+- **Next Permitted Action:** Await explicit human operator execution of `--approve-observation` followed by `--date 2026-10-19 --user-approved` upon ingestion of new market data. Do not execute prospective scoring without approval.
 
 ---
 
@@ -81,6 +80,11 @@ The repository maintains dedicated, detailed reports for each major governance a
     - **Phase 11F.3:** Complete Prospective Paper-Trading Lifecycle & State Persistence Engine
     - **Scope:** Fixed `PaperDecision.execution_date` from decision date $t$ to next eligible trading session $t+1$ (`get_next_trading_date()`), implemented multi-session daily lifecycle (Market-on-Open fills, pre-entry gap invalidations, barrier monitoring with conservative ambiguity precedence, 15-day expiry, 50 bps friction), atomic state persistence (`paper_trading_state.json`), strict idempotency (`processed_dates`), live operational reporting with prospective observation metrics, and human authorization guard.
     - **Status:** `PASS (READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (14 unit tests in lifecycle module, 562 total suite tests passed: 530 unit, 32 integration; champions preserved).
+
+12. [docs/20_phase_11f_final_readiness_report.md](docs/20_phase_11f_final_readiness_report.md)
+    - **Phase 11F.4:** Final Fail-Closed Readiness Corrections
+    - **Scope:** Decoupled persistent human approval state and cutoff tracking (`--approve-observation`), distinct `APPROVED_PENDING_FIRST_OBSERVATION` status, fail-closed historical date rejection ($\le$ cutoff), monotonicity enforcement, missed session and stale order execution guards (`MissedSessionError`), comprehensive data quality validation (`DataQualityError` for missing bars, missing features, schema/coverage, Inf values), state corruption detection (`StateIntegrityError` and `BLOCKED_ON_STATE_CORRUPTION`), and safe migration with timestamped backups.
+    - **Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (16 unit tests in fail-closed module, 76 total paper trading tests passed; ruff clean 0 error; champions preserved).
 
 ---
 

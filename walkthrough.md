@@ -1,132 +1,142 @@
-# Walkthrough: Phase 11F.3 — Complete Prospective Paper-Trading Lifecycle
+# Walkthrough: Phase 11F.4 — Final Fail-Closed Readiness Corrections
 
 ## Overview
 
-In Phase 11F.3, we completed the missing execution and position-management lifecycle for the prospective paper-trading pipeline. We resolved the decision-scheduling defect (`PaperDecision.execution_date`), implemented a transactionally safe state persistence engine (`paper_trading_state.json`), enforced pre-entry gap invalidations and barrier exits (TP +6%, SL -2%, conservative same-candle precedence, 15-day expiry), and updated operational reporting to present real-time prospective observation metrics.
+In Phase 11F.4, we completed all final fail-closed readiness corrections for forward paper trading. We decoupled user approval from observation activation, enforced dynamic market data cutoffs to prevent backdated observations, added strict multi-point data quality guards in prospective scoring, secured persistent state integrity against corruption or tampering, and verified all behaviors with an exhaustive 16-test unit and regression suite.
 
 ---
 
 ## Task Breakdown & Changes
 
-### 1. Decision Scheduling & Next-Trading-Date Resolution
+### 1. Decoupled Persistent Human Approval & Cutoff Tracking
+**Files:** `python/experiments/paper_trading.py`, `scripts/run_forward_paper_trading.py`
+- Added custom exception classes to `python/experiments/paper_trading.py` (lines 137–152):
+  - `InvalidProspectiveDateError`: Raised on historical, out-of-order, or non-monotonic dates.
+  - `MissedSessionError`: Raised on skipped trading sessions or stale pending orders.
+  - `DataQualityError`: Raised on missing bars/features, schema errors, or infinite values.
+  - `StateIntegrityError`: Raised on malformed, incomplete, or hash-mismatched state files.
+- Added status constants (lines 47–48):
+  - `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`
+  - `STATUS_BLOCKED_ON_STATE_CORRUPTION`
+- Updated `_default_state()` (lines 1275–1285):
+  - Upgraded schema to `version: "1.1"`.
+  - Added persistent approval fields: `user_approved: False`, `approval_timestamp: None`, `approval_data_cutoff: None`.
+- Implemented `approve_observation()` and `get_latest_market_data_date()` (lines 1420–1455):
+  - Queries `MAX(date)` from `daily_bars` to establish market data cutoff.
+  - Records human authorization and cutoff in `paper_trading_state.json` without running scoring or modifying balances/trades.
+- Updated `generate_operational_status()` (lines 1490–1525):
+  - If state is corrupt, reports `STATUS_BLOCKED_ON_STATE_CORRUPTION`.
+  - If approved but no run has occurred, reports `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`.
+  - Reports `STATUS_OBSERVATION_ACTIVE` **only** when `has_started` is True (`first_observation_date`, `first_prospective_run_timestamp`, and `processed_dates > 0`).
+- Updated CLI in `scripts/run_forward_paper_trading.py`:
+  - Added `--approve-observation` CLI argument (lines 48–53).
+  - Updated `--status` action to display persistent approval metadata and data cutoff (lines 185–215).
+  - Prohibited `--status --user-approved` from activating observation (status remains `APPROVED_PENDING_FIRST_OBSERVATION`).
+
+### 2. Prevent Backdated or Stale Observations & Missed Session Guards
+**Files:** `python/experiments/paper_trading.py`, `scripts/run_forward_paper_trading.py`
+- Enforced dynamic data cutoff in `step_prospective_date()` (lines 1715–1725):
+  - If `eval_date <= approval_data_cutoff`, raises `InvalidProspectiveDateError` and halts.
+- Enforced sequential monotonicity (lines 1745–1765):
+  - If `eval_date < last_processed_date`, raises `InvalidProspectiveDateError`.
+  - If `eval_date > expected_next_trading_date`, raises `MissedSessionError` requiring sequential catch-up.
+- Prevented silent execution of stale orders (lines 1890–1905):
+  - Pending orders scheduled for an earlier session than `eval_date` raise `MissedSessionError` under approved observation instead of silently filling at a later open.
+- Added cutoff verification guard in CLI `--date` execution (lines 222–236).
+
+### 3. Strict Data Quality Guards in `step_prospective_date()`
 **File:** `python/experiments/paper_trading.py`
-- Added `get_next_trading_date(current_date: date) -> date` (lines 1300–1318):
-  - Queries `daily_bars` for `MIN(date) > current_date`.
-  - Falls back to next business weekday (Monday–Friday) if at the frontier of available bars.
-- Fixed `PaperDecision.execution_date` in `step_prospective_date()` (line 2045):
-  - Evaluates `next_exec_d = self.get_next_trading_date(eval_date)`.
-  - Sets `PaperDecision.execution_date = next_exec_d` (strictly $t+1$), eliminating same-day execution claims under Variant B Market-On-Open policy.
+- Added comprehensive data quality validation prior to processing orders and candidates (lines 1823–1885):
+  - Check 1: Daily bars missing when features exist -> raises `DataQualityError`.
+  - Check 2: Features missing when bars exist -> raises `DataQualityError`.
+  - Check 3: Date mismatch between `eval_date` and database rows -> raises `DataQualityError`.
+  - Check 4: Missing required feature schema columns -> raises `DataQualityError`.
+  - Check 5: Zero joined common tickers between features and positive-close bars -> raises `DataQualityError`.
+  - Check 6: Infinite values (`np.isinf()`) or entirely null columns in candidate feature matrix -> raises `DataQualityError`.
+- Clean handling of holidays/weekends: returns `status: "NO_DATA"` without mutating state when both bars and features are absent.
 
-### 2. Persistent State Management & Idempotency
+### 4. Fail-Closed Persistent State Integrity & Migration
 **File:** `python/experiments/paper_trading.py`
-- Added `_default_state() -> dict[str, Any]` (lines 1240–1274):
-  - Initializes structured state: `cash`, `peak_equity`, `max_drawdown`, `processed_dates`, `pending_orders`, `order_history`, `open_positions`, `completed_trades`, `daily_equity_history`, `unfilled_summary`.
-- Added `load_state() -> dict[str, Any]` (lines 1276–1288):
-  - Safely loads `artifacts/phase_11f/paper_trading_state.json` with fallback to default state.
-- Added `save_state(state: dict[str, Any]) -> None` (lines 1290–1296):
-  - Writes atomically via `.tmp` temporary file and replacement to prevent corruption.
-- Added `reset_state() -> None` (lines 1298–1310):
-  - Unlinks `paper_trading_state.json` and associated paper trading CSV files for clean test resets.
-- Added Idempotency Guard in `step_prospective_date()` (lines 1470–1495):
-  - If `str(eval_date) in state["processed_dates"]`, returns `status="ALREADY_PROCESSED"` immediately without mutating balances or appending duplicate trades.
+- Hardened `load_state()` (lines 1300–1365):
+  - Validates JSON parseability, dictionary root type, all required state keys, non-negative cash balance, and validates `policy_bundle_hash` against `frozen_bundle.config_sha256`.
+  - Raises `StateIntegrityError` on any violation; never falls back to silently overwriting the corrupted state with default values.
+- Implemented `migrate_state(backup=True)` (lines 1390–1418):
+  - Creates a timestamped backup copy (`paper_trading_state_backup_YYYYMMDD_HHMMSS.json`) before migrating schema.
+  - Preserves custom cash balances, open positions, and completed trade history.
 
-### 3. Multi-Session Daily Lifecycle Execution
-**File:** `python/experiments/paper_trading.py`
-- Overhauled `step_prospective_date()` (lines 1440–2180):
-  - **Step A: Session Open Fills:**
-    * Processes orders in `state["pending_orders"]` scheduled for $\le eval\_date$.
-    * Sorts deterministically by `(-score, ticker)`.
-    * Checks zero-regime multiplier (`SKIPPED_REGIME_ZERO`), portfolio capacity / duplicates (`UNFILLED_CAPACITY`), and market bar availability / volume (`UNFILLED_SUSPENDED`).
-    * Evaluates pre-entry gap invalidations: gap down $\le -2\%$ (`INVALIDATED_GAP_DOWN`), gap up $\ge +6\%$ (`INVALIDATED_GAP_UP`), open deviation $> 5\%$ (`INVALIDATED_EXCESSIVE_DEV`).
-    * Applies three-tier sizing, 20% equity cap, and IDX 100-share lot rounding.
-    * Deducts cash outlay + 15 bps buy commission + 5 bps entry slippage, adding filled positions to `open_positions`.
-  - **Step B: Intraday Barrier Exits:**
-    * Evaluates open positions against daily OHLC: TP $+6\%$, SL $-2\%$, expiry at day 15 close.
-    * Conservative precedence: on ambiguous bars touching both TP and SL, resolves strictly as SL.
-    * Credits cash proceeds net of 25 bps sell commission and 5 bps exit slippage.
-    * Records closed positions into `state["completed_trades"]` with full MFE/MAE excursion metrics.
-  - **Step C: Mark-to-Market Equity Valuation:**
-    * Updates `last_known_close` and open position valuations.
-    * Computes total equity, peak equity, and continuous drawdown.
-    * Appends snapshot to `state["daily_equity_history"]`.
-  - **Step D: Evening Candidate Scoring:**
-    * Scores candidates at Close $t$ with frozen research models (`LOW_PRICE` regressor, `HIGHER_PRICE` classifier).
-    * Ranks deterministically (`-score, ticker`) and selects top 3% / top 1% under bull regime (`ihsg_vs_ema20 > 0`).
-    * Queues decisions into `pending_orders` scheduled for next session $t+1$.
-  - **Step E: CSV Export Synchronization:**
-    * Synchronizes `paper_trading_candidates.csv`, `paper_trading_decisions.csv`, `paper_trading_trades.csv`, and `paper_trading_daily_equity.csv`.
-
-### 4. Live Prospective Operational Status
-**File:** `python/experiments/paper_trading.py` & `scripts/run_forward_paper_trading.py`
-- Updated `generate_operational_status()` (lines 1320–1430):
-  - Adds `prospective_lifecycle` block reporting `has_started`, `first_observation_date`, `last_decision_date`, `last_execution_date`, `pending_orders_count`, `open_positions_count`, `completed_trades_count`, `realized_net_pnl_idr`, `unrealized_pnl_idr`, `cash_balance_idr`, `current_equity_idr`, `peak_equity_idr`, and `unfilled_counts`.
-  - Sets `operational_status = STATUS_OBSERVATION_ACTIVE` if `user_approved or has_started`, otherwise `STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`.
-- Updated `scripts/run_forward_paper_trading.py`:
-  - Added `--reset-state` flag (lines 76–80, 155–163).
-  - Enhanced `print_status_summary()` to print prospective observation metrics (lines 100–145).
-
-### 5. Unit & Regression Tests
-**File:** `tests/unit/test_prospective_lifecycle.py`
-- Created 14 comprehensive tests covering:
-  1. `test_user_approval_required_blocks_mutation`
-  2. `test_missing_artifacts_halts_prospective_date`
-  3. `test_decision_scheduled_for_next_eligible_session_not_date_t`
-  4. `test_next_session_valid_fill_at_open`
-  5. `test_next_session_gap_down_invalidation`
-  6. `test_next_session_gap_up_invalidation`
-  7. `test_next_session_excessive_deviation_invalidation`
-  8. `test_tp_exit_resolution`
-  9. `test_conservative_sl_precedence_on_ambiguous_candle`
-  10. `test_expiry_exit_at_holding_day_15`
-  11. `test_capacity_and_duplicate_ticker_constraints`
-  12. `test_state_persists_across_instances`
-  13. `test_idempotent_rerun_returns_already_processed`
-  14. `test_status_transitions_to_active_only_after_approved_prospective_run`
+### 5. Exhaustive Regression Testing Suite
+**Files:** `tests/unit/test_fail_closed_readiness.py`, `tests/unit/test_research_scoring_integrity.py`
+- Created `tests/unit/test_fail_closed_readiness.py` with 16 comprehensive tests:
+  1. `test_approval_recorded_without_scoring_does_not_activate_observation`
+  2. `test_status_user_approved_flag_does_not_activate_observation`
+  3. `test_historical_date_at_or_before_data_cutoff_rejected`
+  4. `test_new_valid_date_after_approval_can_be_processed`
+  5. `test_missing_bars_fails_closed_independently`
+  6. `test_missing_features_fails_closed_independently`
+  7. `test_infinite_feature_values_fails_closed`
+  8. `test_failed_scoring_or_persistence_does_not_create_false_start_record`
+  9. `test_missing_state_file_initializes_default`
+  10. `test_malformed_json_state_raises_state_integrity_error`
+  11. `test_missing_required_fields_in_state_raises_state_integrity_error`
+  12. `test_incompatible_policy_hash_in_state_raises_state_integrity_error`
+  13. `test_state_migration_preserves_backup_and_upgrades_schema`
+  14. `test_duplicate_and_out_of_order_dates_cannot_alter_portfolio`
+  15. `test_missed_session_in_prospective_observation_fails_closed`
+  16. `test_production_champion_fallback_remains_strictly_prohibited`
+- Updated operational status tests in `tests/unit/test_research_scoring_integrity.py`:
+  - Adjusted `test_operational_status_observation_active` to verify `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`.
+  - Added `test_operational_status_active_only_after_persisted_first_run`.
 
 ---
 
-## Verification Results
+## Verification Record
 
-- `pytest tests/unit/test_prospective_lifecycle.py`: **14 passed** in 7.33s.
-- `pytest tests/unit/test_forward_paper_trading.py`: **21 passed** in 2.81s.
-- `pytest tests/unit/test_research_scoring_integrity.py`: **24 passed** in 4.73s.
-- `pytest` (full test suite): **562 passed** (530 unit, 32 integration, 0 failures) in 130s.
-- `ruff check .`: **All checks passed** (0 errors).
-- `python scripts/run_forward_paper_trading.py --status`: Output verified clean and uncorrupted.
+| Verification Step | Command | Result |
+|---|---|---|
+| Fail-closed regression suite | `.venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py -v` | **PASS** (16/16 passed in 2.28s) |
+| Combined paper trading suite | `.venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py tests/unit/test_prospective_lifecycle.py tests/unit/test_forward_paper_trading.py` | **PASS** (76/76 passed in 11.05s) |
+| Repository linter | `.venv\Scripts\ruff check .` | **PASS** (0 errors) |
+| Unstarted state confirmation | `git status` | Clean; no production state file created |
 
 ---
 
 ## Testing Checklist
 
-After pulling these changes, verify the following:
+After pulling these changes, the operator should verify the following items:
 
-- [ ] Run unit tests for prospective lifecycle:
-  ```bash
-  pytest tests/unit/test_prospective_lifecycle.py -v
+- [ ] **1. Verify Operational Status Before Approval:**
+  ```powershell
+  python -m scripts.run_forward_paper_trading --status
   ```
-- [ ] Run full test suite to confirm zero regressions:
-  ```bash
-  pytest
+  *Verify that operational status reports `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`, `user_approved: False`, and `has_started: False`.*
+
+- [ ] **2. Authorize Prospective Observation:**
+  ```powershell
+  python -m scripts.run_forward_paper_trading --approve-observation
   ```
-- [ ] Verify linter clean status:
-  ```bash
-  ruff check .
+  *Verify that operational status transitions to `APPROVED_PENDING_FIRST_OBSERVATION`, recording `approval_timestamp` and `approval_data_cutoff: "2026-10-16"`.*
+
+- [ ] **3. Verify Status Flag Does Not Activate Observation:**
+  ```powershell
+  python -m scripts.run_forward_paper_trading --status --user-approved
   ```
-- [ ] Check operational status output:
-  ```bash
-  python scripts/run_forward_paper_trading.py --status
+  *Verify that status remains `APPROVED_PENDING_FIRST_OBSERVATION` and `has_started` remains `False`.*
+
+- [ ] **4. Verify Historical Rejection:**
+  ```powershell
+  python -m scripts.run_forward_paper_trading --date 2026-10-16 --user-approved
   ```
-  Confirm:
-  - `Status Code`: `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`
-  - `Scoring Artifacts`: `SCORING_ARTIFACTS_READY`
-  - `Observation Started`: `False`
-  - `Cash Balance`: `100,000,000 IDR`
-- [ ] Verify user approval guard without `--user-approved`:
-  ```bash
-  python scripts/run_forward_paper_trading.py --date 2026-10-19
+  *Verify that the command fails closed with an error indicating the date is at or before the market data cutoff.*
+
+- [ ] **5. Run Full Unit Test Suite:**
+  ```powershell
+  python -m pytest tests/unit/test_fail_closed_readiness.py -v
   ```
-  Confirm it exits with error requiring `--user-approved`.
-- [ ] Verify git working directory status:
-  ```bash
-  git status
+  *Verify all 16 fail-closed readiness tests pass.*
+
+- [ ] **6. Ingest Next Trading Session & Step Observation:**
+  ```powershell
+  python -m scripts.ingest_daily --date 2026-10-19
+  python -m scripts.run_forward_paper_trading --date 2026-10-19 --user-approved
   ```
+  *Verify that upon successful completion, operational status transitions to `OBSERVATION_ACTIVE` with 1 processed date.*

@@ -20,8 +20,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from python.experiments.paper_trading import (
+    DataQualityError,
+    InvalidProspectiveDateError,
+    MissedSessionError,
     MissingScoringArtifactError,
     PaperTradingEngine,
+    StateIntegrityError,
+    UserApprovalRequiredError,
 )
 
 logging.basicConfig(
@@ -39,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         "--status",
         action="store_true",
         help="Display operational status, fail-closed audit, and policy hash",
+    )
+    parser.add_argument(
+        "--approve-observation",
+        action="store_true",
+        help="Record explicit human authorization and cutoff for prospective paper trading",
     )
     parser.add_argument(
         "--export-benchmarks",
@@ -88,6 +98,9 @@ def print_status_summary(status: dict) -> None:
     print(f"Status Code:            {status['operational_status']}")
     print(f"Scoring Artifacts:      {status.get('scoring_artifacts_status', 'UNKNOWN')}")
     print(f"User Approved:          {status.get('user_approved', False)}")
+    app_meta = status.get("approval_metadata", {})
+    print(f"Approval Timestamp:     {app_meta.get('approval_timestamp', 'NONE')}")
+    print(f"Approval Data Cutoff:   {app_meta.get('approval_data_cutoff', 'NONE')}")
     print(f"Timestamp:              {status['timestamp']}")
     print(f"Policy Bundle Hash:     {status['policy_bundle_hash']}")
     fc_active = status["scoring_artifacts_audit"]["fail_closed_guard_active"]
@@ -144,7 +157,12 @@ def main() -> None:
     )
 
     no_cmd = not (
-        args.status or args.export_benchmarks or args.run_replay or args.date or args.reset_state
+        args.status
+        or args.approve_observation
+        or args.export_benchmarks
+        or args.run_replay
+        or args.date
+        or args.reset_state
     )
 
     if args.reset_state:
@@ -154,6 +172,20 @@ def main() -> None:
         )
         engine.reset_state()
         logger.info("State reset complete.")
+        return
+
+    if args.approve_observation:
+        logger.info("Recording explicit user approval for prospective observation...")
+        approval_info = engine.approve_observation()
+        logger.info("Approval recorded: %s", approval_info)
+        print("=" * 80)
+        print("PHASE 11F — PROSPECTIVE OBSERVATION APPROVAL RECORDED")
+        print("=" * 80)
+        print(f"User Approved:          {approval_info['user_approved']}")
+        print(f"Approval Timestamp:     {approval_info['approval_timestamp']}")
+        print(f"Market Data Cutoff:     {approval_info['approval_data_cutoff']}")
+        print(f"Operational Status:     {approval_info['operational_status']}")
+        print("=" * 80)
         return
 
     if args.status:
@@ -174,23 +206,47 @@ def main() -> None:
         return
 
     if args.date:
-        if not args.user_approved:
+        state = engine.load_state()
+        if not state.get("user_approved") and not args.user_approved:
             logger.error(
                 "Prospective observation date scoring on %s requires explicit user approval.",
                 args.date,
             )
             print(
                 "Error: Prospective observation date scoring requires explicit user approval. "
-                "Pass --user-approved to confirm execution."
+                "Pass --approve-observation first or provide --user-approved."
             )
             sys.exit(1)
 
         d = datetime.strptime(args.date, "%Y-%m-%d").date()
+        cutoff = state.get("approval_data_cutoff")
+        if cutoff is None:
+            cutoff = engine.get_latest_market_data_date()
+        if cutoff and d <= datetime.strptime(cutoff, "%Y-%m-%d").date():
+            logger.error(
+                "Requested prospective date %s is at or before cutoff %s. "
+                "Historical observation is prohibited.",
+                d,
+                cutoff,
+            )
+            print(
+                f"Error: Requested prospective date {d} is at or before market data cutoff "
+                f"{cutoff}. Historical prospective observation is prohibited."
+            )
+            sys.exit(1)
+
         logger.info("Evaluating prospective date %s...", d)
         try:
             res = engine.step_prospective_date(d, user_approved=True)
             logger.info("Prospective scoring result: %s", res)
-        except MissingScoringArtifactError as e:
+        except (
+            MissingScoringArtifactError,
+            DataQualityError,
+            InvalidProspectiveDateError,
+            MissedSessionError,
+            StateIntegrityError,
+            UserApprovalRequiredError,
+        ) as e:
             logger.error("Scoring aborted due to fail-closed guard: %s", e)
             print(f"FAIL_CLOSED: {e}")
             sys.exit(1)

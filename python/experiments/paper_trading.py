@@ -45,6 +45,7 @@ from scripts.audit_target_contract_runner import load_all_bars
 __all__ = [
     "CHAMPION_MODELS",
     "FEATURE_SCHEMA_30",
+    "FIRST_PROSPECTIVE_DATE",
     "FrozenPolicyBundle",
     "MissingScoringArtifactError",
     "PaperCandidate",
@@ -55,9 +56,23 @@ __all__ = [
     "RESEARCH_SCORING_ARTIFACTS",
     "ResearchClassifierModel",
     "ResearchRegressorModel",
+    "STATUS_BLOCKED_ON_SCORING_ARTIFACT",
+    "STATUS_OBSERVATION_ACTIVE",
+    "STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL",
+    "STATUS_SCORING_ARTIFACTS_READY",
+    "UserApprovalRequiredError",
     "classify_regime_three_tier",
     "get_default_frozen_policies",
 ]
+
+# Lifecycle and operational status constants
+STATUS_BLOCKED_ON_SCORING_ARTIFACT = "BLOCKED_ON_SCORING_ARTIFACT"
+STATUS_SCORING_ARTIFACTS_READY = "SCORING_ARTIFACTS_READY"
+STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL = (
+    "READY_FOR_OBSERVATION_PENDING_USER_APPROVAL"
+)
+STATUS_OBSERVATION_ACTIVE = "OBSERVATION_ACTIVE"
+FIRST_PROSPECTIVE_DATE = date(2026, 10, 19)
 
 # Production champions that MUST NOT be used for research scoring
 CHAMPION_MODELS = {
@@ -107,6 +122,10 @@ FEATURE_SCHEMA_30 = [
 
 class MissingScoringArtifactError(Exception):
     """Raised when research scoring model artifacts are missing and fallback is blocked."""
+
+
+class UserApprovalRequiredError(Exception):
+    """Raised when prospective date scoring is attempted without explicit user approval."""
 
 
 @dataclass
@@ -448,19 +467,35 @@ class PaperTradingEngine:
     def audit_scoring_artifacts(
         self, base_dir: Optional[Path] = None
     ) -> dict[str, Any]:
-        """Audits presence of persistent joblib model artifacts for research scoring.
+        """Audits presence and integrity of persistent joblib model artifacts for research scoring.
 
-        Fails closed: if exact H=15 Variant B artifacts are missing, reports
-        MISSING_SCORING_ARTIFACT and forbids fallback to production champions.
+        Fails closed: if exact H=15 Variant B artifacts are missing, hash mismatches,
+        or smoke test fails, reports BLOCKED_ON_SCORING_ARTIFACT and forbids fallback
+        to production champions.
         """
         root = base_dir or Path(__file__).resolve().parent.parent.parent
+        meta_path = root / "artifacts/phase_11f/research_models/research_model_metadata.json"
+
+        expected_metadata: Optional[dict[str, Any]] = None
+        if meta_path.is_file():
+            try:
+                expected_metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
         audit_results: dict[str, Any] = {
             "status": "PASS",
+            "scoring_artifacts_status": STATUS_SCORING_ARTIFACTS_READY,
             "fail_closed_guard_active": True,
             "champion_fallback_permitted": False,
             "artifacts": {},
             "missing_artifacts": [],
             "error_logs": [],
+        }
+
+        canonical_hashes = {
+            "LOW_PRICE": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+            "HIGHER_PRICE": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc",
         }
 
         for mode, rel_path in RESEARCH_SCORING_ARTIFACTS.items():
@@ -475,9 +510,85 @@ class PaperTradingEngine:
             }
             if not exists:
                 audit_results["missing_artifacts"].append(rel_path)
+                continue
+
+            # Compute SHA-256
+            h = hashlib.sha256()
+            with open(full_path, "rb") as f:
+                while chunk := f.read(65536):
+                    h.update(chunk)
+            file_sha = h.hexdigest()
+            audit_results["artifacts"][mode]["sha256"] = file_sha
+
+            # Verify against metadata if present, or canonical if base_dir is None
+            expected_sha = None
+            if (
+                expected_metadata
+                and "models" in expected_metadata
+                and mode in expected_metadata["models"]
+            ):
+                expected_sha = expected_metadata["models"][mode].get("sha256")
+            elif base_dir is None:
+                expected_sha = canonical_hashes.get(mode)
+
+            if expected_sha is not None:
+                audit_results["artifacts"][mode]["expected_sha256"] = expected_sha
+                if file_sha != expected_sha:
+                    audit_results["error_logs"].append(
+                        f"Hash mismatch for {mode} artifact at {rel_path}: "
+                        f"expected {expected_sha}, got {file_sha}"
+                    )
+                    audit_results["artifacts"][mode]["status"] = "HASH_MISMATCH"
+                    audit_results["status"] = STATUS_BLOCKED_ON_SCORING_ARTIFACT
+                    continue
+
+            # Load model and run smoke prediction
+            try:
+                if meta_path.is_file() and hasattr(ResearchRegressorModel, "load"):
+                    if mode == "LOW_PRICE":
+                        model = ResearchRegressorModel.load(full_path)
+                    else:
+                        model = ResearchClassifierModel.load(full_path)
+                else:
+                    model = joblib.load(full_path)
+            except Exception as load_err:
+                audit_results["error_logs"].append(
+                    f"Failed loading {mode} artifact at {rel_path}: {load_err}"
+                )
+                audit_results["artifacts"][mode]["status"] = "LOAD_FAILURE"
+                audit_results["status"] = STATUS_BLOCKED_ON_SCORING_ARTIFACT
+                continue
+
+            # Smoke prediction on 1 sample of FEATURE_SCHEMA_30
+            try:
+                smoke_df = pd.DataFrame([{col: 0.0 for col in FEATURE_SCHEMA_30}])
+                if mode == "LOW_PRICE":
+                    smoke_score = model.predict(smoke_df)
+                else:
+                    smoke_score = (
+                        model.predict_probability(smoke_df)
+                        if hasattr(model, "predict_probability")
+                        else (
+                            model.predict_proba(smoke_df)[:, 1]
+                            if hasattr(model, "predict_proba")
+                            else model.predict(smoke_df)
+                        )
+                    )
+                if not np.all(np.isfinite(smoke_score)):
+                    audit_results["error_logs"].append(
+                        f"Smoke test produced non-finite score for {mode}: {smoke_score}"
+                    )
+                    audit_results["status"] = STATUS_BLOCKED_ON_SCORING_ARTIFACT
+                else:
+                    audit_results["artifacts"][mode]["smoke_test"] = "PASS"
+            except Exception as smoke_err:
+                audit_results["error_logs"].append(
+                    f"Smoke prediction failed for {mode}: {smoke_err}"
+                )
+                audit_results["status"] = STATUS_BLOCKED_ON_SCORING_ARTIFACT
 
         if audit_results["missing_artifacts"]:
-            audit_results["status"] = "BLOCKED_ON_SCORING_ARTIFACT"
+            audit_results["status"] = STATUS_BLOCKED_ON_SCORING_ARTIFACT
             audit_results["error_logs"].append(
                 f"Missing {len(audit_results['missing_artifacts'])} research scoring artifact(s): "
                 f"{', '.join(audit_results['missing_artifacts'])}. "
@@ -488,6 +599,9 @@ class PaperTradingEngine:
                 "Fail-closed guard active: Never fall back to production champions "
                 f"({', '.join(CHAMPION_MODELS.values())}) for research scoring."
             )
+
+        if audit_results["status"] != "PASS":
+            audit_results["scoring_artifacts_status"] = STATUS_BLOCKED_ON_SCORING_ARTIFACT
 
         return audit_results
 
@@ -1152,15 +1266,21 @@ class PaperTradingEngine:
         total_candidates: int = 0,
         total_decisions: int = 0,
         total_trades: int = 0,
+        user_approved: bool = False,
+        base_dir: Optional[Path] = None,
     ) -> dict[str, Any]:
         """Generates comprehensive operational status and writes to JSON."""
-        audit = self.audit_scoring_artifacts()
+        audit = self.audit_scoring_artifacts(base_dir=base_dir)
 
-        status_code = (
-            "READY_FOR_OBSERVATION"
-            if audit["status"] == "PASS"
-            else "READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)"
-        )
+        if audit["status"] != "PASS":
+            operational_status = STATUS_BLOCKED_ON_SCORING_ARTIFACT
+            scoring_artifacts_status = STATUS_BLOCKED_ON_SCORING_ARTIFACT
+        else:
+            scoring_artifacts_status = STATUS_SCORING_ARTIFACTS_READY
+            if user_approved:
+                operational_status = STATUS_OBSERVATION_ACTIVE
+            else:
+                operational_status = STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL
 
         # Check DB data quality
         conn = sqlite3.connect(self.db_path)
@@ -1176,9 +1296,23 @@ class PaperTradingEngine:
 
         status_dict = {
             "phase": "Phase 11F — Forward Paper Trading & Frozen Policy Validation",
-            "operational_status": status_code,
+            "operational_status": operational_status,
+            "scoring_artifacts_status": scoring_artifacts_status,
+            "user_approved": user_approved,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "policy_bundle_hash": self.frozen_bundle.config_sha256,
+            "cutoff_metadata": {
+                "training_decision_cutoff_date": "2026-09-25",
+                "forward_label_final_bar_date": "2026-10-16",
+                "training_build_timestamp": "2026-10-19T09:22:28.960379+00:00",
+                "first_allowed_prospective_date": "2026-10-19",
+                "data_finality_proof": (
+                    "All 15-day forward outcome horizons for training decisions up to 2026-09-25 "
+                    "matured on or before market close 2026-10-16 (15 trading days: Sep 28-Oct 2, "
+                    "Oct 5-9, Oct 12-16). All labels were fully determined from historical bars "
+                    "without prospective data, guaranteeing zero prospective leakage."
+                ),
+            },
             "scoring_artifacts_audit": audit,
             "champion_protection": {
                 "LOW_PRICE_champion": CHAMPION_MODELS["LOW_PRICE"],
@@ -1218,19 +1352,29 @@ class PaperTradingEngine:
         return status_dict
 
     def step_prospective_date(
-        self, eval_date: date, base_dir: Optional[Path] = None
+        self,
+        eval_date: date,
+        user_approved: bool = False,
+        base_dir: Optional[Path] = None,
     ) -> dict[str, Any]:
         """Attempts prospective candidate scoring for a newly observed trading date.
 
         Fail-closed guard: if persistent H=15 Variant B research scoring
         artifacts are missing, raises MissingScoringArtifactError and halts.
+
+        Requires explicit user approval for prospective observation.
         """
         audit = self.audit_scoring_artifacts(base_dir=base_dir)
         if audit["status"] != "PASS":
-            self.generate_operational_status()
+            self.generate_operational_status(user_approved=user_approved, base_dir=base_dir)
             raise MissingScoringArtifactError(
                 f"Prospective scoring blocked on {eval_date}: "
                 f"{audit['error_logs'][0]}"
+            )
+
+        if not user_approved:
+            raise UserApprovalRequiredError(
+                "Prospective observation date scoring requires explicit user approval."
             )
 
         root = base_dir or Path(__file__).resolve().parent.parent.parent
@@ -1273,7 +1417,18 @@ class PaperTradingEngine:
 
         for mode, policy in self.frozen_bundle.policies.items():
             model_path = root / policy.model_artifact_path
-            model = joblib.load(model_path)
+            if mode == "LOW_PRICE" and hasattr(ResearchRegressorModel, "load"):
+                try:
+                    model = ResearchRegressorModel.load(model_path)
+                except Exception:
+                    model = joblib.load(model_path)
+            elif mode == "HIGHER_PRICE" and hasattr(ResearchClassifierModel, "load"):
+                try:
+                    model = ResearchClassifierModel.load(model_path)
+                except Exception:
+                    model = joblib.load(model_path)
+            else:
+                model = joblib.load(model_path)
 
             mode_rows = []
             for _, row in df_feat.iterrows():

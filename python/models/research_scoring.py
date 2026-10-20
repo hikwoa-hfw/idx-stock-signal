@@ -7,8 +7,10 @@ and model prediction for LOW_PRICE and HIGHER_PRICE research policies.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Union
+from pathlib import Path
+from typing import Any, Optional, Self, Union
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
@@ -37,6 +39,16 @@ class BaseResearchScoringModel:
         self.estimator_ = estimator
         self.training_cutoff = training_cutoff
         self.metadata = metadata or {}
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> Self:
+        """Loads serialized model artifact from path and verifies type."""
+        obj = joblib.load(path)
+        if not isinstance(obj, cls):
+            raise TypeError(
+                f"Expected instance of {cls.__name__}, got {type(obj).__name__}"
+            )
+        return obj
 
     def _validate_and_transform_X(self, X: Union[pd.DataFrame, np.ndarray, list]) -> np.ndarray:
         """Validates feature columns against feature_schema and applies median imputation."""

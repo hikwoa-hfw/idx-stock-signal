@@ -57,6 +57,11 @@ def parse_args() -> argparse.Namespace:
         help="Simulate prospective candidate scoring on specific trading date (YYYY-MM-DD)",
     )
     parser.add_argument(
+        "--user-approved",
+        action="store_true",
+        help="Explicitly authorize prospective observation scoring or active observation status",
+    )
+    parser.add_argument(
         "--db-path",
         type=str,
         default=None,
@@ -76,6 +81,8 @@ def print_status_summary(status: dict) -> None:
     print("PHASE 11F — FORWARD PAPER TRADING OPERATIONAL STATUS")
     print("=" * 80)
     print(f"Status Code:            {status['operational_status']}")
+    print(f"Scoring Artifacts:      {status.get('scoring_artifacts_status', 'UNKNOWN')}")
+    print(f"User Approved:          {status.get('user_approved', False)}")
     print(f"Timestamp:              {status['timestamp']}")
     print(f"Policy Bundle Hash:     {status['policy_bundle_hash']}")
     fc_active = status["scoring_artifacts_audit"]["fail_closed_guard_active"]
@@ -100,7 +107,7 @@ def main() -> None:
     no_cmd = not (args.status or args.export_benchmarks or args.run_replay or args.date)
 
     if args.status:
-        status = engine.generate_operational_status()
+        status = engine.generate_operational_status(user_approved=args.user_approved)
         print_status_summary(status)
         return
 
@@ -117,10 +124,21 @@ def main() -> None:
         return
 
     if args.date:
+        if not args.user_approved:
+            logger.error(
+                "Prospective observation date scoring on %s requires explicit user approval.",
+                args.date,
+            )
+            print(
+                "Error: Prospective observation date scoring requires explicit user approval. "
+                "Pass --user-approved to confirm execution."
+            )
+            sys.exit(1)
+
         d = datetime.strptime(args.date, "%Y-%m-%d").date()
         logger.info("Evaluating prospective date %s...", d)
         try:
-            res = engine.step_prospective_date(d)
+            res = engine.step_prospective_date(d, user_approved=True)
             logger.info("Prospective scoring result: %s", res)
         except MissingScoringArtifactError as e:
             logger.error("Scoring aborted due to fail-closed guard: %s", e)
@@ -149,6 +167,7 @@ def main() -> None:
             total_candidates=res["candidates_count"],
             total_decisions=res["decisions_count"],
             total_trades=res["trades_count"],
+            user_approved=args.user_approved,
         )
         print_status_summary(status)
         return
@@ -163,6 +182,7 @@ def main() -> None:
             total_candidates=res["candidates_count"],
             total_decisions=res["decisions_count"],
             total_trades=res["trades_count"],
+            user_approved=args.user_approved,
         )
         print_status_summary(status)
 

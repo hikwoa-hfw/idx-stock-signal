@@ -2,23 +2,25 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11F.1 — Research Scoring Artifact Finalization & Forward Observation Readiness`
-- **Audit Date:** `2026-10-19 23:30 WIB`
+- **Current Phase:** `Phase 11F.2 — Reconcile Research Artifact Paths, Policy Hash, and Operational Readiness`
+- **Audit Date:** `2026-10-19 23:45 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11F.1 research scoring models, schema-enforcing wrappers, locked policy hash, and full test suite
-- **Overall Status:** `PASS (READY_FOR_OBSERVATION / OBSERVATION_SCHEDULE_ACTIVE)`
+- **Latest Commit SHA:** Working tree with Phase 11F.2 lifecycle status separation, UserApprovalRequiredError, and test suite reconciliation
+- **Overall Status:** `PASS (READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Frozen forward paper-trading protocol and research scoring artifacts finalized for prospective market evaluation without modifying active production champions:
-    1. **Research Scoring Estimators Serialized:** Fitted and serialized exact H=15 Variant B estimators up to cutoff `2026-09-25`: `lgb_regressor_h15_variant_b.joblib` (SHA-256: `84170b51...`) and `lgb_full_classifier_h15_variant_b.joblib` (SHA-256: `3192aa5c...`) in `artifacts/phase_11f/research_models/` with full metadata documentation.
-    2. **Strict Schema & Causal Imputation:** Codified `ResearchRegressorModel` and `ResearchClassifierModel` enforcing strict 30-feature schema ordering and training-derived median imputation.
-    3. **Canonical Policy Hash Locked:** Updated artifact references and locked canonical configuration SHA-256: `8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71`. Fail-closed audit transitioned from `BLOCKED` to `PASS`.
-    4. **Historical Replay & Test Count Reconciled:** Reconciled 309 continuous replay trades vs 298 fold-partitioned trades (+11 unpurged boundary trades). Verified 541 total passed tests (509 unit, 32 integration).
-    5. **Decision:** Candidate policies are NOT promoted to production champion status. Current champions remain active and untouched. The forward paper-trading system is set to `READY_FOR_OBSERVATION (OBSERVATION_SCHEDULE_ACTIVE)`.
-- **Next Permitted Action:** Execute daily prospective paper-trading scoring on new market bars at 16:15 WIB under the 3-month observation window.
+  - Reconciled research artifact paths, policy configuration hash, and operational status semantics for prospective three-month paper-trading observation pending explicit user approval:
+    1. **Research Artifact Paths & SHA-256 Verified:** Confirmed persistent estimators in `artifacts/phase_11f/research_models/` (`lgb_regressor_h15_variant_b.joblib` SHA-256: `84170b51...`, `lgb_full_classifier_h15_variant_b.joblib` SHA-256: `3192aa5c...`, `research_model_metadata.json`). Documented that `.joblib` files are gitignored and generated deterministically via `scripts/train_phase11f_research_models.py`.
+    2. **Runtime Policy Bundle Hash Verified:** Canonical SHA-256 hash `8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71` matches runtime `get_default_frozen_policies().compute_sha256()` and `artifacts/phase_11f/frozen_policy_config.json`.
+    3. **Operational Status Semantics Decoupled:** Decoupled 4 lifecycle statuses: `BLOCKED_ON_SCORING_ARTIFACT`, `SCORING_ARTIFACTS_READY`, `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`, and `OBSERVATION_ACTIVE`.
+    4. **Human Authorization Gate Enforced:** Implemented `UserApprovalRequiredError` and `--user-approved` CLI flag. Prospective scoring on new trading dates is strictly blocked until explicit human approval is supplied.
+    5. **Enhanced Artifact & Environment Auditing:** `audit_scoring_artifacts()` validates SHA-256 against metadata, loads models via `.load()`, and executes finite-score smoke inference on `FEATURE_SCHEMA_30`.
+    6. **Cutoff Metadata Clarified:** Training cutoff `2026-09-25`, label finality bar date `2026-10-16`, training timestamp `2026-10-19T09:22:28.960379+00:00`, first prospective date `2026-10-19`.
+    7. **Decision:** Candidate policies remain unpromoted; current champions remain active and protected. System is `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`.
+- **Next Permitted Action:** Await explicit user authorization before launching prospective forward observation. Do not execute prospective scoring without approval.
 
 ---
 
@@ -72,9 +74,9 @@ The repository maintains dedicated, detailed reports for each major governance a
    - **Status:** `PASS (READY_FOR_OBSERVATION / BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)` (524 total suite tests passed; 21 unit tests added; champions preserved).
 
 10. [docs/18_phase_11f_research_scoring_and_observation_readiness_report.md](docs/18_phase_11f_research_scoring_and_observation_readiness_report.md)
-    - **Phase 11F.1:** Research Scoring Artifact Finalization & Forward Observation Readiness
-    - **Scope:** Reconstructed H=15 Variant B research scoring estimators (`artifacts/phase_11f/research_models/`), strict schema ordering and causal median imputation wrappers, canonical policy hash locking (`8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71`), fail-closed guard transition to PASS, continuous replay trade reconciliation (309 vs 298–301), test count reconciliation (541 passed: 509 unit, 32 integration), and 3-month operational observation schedule.
-    - **Status:** `PASS (READY_FOR_OBSERVATION)` (17 new unit tests added, 541 total suite tests passed; champions preserved).
+    - **Phase 11F.2:** Reconcile Research Artifact Paths, Policy Hash, and Operational Readiness
+    - **Scope:** Reconciled research artifact paths (`artifacts/phase_11f/research_models/`), verified runtime canonical policy hash (`8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71`), decoupled 4 lifecycle statuses, implemented `UserApprovalRequiredError` and `--user-approved` CLI guard, enhanced `audit_scoring_artifacts()` with SHA-256 and smoke tests, documented cutoff metadata with data finality proof, and verified test suite.
+    - **Status:** `PASS (READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (24 unit tests in scoring module, 548 total suite tests passed: 516 unit, 32 integration; champions preserved).
 
 ---
 

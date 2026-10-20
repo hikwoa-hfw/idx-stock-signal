@@ -16,6 +16,7 @@ Verifies:
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -30,7 +31,12 @@ from python.experiments.paper_trading import (
     CHAMPION_MODELS,
     FEATURE_SCHEMA_30,
     RESEARCH_SCORING_ARTIFACTS,
+    STATUS_BLOCKED_ON_SCORING_ARTIFACT,
+    STATUS_OBSERVATION_ACTIVE,
+    STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL,
+    STATUS_SCORING_ARTIFACTS_READY,
     PaperTradingEngine,
+    UserApprovalRequiredError,
     get_default_frozen_policies,
 )
 from python.models.research_scoring import (
@@ -245,7 +251,7 @@ class TestResearchScoringIntegrity:
             artifacts_dir=tmp_path / "artifacts",
         )
         # Sunday with no data
-        res = engine.step_prospective_date(date(2026, 10, 18))
+        res = engine.step_prospective_date(date(2026, 10, 18), user_approved=True)
         assert res["status"] == "NO_DATA"
         assert res["candidates_count"] == 0
         assert res["decisions_count"] == 0
@@ -306,7 +312,7 @@ class TestResearchScoringIntegrity:
         )
 
         # Run 1 on 2026-10-14
-        res1 = engine.step_prospective_date(date(2026, 10, 14))
+        res1 = engine.step_prospective_date(date(2026, 10, 14), user_approved=True)
         assert res1["candidates_count"] > 0
         cands_csv = art_dir / "paper_trading_candidates.csv"
         assert cands_csv.exists()
@@ -314,7 +320,7 @@ class TestResearchScoringIntegrity:
         count1 = len(df1)
 
         # Run 2 on same date
-        engine.step_prospective_date(date(2026, 10, 14))
+        engine.step_prospective_date(date(2026, 10, 14), user_approved=True)
         df2 = pd.read_csv(cands_csv)
         count2 = len(df2)
 
@@ -372,3 +378,124 @@ class TestResearchScoringIntegrity:
 
         probs_high = higher_price_model.predict_probability(df_all_nan)
         assert np.all(np.isfinite(probs_high))
+
+    def test_runtime_bundle_hash_matches_frozen_policy_config_json(
+        self, repo_root: Path
+    ):
+        """Verifies runtime hash from get_default_frozen_policies()
+        matches frozen_policy_config.json.
+        """
+        config_path = repo_root / "artifacts/phase_11f/frozen_policy_config.json"
+        assert config_path.is_file(), f"Missing config file at {config_path}"
+        with open(config_path, encoding="utf-8") as f:
+            cfg_data = json.load(f)
+        canonical_sha = cfg_data["config_sha256"]
+
+        runtime_bundle = get_default_frozen_policies()
+        runtime_sha = runtime_bundle.compute_sha256()
+
+        assert runtime_sha == canonical_sha
+        assert runtime_sha == "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71"
+
+    def test_missing_scoring_artifact_reports_blocked_status(
+        self, repo_root: Path, tmp_path: Path
+    ):
+        """Verifies missing research artifacts result in BLOCKED_ON_SCORING_ARTIFACT."""
+        empty_dir = tmp_path / "empty_models"
+        empty_dir.mkdir(parents=True, exist_ok=True)
+        engine = PaperTradingEngine(
+            db_path=str(repo_root / "datasets/stock_signals.db"),
+            artifacts_dir=tmp_path / "artifacts",
+        )
+        audit = engine.audit_scoring_artifacts(base_dir=empty_dir)
+        assert audit["status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
+        assert audit["scoring_artifacts_status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
+
+        status = engine.generate_operational_status(base_dir=empty_dir)
+        assert status["operational_status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
+        assert status["scoring_artifacts_status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
+
+    def test_hash_mismatch_reports_blocked_status(
+        self, repo_root: Path, tmp_path: Path
+    ):
+        """Verifies hash mismatch between artifact and metadata
+        reports BLOCKED_ON_SCORING_ARTIFACT.
+        """
+        tampered_dir = tmp_path / "tampered"
+        rel_dir = tampered_dir / "artifacts/phase_11f/research_models"
+        rel_dir.mkdir(parents=True, exist_ok=True)
+
+        meta_file = "artifacts/phase_11f/research_models/research_model_metadata.json"
+        real_meta_path = repo_root / meta_file
+        meta_content = real_meta_path.read_text(encoding="utf-8")
+        (rel_dir / "research_model_metadata.json").write_text(meta_content, encoding="utf-8")
+
+        for rel_file in RESEARCH_SCORING_ARTIFACTS.values():
+            file_name = Path(rel_file).name
+            (rel_dir / file_name).write_bytes(b"corrupted_tampered_model_bytes")
+
+        engine = PaperTradingEngine(
+            db_path=str(repo_root / "datasets/stock_signals.db"),
+            artifacts_dir=tmp_path / "artifacts",
+        )
+        audit = engine.audit_scoring_artifacts(base_dir=tampered_dir)
+        assert audit["status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
+        assert audit["scoring_artifacts_status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
+        assert len(audit["error_logs"]) > 0
+        assert "Hash mismatch" in audit["error_logs"][0]
+
+        status = engine.generate_operational_status(base_dir=tampered_dir)
+        assert status["operational_status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
+
+    def test_operational_status_pending_approval(self, repo_root: Path, tmp_path: Path):
+        """Verifies artifacts ready and user_approved=False
+        -> READY_FOR_OBSERVATION_PENDING_USER_APPROVAL.
+        """
+        engine = PaperTradingEngine(
+            db_path=str(repo_root / "datasets/stock_signals.db"),
+            artifacts_dir=tmp_path / "artifacts",
+        )
+        status = engine.generate_operational_status(user_approved=False)
+        assert status["operational_status"] == STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL
+        assert status["scoring_artifacts_status"] == STATUS_SCORING_ARTIFACTS_READY
+        assert status["user_approved"] is False
+
+    def test_operational_status_observation_active(self, repo_root: Path, tmp_path: Path):
+        """Verifies artifacts ready and user_approved=True -> OBSERVATION_ACTIVE."""
+        engine = PaperTradingEngine(
+            db_path=str(repo_root / "datasets/stock_signals.db"),
+            artifacts_dir=tmp_path / "artifacts",
+        )
+        status = engine.generate_operational_status(user_approved=True)
+        assert status["operational_status"] == STATUS_OBSERVATION_ACTIVE
+        assert status["scoring_artifacts_status"] == STATUS_SCORING_ARTIFACTS_READY
+        assert status["user_approved"] is True
+
+    def test_step_prospective_date_without_user_approval_raises(
+        self, repo_root: Path, tmp_path: Path
+    ):
+        """Verifies step_prospective_date without user_approved=True
+        raises UserApprovalRequiredError.
+        """
+        engine = PaperTradingEngine(
+            db_path=str(repo_root / "datasets/stock_signals.db"),
+            artifacts_dir=tmp_path / "artifacts",
+        )
+        with pytest.raises(UserApprovalRequiredError, match="requires explicit user approval"):
+            engine.step_prospective_date(date(2026, 10, 19), user_approved=False)
+
+        with pytest.raises(UserApprovalRequiredError, match="requires explicit user approval"):
+            engine.step_prospective_date(date(2026, 10, 19))
+
+    def test_step_prospective_date_with_user_approval_succeeds(
+        self, repo_root: Path, tmp_path: Path
+    ):
+        """Verifies step_prospective_date with user_approved=True succeeds on valid dates."""
+        engine = PaperTradingEngine(
+            db_path=str(repo_root / "datasets/stock_signals.db"),
+            artifacts_dir=tmp_path / "artifacts",
+        )
+        res = engine.step_prospective_date(date(2026, 10, 19), user_approved=True)
+        assert res["status"] in ("SCORED", "NO_DATA")
+        assert "candidates_count" in res
+        assert "decisions_count" in res

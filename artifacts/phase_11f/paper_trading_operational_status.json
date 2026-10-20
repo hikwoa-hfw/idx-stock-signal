@@ -5,6 +5,13 @@
     "fallback_permitted": false,
     "status": "IMMUTABLE_AND_PROTECTED"
   },
+  "cutoff_metadata": {
+    "data_finality_proof": "All 15-day forward outcome horizons for training decisions up to 2026-09-25 matured on or before market close 2026-10-16 (15 trading days: Sep 28-Oct 2, Oct 5-9, Oct 12-16). All labels were fully determined from historical bars without prospective data, guaranteeing zero prospective leakage.",
+    "first_allowed_prospective_date": "2026-10-19",
+    "forward_label_final_bar_date": "2026-10-16",
+    "training_build_timestamp": "2026-10-19T09:22:28.960379+00:00",
+    "training_decision_cutoff_date": "2026-09-25"
+  },
   "data_quality": {
     "database_path": "./datasets/stock_signals.db",
     "last_historical_bar_date": "2026-10-16",
@@ -28,7 +35,7 @@
     "reporting_cadence": "weekly",
     "trailing_stops_active": false
   },
-  "operational_status": "READY_FOR_OBSERVATION",
+  "operational_status": "READY_FOR_OBSERVATION_PENDING_USER_APPROVAL",
   "phase": "Phase 11F \u2014 Forward Paper Trading & Frozen Policy Validation",
   "policy_bundle_hash": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
   "scoring_artifacts_audit": {
@@ -38,6 +45,9 @@
         "champion_substitute_blocked": "lightgbm_classification_20261014_093607",
         "exists": true,
         "expected_artifact": "artifacts/phase_11f/research_models/lgb_full_classifier_h15_variant_b.joblib",
+        "expected_sha256": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc",
+        "sha256": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc",
+        "smoke_test": "PASS",
         "status": "AVAILABLE"
       },
       "LOW_PRICE": {
@@ -45,6 +55,9 @@
         "champion_substitute_blocked": "lightgbm_classification_20261014_093522",
         "exists": true,
         "expected_artifact": "artifacts/phase_11f/research_models/lgb_regressor_h15_variant_b.joblib",
+        "expected_sha256": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+        "sha256": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+        "smoke_test": "PASS",
         "status": "AVAILABLE"
       }
     },
@@ -52,7 +65,10 @@
     "error_logs": [],
     "fail_closed_guard_active": true,
     "missing_artifacts": [],
+    "scoring_artifacts_status": "SCORING_ARTIFACTS_READY",
     "status": "PASS"
   },
-  "timestamp": "2026-10-19T09:57:10.807095+00:00"
+  "scoring_artifacts_status": "SCORING_ARTIFACTS_READY",
+  "timestamp": "2026-10-20T02:10:10.565862+00:00",
+  "user_approved": false
 }

@@ -584,7 +584,9 @@ class TestFailClosedScoringArtifactGuard:
             joblib.dump(dummy_model, full_path)
 
         # 1. Bull date (2026-09-18) where ihsg_vs_ema20 > 0: decisions generated
-        res_bull = mock_engine.step_prospective_date(date(2026, 9, 18), base_dir=tmp_path)
+        res_bull = mock_engine.step_prospective_date(
+            date(2026, 9, 18), user_approved=True, base_dir=tmp_path
+        )
         assert res_bull["status"] == "SCORED"
         assert res_bull["candidates_count"] > 0
         assert res_bull["decisions_count"] > 0
@@ -592,7 +594,9 @@ class TestFailClosedScoringArtifactGuard:
         assert (mock_engine.artifacts_dir / "paper_trading_decisions.csv").exists()
 
         # 2. Bear date (2026-10-14) where ihsg_vs_ema20 <= 0: candidates scored, decisions 0
-        res_bear = mock_engine.step_prospective_date(date(2026, 10, 14), base_dir=tmp_path)
+        res_bear = mock_engine.step_prospective_date(
+            date(2026, 10, 14), user_approved=True, base_dir=tmp_path
+        )
         assert res_bear["status"] == "SCORED"
         assert res_bear["candidates_count"] > 0
         assert res_bear["decisions_count"] == 0
@@ -641,6 +645,9 @@ class TestOperationalStatusAndBenchmarks:
         assert status["operational_status"] in (
             "READY_FOR_OBSERVATION",
             "READY_FOR_OBSERVATION (BLOCKED_ON_SCORING_ARTIFACT_OR_APPROVAL)",
+            "READY_FOR_OBSERVATION_PENDING_USER_APPROVAL",
+            "OBSERVATION_ACTIVE",
+            "BLOCKED_ON_SCORING_ARTIFACT",
         )
         assert status["policy_bundle_hash"] != ""
         assert "scoring_artifacts_audit" in status

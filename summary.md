@@ -944,3 +944,23 @@ Log Perubahan Tambahan (15 Oktober 2026)
    5. Menambahkan 7 unit test pada `tests/unit/test_research_scoring_integrity.py` (memvalidasi kesesuaian hash bundle runtime vs JSON, blokir saat artefak hilang, blokir saat hash tidak cocok, status pending approval, status active observation, penolakan saat tanpa approval, dan keberhasilan eksekusi saat approved). Total test suite mencapai 548 passed (516 unit, 32 integration; ruff clean 0 error).
    6. Memperbarui laporan formal universal `docs/18_phase_11f_research_scoring_and_observation_readiness_report.md`, `audit_report.md` (entri 10 dan status operasional), dan `walkthrough.md`.
 
+64. Phase 11F.3 — Penyelesaian Daur Hidup Eksekusi Paper Trading Prospektif & State Persistence (20 Oktober 2026)
+   Masalah:
+   1. Pada implementasi Phase 11F.1/11F.2 sebelumnya, `PaperDecision.execution_date` disetel ke tanggal keputusan yang sama ($t$) dan alur `step_prospective_date()` hanya melakukan penskoran kandidat serta penulisan file CSV keputusan tanpa memproses eksekusi order tertunda, manajemen posisi terbuka, evaluasi exit TP/SL/expiry, kalkulasi PnL terealisasi, maupun valuasi ekuitas mark-to-market.
+   2. Status portofolio dan posisi perdagangan bersifat mutable dan tidak boleh hanya mengandalkan file CSV sebagai satu-satunya penyimpan data; order tertunda, posisi terbuka, riwayat order, dan time series ekuitas harus persisten secara aman dan atomik di antara pemanggilan proses CLI yang terpisah.
+   3. Pemanggilan ulang (rerun) pada sesi tanggal yang sama berisiko menduplikasi order, posisi, trade, atau merusak saldo kas portofolio (perlu jaminan idempotensi mutlak).
+   4. Perintah status operasional (`--status`) sebelumnya hanya melaporkan kesiapan artefak biner dan belum menampilkan metrik daur hidup observasi prospektif secara nyata.
+   Solusi:
+   1. Memperbaiki penetapan tanggal eksekusi: mengimplementasikan metode `get_next_trading_date()` yang mencari tanggal bursa aktif berikutnya ($t+1$) dari bar database (atau fallback hari kerja Senin–Jumat), sehingga `PaperDecision.execution_date` selalu terjadwal di masa depan dan tidak pernah sama dengan tanggal keputusan $t$.
+   2. Menyelesaikan daur hidup harian prospektif lengkap pada `PaperTradingEngine.step_prospective_date()`:
+      - Memproses order tertunda dari sesi sebelumnya pada Open sesi $t+1$ dengan validasi gap pre-entry (gap down $\le -2\%$, gap up $\ge +6\%$, deviasi $> 5\%$, volume $\le 0$).
+      - Menerapkan batasan kapasitas portofolio (maksimal 5 posisi terbuka konkuren, penolakan ticker duplikat), pembatasan modal 20% ekuitas, convicton sizing tiga-tingkat (1.0x, 0.5x, 0.0x), dan pembulatan round-lot 100 lembar (aturan IDX).
+      - Menghitung friksi transaksi nominal 50 bps round-trip secara konsisten (15 bps komisi beli, 25 bps komisi jual, 5 bps slippage masuk, 5 bps slippage keluar).
+      - Memperbarui posisi terbuka terhadap OHLC sesi harian: evaluasi TP $+6\%$, SL $-2\%$, preseden konservatif pada candle ambigu (SL mendahului TP), dan batas kadaluarsa 15 hari bursa (exit pada Close).
+      - Melakukan kalkulasi valuasi ekuitas mark-to-market (MTM), ekuitas puncak (peak equity), dan continuous drawdown portofolio pada akhir hari (EOD).
+   3. Mengembangkan manajemen state persisten aman `paper_trading_state.json` via metode `load_state()`, `save_state()`, dan `reset_state()` dengan mekanisme penulisan atomik (temporary file replace). Menjamin idempotensi: jika tanggal sesi telah diproses (`processed_dates`), sistem langsung mengembalikan status `ALREADY_PROCESSED` tanpa mutasi saldo kas maupun duplikasi rekaman.
+   4. Memperbarui pelaporan status operasional `generate_operational_status()` dan CLI `scripts/run_forward_paper_trading.py --status`: menyajikan rincian lengkap order tertunda, posisi terbuka aktif, trade selesai, saldo kas, MTM equity, PnL terealisasi/belum terealisasi, drawdown, dan ringkasan order yang tidak terisi/terinvaliasi.
+   5. Mempertahankan gerbang otorisasi pengguna (`UserApprovalRequiredError`): status operasional hanya bertransisi menjadi `OBSERVATION_ACTIVE` setelah adanya observasi prospektif yang disetujui (`user_approved=True`) dan berhasil dieksekusi. Tidak ada observasi prospektif yang dimulai selama pengujian ini.
+   6. Menambahkan 14 unit dan regression test komprehensif pada `tests/unit/test_prospective_lifecycle.py`. Total test suite meningkat menjadi 562 passed (530 unit, 32 integration, 0 failure; ruff clean 0 error).
+   7. Menyusun laporan penyelesaian formal `docs/19_phase_11f_prospective_lifecycle_completion_report.md` berbasis universal template, memperbarui `audit_report.md` (entri 11), dan memperbarui `walkthrough.md`.
+

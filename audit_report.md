@@ -2,25 +2,24 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11F.2 — Reconcile Research Artifact Paths, Policy Hash, and Operational Readiness`
-- **Audit Date:** `2026-10-19 23:45 WIB`
+- **Current Phase:** `Phase 11F.3 — Complete Prospective Paper-Trading Lifecycle`
+- **Audit Date:** `2026-10-20 12:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11F.2 lifecycle status separation, UserApprovalRequiredError, and test suite reconciliation
+- **Latest Commit SHA:** Working tree with Phase 11F.3 prospective lifecycle engine, persistent state management, and 562 passed tests
 - **Overall Status:** `PASS (READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Reconciled research artifact paths, policy configuration hash, and operational status semantics for prospective three-month paper-trading observation pending explicit user approval:
-    1. **Research Artifact Paths & SHA-256 Verified:** Confirmed persistent estimators in `artifacts/phase_11f/research_models/` (`lgb_regressor_h15_variant_b.joblib` SHA-256: `84170b51...`, `lgb_full_classifier_h15_variant_b.joblib` SHA-256: `3192aa5c...`, `research_model_metadata.json`). Documented that `.joblib` files are gitignored and generated deterministically via `scripts/train_phase11f_research_models.py`.
-    2. **Runtime Policy Bundle Hash Verified:** Canonical SHA-256 hash `8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71` matches runtime `get_default_frozen_policies().compute_sha256()` and `artifacts/phase_11f/frozen_policy_config.json`.
-    3. **Operational Status Semantics Decoupled:** Decoupled 4 lifecycle statuses: `BLOCKED_ON_SCORING_ARTIFACT`, `SCORING_ARTIFACTS_READY`, `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`, and `OBSERVATION_ACTIVE`.
-    4. **Human Authorization Gate Enforced:** Implemented `UserApprovalRequiredError` and `--user-approved` CLI flag. Prospective scoring on new trading dates is strictly blocked until explicit human approval is supplied.
-    5. **Enhanced Artifact & Environment Auditing:** `audit_scoring_artifacts()` validates SHA-256 against metadata, loads models via `.load()`, and executes finite-score smoke inference on `FEATURE_SCHEMA_30`.
-    6. **Cutoff Metadata Clarified:** Training cutoff `2026-09-25`, label finality bar date `2026-10-16`, training timestamp `2026-10-19T09:22:28.960379+00:00`, first prospective date `2026-10-19`.
-    7. **Decision:** Candidate policies remain unpromoted; current champions remain active and protected. System is `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`.
-- **Next Permitted Action:** Await explicit user authorization before launching prospective forward observation. Do not execute prospective scoring without approval.
+  - Completed missing execution and position-management lifecycle for prospective forward paper trading:
+    1. **Execution Date Scheduling Defect Fixed:** `PaperDecision.execution_date` is now strictly scheduled for next eligible trading session $t+1$ (`get_next_trading_date()`), completely eliminating same-day execution claims under Variant B Market-On-Open policy.
+    2. **Complete Multi-Session Execution Lifecycle:** Built session-start fills at Open $t+1$ with pre-entry gap invalidations ($\le -2\%$, $\ge +6\%$, dev $> 5\%$, volume $\le 0$), barrier monitoring (TP $+6\%$, SL $-2\%$, conservative precedence, 15-day expiry), 50 bps round-trip friction, and EOD mark-to-market equity/drawdown tracking.
+    3. **Persistent State Management:** Implemented `paper_trading_state.json` maintaining orders, open positions, completed trades, daily equity, and cash balances across process invocations with atomic writes and strict idempotency (`processed_dates`).
+    4. **Prospective Operational Status:** Updated `--status` output to format live observation metrics (pending orders, open positions, MTM equity, PnL, cash, drawdown, unfilled counts).
+    5. **Governance & Approval Gate:** Enforced human authorization guard (`UserApprovalRequiredError`); observation status transitions to `OBSERVATION_ACTIVE` only after an approved prospective run succeeds. Observation was not started during this task.
+    6. **Decision:** Candidate models remain unpromoted; production champions remain active and protected. System is `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`.
+- **Next Permitted Action:** Await explicit user authorization (`--user-approved`) before initiating forward observation on or after `2026-10-19`. Do not execute prospective scoring without approval.
 
 ---
 
@@ -77,6 +76,11 @@ The repository maintains dedicated, detailed reports for each major governance a
     - **Phase 11F.2:** Reconcile Research Artifact Paths, Policy Hash, and Operational Readiness
     - **Scope:** Reconciled research artifact paths (`artifacts/phase_11f/research_models/`), verified runtime canonical policy hash (`8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71`), decoupled 4 lifecycle statuses, implemented `UserApprovalRequiredError` and `--user-approved` CLI guard, enhanced `audit_scoring_artifacts()` with SHA-256 and smoke tests, documented cutoff metadata with data finality proof, and verified test suite.
     - **Status:** `PASS (READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (24 unit tests in scoring module, 548 total suite tests passed: 516 unit, 32 integration; champions preserved).
+
+11. [docs/19_phase_11f_prospective_lifecycle_completion_report.md](docs/19_phase_11f_prospective_lifecycle_completion_report.md)
+    - **Phase 11F.3:** Complete Prospective Paper-Trading Lifecycle & State Persistence Engine
+    - **Scope:** Fixed `PaperDecision.execution_date` from decision date $t$ to next eligible trading session $t+1$ (`get_next_trading_date()`), implemented multi-session daily lifecycle (Market-on-Open fills, pre-entry gap invalidations, barrier monitoring with conservative ambiguity precedence, 15-day expiry, 50 bps friction), atomic state persistence (`paper_trading_state.json`), strict idempotency (`processed_dates`), live operational reporting with prospective observation metrics, and human authorization guard.
+    - **Status:** `PASS (READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (14 unit tests in lifecycle module, 562 total suite tests passed: 530 unit, 32 integration; champions preserved).
 
 ---
 

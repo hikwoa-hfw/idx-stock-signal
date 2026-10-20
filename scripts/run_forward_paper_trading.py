@@ -73,6 +73,11 @@ def parse_args() -> argparse.Namespace:
         default="artifacts/phase_11f",
         help="Directory to write Phase 11F artifacts",
     )
+    parser.add_argument(
+        "--reset-state",
+        action="store_true",
+        help="Reset paper trading persistent state and artifacts (testing only)",
+    )
     return parser.parse_args()
 
 
@@ -94,6 +99,40 @@ def print_status_summary(status: dict) -> None:
         print(f"  - {a}")
     print(f"Data Quality DB Bars:   {status['data_quality']['total_daily_bars']}")
     print(f"Last Historical Date:   {status['data_quality']['last_historical_bar_date']}")
+
+    pl = status.get("prospective_lifecycle")
+    if pl:
+        print("-" * 80)
+        print("PROSPECTIVE OBSERVATION LIFECYCLE (PHASE 11F.3)")
+        print("-" * 80)
+        print(f"Observation Started:    {pl.get('has_started', False)}")
+        print(f"First Observation Date: {pl.get('first_observation_date', 'NONE')}")
+        print(f"Last Decision Date:     {pl.get('last_decision_date', 'NONE')}")
+        print(f"Last Execution Session: {pl.get('last_execution_date', 'NONE')}")
+        print(f"Sessions Processed:     {pl.get('processed_dates_count', 0)}")
+        print(f"Pending Orders:         {pl.get('pending_orders_count', 0)}")
+        for o in pl.get("pending_orders", [])[:5]:
+            print(
+                f"  * {o.get('ticker')} ({o.get('mode')}) "
+                f"sched: {o.get('scheduled_execution_date')} score: {o.get('score', 0):.4f}"
+            )
+        print(f"Active Open Positions:  {pl.get('open_positions_count', 0)}")
+        for p in pl.get("open_positions", [])[:5]:
+            print(
+                f"  * {p.get('ticker')} ({p.get('mode')}) entry: {p.get('entry_price', 0):.1f} "
+                f"shares: {p.get('shares')} age: {p.get('holding_days')}d "
+                f"MTM PnL: {p.get('unrealized_pnl_idr', 0):,.0f} IDR"
+            )
+        print(f"Completed Trades:       {pl.get('completed_trades_count', 0)}")
+        print(f"Realized Net PnL (IDR): {pl.get('realized_net_pnl_idr', 0):,.0f}")
+        print(f"Unrealized PnL (IDR):   {pl.get('unrealized_pnl_idr', 0):,.0f}")
+        print(f"Cash Balance (IDR):     {pl.get('cash_balance_idr', 0):,.0f}")
+        print(f"Current Total Equity:   {pl.get('current_equity_idr', 0):,.0f}")
+        print(f"Peak Equity (IDR):      {pl.get('peak_equity_idr', 0):,.0f}")
+        dd_amt = pl.get("max_drawdown_amount_idr", 0)
+        dd_pct = pl.get("max_drawdown_pct", 0) * 100.0
+        print(f"Max Drawdown:           {dd_amt:,.0f} ({dd_pct:.2f}%)")
+        print(f"Unfilled / Inval Counts:{pl.get('unfilled_counts', {})}")
     print("=" * 80)
 
 
@@ -104,7 +143,18 @@ def main() -> None:
         artifacts_dir=args.artifacts_dir,
     )
 
-    no_cmd = not (args.status or args.export_benchmarks or args.run_replay or args.date)
+    no_cmd = not (
+        args.status or args.export_benchmarks or args.run_replay or args.date or args.reset_state
+    )
+
+    if args.reset_state:
+        logger.info(
+            "Resetting prospective paper trading state in %s...",
+            engine.artifacts_dir,
+        )
+        engine.reset_state()
+        logger.info("State reset complete.")
+        return
 
     if args.status:
         status = engine.generate_operational_status(user_approved=args.user_approved)

@@ -23,7 +23,7 @@ import math
 import sqlite3
 import sys
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -68,9 +68,7 @@ __all__ = [
 # Lifecycle and operational status constants
 STATUS_BLOCKED_ON_SCORING_ARTIFACT = "BLOCKED_ON_SCORING_ARTIFACT"
 STATUS_SCORING_ARTIFACTS_READY = "SCORING_ARTIFACTS_READY"
-STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL = (
-    "READY_FOR_OBSERVATION_PENDING_USER_APPROVAL"
-)
+STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL = "READY_FOR_OBSERVATION_PENDING_USER_APPROVAL"
 STATUS_OBSERVATION_ACTIVE = "OBSERVATION_ACTIVE"
 FIRST_PROSPECTIVE_DATE = date(2026, 10, 19)
 
@@ -464,9 +462,7 @@ class PaperTradingEngine:
                 conn.close()
         return self._atr_lookup
 
-    def audit_scoring_artifacts(
-        self, base_dir: Optional[Path] = None
-    ) -> dict[str, Any]:
+    def audit_scoring_artifacts(self, base_dir: Optional[Path] = None) -> dict[str, Any]:
         """Audits presence and integrity of persistent joblib model artifacts for research scoring.
 
         Fails closed: if exact H=15 Variant B artifacts are missing, hash mismatches,
@@ -605,9 +601,7 @@ class PaperTradingEngine:
 
         return audit_results
 
-    def export_frozen_policy_config(
-        self, output_path: Optional[Path] = None
-    ) -> dict[str, Any]:
+    def export_frozen_policy_config(self, output_path: Optional[Path] = None) -> dict[str, Any]:
         """Exports the frozen policy bundle to JSON."""
         target = output_path or (self.artifacts_dir / "frozen_policy_config.json")
         bundle_dict = asdict(self.frozen_bundle)
@@ -736,9 +730,7 @@ class PaperTradingEngine:
         df_benchmarks.to_csv(target, index=False)
         return df_benchmarks
 
-    def run_replay(
-        self, modes: Optional[list[str]] = None
-    ) -> dict[str, Any]:
+    def run_replay(self, modes: Optional[list[str]] = None) -> dict[str, Any]:
         """Runs historical replay using frozen Phase 11C OOS predictions.
 
         Validates end-to-end execution fidelity: deterministic tie breaking,
@@ -980,9 +972,7 @@ class PaperTradingEngine:
                         pos["sl_price"]
                         if pos["holding_days"] == 1
                         else (
-                            bar_curr.open
-                            if bar_curr.open <= pos["sl_price"]
-                            else pos["sl_price"]
+                            bar_curr.open if bar_curr.open <= pos["sl_price"] else pos["sl_price"]
                         )
                     )
                 elif tp_hit:
@@ -1193,36 +1183,20 @@ class PaperTradingEngine:
         total_gain = sum(t.net_pnl for t in completed_trades if t.net_pnl > 0)
         total_loss = sum(abs(t.net_pnl) for t in completed_trades if t.net_pnl < 0)
         profit_factor = (
-            (total_gain / total_loss)
-            if total_loss > 0
-            else (1.0 if total_gain == 0 else 999.0)
+            (total_gain / total_loss) if total_loss > 0 else (1.0 if total_gain == 0 else 999.0)
         )
 
         avg_net_ret = (
-            float(np.mean([t.net_return for t in completed_trades]))
-            if completed_trades
-            else 0.0
+            float(np.mean([t.net_return for t in completed_trades])) if completed_trades else 0.0
         )
         avg_gross_ret = (
-            float(np.mean([t.gross_return for t in completed_trades]))
-            if completed_trades
-            else 0.0
+            float(np.mean([t.gross_return for t in completed_trades])) if completed_trades else 0.0
         )
         avg_holding = (
-            float(np.mean([t.holding_days for t in completed_trades]))
-            if completed_trades
-            else 0.0
+            float(np.mean([t.holding_days for t in completed_trades])) if completed_trades else 0.0
         )
-        avg_mfe = (
-            float(np.mean([t.mfe_pct for t in completed_trades]))
-            if completed_trades
-            else 0.0
-        )
-        avg_mae = (
-            float(np.mean([t.mae_pct for t in completed_trades]))
-            if completed_trades
-            else 0.0
-        )
+        avg_mfe = float(np.mean([t.mfe_pct for t in completed_trades])) if completed_trades else 0.0
+        avg_mae = float(np.mean([t.mae_pct for t in completed_trades])) if completed_trades else 0.0
         net_portfolio_ret_pct = ((total_eq - self.initial_capital) / self.initial_capital) * 100.0
 
         summary = {
@@ -1260,6 +1234,91 @@ class PaperTradingEngine:
             "summary": summary,
         }
 
+    def _default_state(self) -> dict[str, Any]:
+        return {
+            "phase": "Phase 11F — Forward Paper Trading & Frozen Policy Validation",
+            "policy_bundle_hash": self.frozen_bundle.config_sha256,
+            "initial_capital": float(self.initial_capital),
+            "cash": float(self.initial_capital),
+            "peak_equity": float(self.initial_capital),
+            "max_drawdown_amount": 0.0,
+            "max_drawdown_pct": 0.0,
+            "first_observation_date": None,
+            "first_prospective_run_timestamp": None,
+            "last_decision_date": None,
+            "last_execution_date": None,
+            "processed_dates": [],
+            "pending_orders": [],
+            "order_history": [],
+            "open_positions": {},
+            "completed_trades": [],
+            "daily_equity_history": [],
+            "last_known_close": {},
+            "unfilled_summary": {
+                "invalidated_gap_down": 0,
+                "invalidated_gap_up": 0,
+                "invalidated_excessive_dev": 0,
+                "unfilled_suspended": 0,
+                "unfilled_capacity": 0,
+                "unfilled_cash": 0,
+                "skipped_regime_zero": 0,
+            },
+        }
+
+    def load_state(self) -> dict[str, Any]:
+        target = self.artifacts_dir / "paper_trading_state.json"
+        if not target.is_file():
+            return self._default_state()
+        try:
+            with open(target, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            default = self._default_state()
+            for k, v in default.items():
+                if k not in state:
+                    state[k] = v
+            return state
+        except Exception:
+            return self._default_state()
+
+    def save_state(self, state: dict[str, Any]) -> None:
+        target = self.artifacts_dir / "paper_trading_state.json"
+        tmp_target = target.with_suffix(".tmp")
+        with open(tmp_target, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, default=str)
+        tmp_target.replace(target)
+
+    def reset_state(self) -> None:
+        target = self.artifacts_dir / "paper_trading_state.json"
+        if target.is_file():
+            target.unlink()
+        for f in (
+            "paper_trading_candidates.csv",
+            "paper_trading_decisions.csv",
+            "paper_trading_trades.csv",
+            "paper_trading_daily_equity.csv",
+        ):
+            p = self.artifacts_dir / f
+            if p.is_file():
+                p.unlink()
+
+    def get_next_trading_date(self, current_date: date) -> date:
+        """Finds next trading date from database bars or falls back to next business weekday."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cur = conn.cursor()
+            row = cur.execute(
+                "SELECT MIN(date) FROM daily_bars WHERE date > ?;", (str(current_date),)
+            ).fetchone()
+            if row and row[0]:
+                return pd.to_datetime(row[0]).date()
+        finally:
+            conn.close()
+
+        cand = current_date + timedelta(days=1)
+        while cand.weekday() >= 5:
+            cand += timedelta(days=1)
+        return cand
+
     def generate_operational_status(
         self,
         replay_summaries: Optional[dict[str, Any]] = None,
@@ -1271,13 +1330,15 @@ class PaperTradingEngine:
     ) -> dict[str, Any]:
         """Generates comprehensive operational status and writes to JSON."""
         audit = self.audit_scoring_artifacts(base_dir=base_dir)
+        state = self.load_state()
+        has_started = state.get("first_observation_date") is not None
 
         if audit["status"] != "PASS":
             operational_status = STATUS_BLOCKED_ON_SCORING_ARTIFACT
             scoring_artifacts_status = STATUS_BLOCKED_ON_SCORING_ARTIFACT
         else:
             scoring_artifacts_status = STATUS_SCORING_ARTIFACTS_READY
-            if user_approved:
+            if user_approved or has_started:
                 operational_status = STATUS_OBSERVATION_ACTIVE
             else:
                 operational_status = STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL
@@ -1287,18 +1348,61 @@ class PaperTradingEngine:
         try:
             cur = conn.cursor()
             total_bars = cur.execute("SELECT COUNT(*) FROM daily_bars;").fetchone()[0]
-            last_date_row = cur.execute(
-                "SELECT MAX(date) FROM daily_bars;"
-            ).fetchone()[0]
+            last_date_row = cur.execute("SELECT MAX(date) FROM daily_bars;").fetchone()[0]
             last_bar_date = str(last_date_row) if last_date_row else "UNKNOWN"
         finally:
             conn.close()
+
+        open_pos_dict = state.get("open_positions", {})
+        pending_orders = state.get("pending_orders", [])
+        completed_trades = state.get("completed_trades", [])
+        daily_equity_history = state.get("daily_equity_history", [])
+
+        total_realized_pnl = sum(float(t.get("net_pnl", 0.0)) for t in completed_trades)
+
+        total_unrealized_pnl = 0.0
+        open_pos_summary = []
+        for tkr, pos in open_pos_dict.items():
+            curr_price = float(
+                state.get("last_known_close", {}).get(tkr, pos.get("entry_price", 0.0))
+            )
+            gross_val = pos.get("shares", 0) * curr_price
+            est_exit_fee = gross_val * self.commission_sell
+            est_exit_slip = pos.get("shares", 0) * curr_price * (self.slippage_exit_bps / 10000.0)
+            net_val = gross_val - est_exit_fee - est_exit_slip
+            invested = pos.get("gross_outlay", 0.0) + pos.get("entry_fee", 0.0)
+            u_pnl = net_val - invested
+            total_unrealized_pnl += u_pnl
+            open_pos_summary.append(
+                {
+                    "ticker": tkr,
+                    "mode": pos.get("mode"),
+                    "entry_date": pos.get("entry_date"),
+                    "entry_price": pos.get("entry_price"),
+                    "shares": pos.get("shares"),
+                    "current_price": curr_price,
+                    "tp_price": pos.get("tp_price"),
+                    "sl_price": pos.get("sl_price"),
+                    "holding_days": pos.get("holding_days"),
+                    "highest_watermark": pos.get("highest_watermark"),
+                    "lowest_watermark": pos.get("lowest_watermark"),
+                    "unrealized_pnl_idr": u_pnl,
+                }
+            )
+
+        latest_eq_rec = daily_equity_history[-1] if daily_equity_history else None
+        current_equity = (
+            float(latest_eq_rec.get("total_equity", state.get("cash", self.initial_capital)))
+            if latest_eq_rec
+            else float(state.get("cash", self.initial_capital))
+        )
+        current_cash = float(state.get("cash", self.initial_capital))
 
         status_dict = {
             "phase": "Phase 11F — Forward Paper Trading & Frozen Policy Validation",
             "operational_status": operational_status,
             "scoring_artifacts_status": scoring_artifacts_status,
-            "user_approved": user_approved,
+            "user_approved": user_approved or has_started,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "policy_bundle_hash": self.frozen_bundle.config_sha256,
             "cutoff_metadata": {
@@ -1329,6 +1433,38 @@ class PaperTradingEngine:
                 "lot_size": 100,
                 "trailing_stops_active": False,
             },
+            "prospective_lifecycle": {
+                "has_started": has_started,
+                "first_observation_date": state.get("first_observation_date"),
+                "first_prospective_run_timestamp": state.get("first_prospective_run_timestamp"),
+                "last_decision_date": state.get("last_decision_date"),
+                "last_execution_date": state.get("last_execution_date"),
+                "processed_dates_count": len(state.get("processed_dates", [])),
+                "pending_orders_count": len(pending_orders),
+                "pending_orders": [
+                    {
+                        "ticker": o.get("ticker"),
+                        "mode": o.get("mode"),
+                        "decision_date": o.get("decision_date"),
+                        "scheduled_execution_date": o.get("scheduled_execution_date"),
+                        "score": o.get("score"),
+                        "planned_tp_pct": o.get("tp_pct"),
+                        "planned_sl_pct": o.get("sl_pct"),
+                    }
+                    for o in pending_orders
+                ],
+                "open_positions_count": len(open_pos_dict),
+                "open_positions": open_pos_summary,
+                "completed_trades_count": len(completed_trades),
+                "realized_net_pnl_idr": total_realized_pnl,
+                "unrealized_pnl_idr": total_unrealized_pnl,
+                "cash_balance_idr": current_cash,
+                "current_equity_idr": current_equity,
+                "peak_equity_idr": float(state.get("peak_equity", self.initial_capital)),
+                "max_drawdown_amount_idr": float(state.get("max_drawdown_amount", 0.0)),
+                "max_drawdown_pct": float(state.get("max_drawdown_pct", 0.0)),
+                "unfilled_counts": state.get("unfilled_summary", {}),
+            },
             "data_quality": {
                 "database_path": self.db_path,
                 "total_daily_bars": total_bars,
@@ -1357,7 +1493,7 @@ class PaperTradingEngine:
         user_approved: bool = False,
         base_dir: Optional[Path] = None,
     ) -> dict[str, Any]:
-        """Attempts prospective candidate scoring for a newly observed trading date.
+        """Executes full prospective daily lifecycle for newly observed trading date.
 
         Fail-closed guard: if persistent H=15 Variant B research scoring
         artifacts are missing, raises MissingScoringArtifactError and halts.
@@ -1368,14 +1504,35 @@ class PaperTradingEngine:
         if audit["status"] != "PASS":
             self.generate_operational_status(user_approved=user_approved, base_dir=base_dir)
             raise MissingScoringArtifactError(
-                f"Prospective scoring blocked on {eval_date}: "
-                f"{audit['error_logs'][0]}"
+                f"Prospective scoring blocked on {eval_date}: {audit['error_logs'][0]}"
             )
 
         if not user_approved:
             raise UserApprovalRequiredError(
                 "Prospective observation date scoring requires explicit user approval."
             )
+
+        state = self.load_state()
+
+        # Idempotency check: if session already processed, return existing state
+        if str(eval_date) in state["processed_dates"]:
+            return {
+                "date": str(eval_date),
+                "status": "ALREADY_PROCESSED",
+                "candidates_count": 0,
+                "decisions_count": 0,
+                "orders_processed": 0,
+                "orders_filled": 0,
+                "positions_closed": 0,
+                "open_positions_count": len(state["open_positions"]),
+                "pending_orders_count": len(state["pending_orders"]),
+                "cash": float(state["cash"]),
+                "total_equity": (
+                    float(state["daily_equity_history"][-1]["total_equity"])
+                    if state["daily_equity_history"]
+                    else float(state["cash"])
+                ),
+            }
 
         root = base_dir or Path(__file__).resolve().parent.parent.parent
         conn = sqlite3.connect(self.db_path)
@@ -1387,26 +1544,433 @@ class PaperTradingEngine:
             df_feat = pd.read_sql_query(query_features, conn, params=[str(eval_date)])
 
             query_bars = """
-                SELECT ticker, close FROM daily_bars
+                SELECT ticker, open, high, low, close, volume FROM daily_bars
                 WHERE date = ?;
             """
             df_bars = pd.read_sql_query(query_bars, conn, params=[str(eval_date)])
         finally:
             conn.close()
 
-        if df_feat.empty:
+        bars_today: dict[str, dict[str, float]] = {}
+        for _, r in df_bars.iterrows():
+            t = str(r["ticker"]).strip().upper().removesuffix(".JK")
+            bars_today[t] = {
+                "open": float(r["open"]) if pd.notnull(r["open"]) else 0.0,
+                "high": float(r["high"]) if pd.notnull(r["high"]) else 0.0,
+                "low": float(r["low"]) if pd.notnull(r["low"]) else 0.0,
+                "close": float(r["close"]) if pd.notnull(r["close"]) else 0.0,
+                "volume": float(r["volume"]) if pd.notnull(r["volume"]) else 0.0,
+            }
+
+        # In-memory bar lookup overrides if explicitly populated (e.g. testing)
+        if self._bars_by_ticker is not None:
+            for tkr, blist in self._bars_by_ticker.items():
+                for b in blist:
+                    if b.date == eval_date:
+                        bars_today[tkr] = {
+                            "open": float(b.open),
+                            "high": float(b.high),
+                            "low": float(b.low),
+                            "close": float(b.close),
+                            "volume": float(b.volume),
+                        }
+
+        if not bars_today and df_feat.empty:
             return {
                 "date": str(eval_date),
                 "status": "NO_DATA",
                 "candidates_count": 0,
                 "decisions_count": 0,
+                "orders_processed": 0,
+                "orders_filled": 0,
+                "positions_closed": 0,
             }
 
-        price_map = {
-            r["ticker"].strip().upper().removesuffix(".JK"): float(r["close"])
-            for _, r in df_bars.iterrows()
-            if pd.notnull(r["close"]) and float(r["close"]) > 0
+        # -----------------------------------------------------------------
+        # 1. Execute Pending Orders from Previous Decision Dates at Open
+        # -----------------------------------------------------------------
+        pending_orders = list(state.get("pending_orders", []))
+        orders_to_process = [
+            o
+            for o in pending_orders
+            if str(o.get("scheduled_execution_date", eval_date)) <= str(eval_date)
+        ]
+        remaining_pending = [
+            o
+            for o in pending_orders
+            if str(o.get("scheduled_execution_date", eval_date)) > str(eval_date)
+        ]
+        orders_filled_count = 0
+        orders_processed_count = len(orders_to_process)
+
+        if orders_to_process:
+            orders_to_process.sort(
+                key=lambda o: (-float(o.get("score", 0.0)), str(o.get("ticker", "")))
+            )
+
+            for ord_info in orders_to_process:
+                t = ord_info["ticker"]
+                c_close = float(ord_info["close_t"])
+                ord_tp = float(ord_info["tp_pct"])
+                ord_sl = float(ord_info["sl_pct"])
+                ord_h = int(ord_info["max_holding_days"])
+                ord_mult = float(ord_info["size_multiplier"])
+                ord_reg_cat = str(ord_info["regime_category"])
+                ord_mode = str(ord_info.get("mode", "LOW_PRICE"))
+                policy = self.frozen_bundle.policies[ord_mode]
+
+                if ord_mult <= 0.0:
+                    state["unfilled_summary"]["skipped_regime_zero"] += 1
+                    state["order_history"].append(
+                        {
+                            "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                            "ticker": t,
+                            "mode": ord_mode,
+                            "decision_date": ord_info["decision_date"],
+                            "execution_date": str(eval_date),
+                            "status": "SKIPPED_REGIME_ZERO",
+                            "reason": "Regime multiplier 0.0",
+                        }
+                    )
+                    continue
+
+                if (
+                    len(state["open_positions"]) >= self.max_positions
+                    or t in state["open_positions"]
+                ):
+                    state["unfilled_summary"]["unfilled_capacity"] += 1
+                    state["order_history"].append(
+                        {
+                            "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                            "ticker": t,
+                            "mode": ord_mode,
+                            "decision_date": ord_info["decision_date"],
+                            "execution_date": str(eval_date),
+                            "status": "UNFILLED_CAPACITY",
+                            "reason": "Max positions reached or duplicate ticker",
+                        }
+                    )
+                    continue
+
+                bar_next = bars_today.get(t)
+                if bar_next is None or bar_next["volume"] <= 0 or bar_next["open"] <= 0:
+                    state["unfilled_summary"]["unfilled_suspended"] += 1
+                    state["order_history"].append(
+                        {
+                            "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                            "ticker": t,
+                            "mode": ord_mode,
+                            "decision_date": ord_info["decision_date"],
+                            "execution_date": str(eval_date),
+                            "status": "UNFILLED_SUSPENDED",
+                            "reason": "Bar missing, volume 0, or suspended",
+                        }
+                    )
+                    continue
+
+                b_open = bar_next["open"]
+
+                # Pre-entry gap invalidations
+                if b_open <= c_close * (1.0 - ord_sl):
+                    state["unfilled_summary"]["invalidated_gap_down"] += 1
+                    state["order_history"].append(
+                        {
+                            "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                            "ticker": t,
+                            "mode": ord_mode,
+                            "decision_date": ord_info["decision_date"],
+                            "execution_date": str(eval_date),
+                            "status": "INVALIDATED_GAP_DOWN",
+                            "reason": f"Open {b_open} <= SL barrier {c_close * (1.0 - ord_sl):.2f}",
+                        }
+                    )
+                    continue
+
+                if b_open >= c_close * (1.0 + ord_tp):
+                    state["unfilled_summary"]["invalidated_gap_up"] += 1
+                    state["order_history"].append(
+                        {
+                            "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                            "ticker": t,
+                            "mode": ord_mode,
+                            "decision_date": ord_info["decision_date"],
+                            "execution_date": str(eval_date),
+                            "status": "INVALIDATED_GAP_UP",
+                            "reason": f"Open {b_open} >= TP barrier {c_close * (1.0 + ord_tp):.2f}",
+                        }
+                    )
+                    continue
+
+                if (abs(b_open - c_close) / c_close) > policy.gap_invalidation_rules[
+                    "max_open_dev_pct"
+                ]:
+                    state["unfilled_summary"]["invalidated_excessive_dev"] += 1
+                    state["order_history"].append(
+                        {
+                            "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                            "ticker": t,
+                            "mode": ord_mode,
+                            "decision_date": ord_info["decision_date"],
+                            "execution_date": str(eval_date),
+                            "status": "INVALIDATED_EXCESSIVE_DEV",
+                            "reason": (
+                                f"Open dev {abs(b_open - c_close) / c_close:.4f} > max"
+                            ),
+                        }
+                    )
+                    continue
+
+                # Sizing & IDX Lot Rules
+                open_val = sum(
+                    pos["shares"] * state["last_known_close"].get(pos["ticker"], pos["entry_price"])
+                    for pos in state["open_positions"].values()
+                )
+                current_equity = float(state["cash"]) + open_val
+
+                base_cap = min(
+                    current_equity / self.max_positions,
+                    current_equity * policy.portfolio_constraints["equity_cap_pct"],
+                )
+                sized_cap = base_cap * ord_mult
+
+                fill_price = b_open * (1.0 + self.slippage_entry_bps / 10000.0)
+                raw_shares = sized_cap / fill_price
+                max_cash_shares = float(state["cash"]) / (fill_price * (1.0 + self.commission_buy))
+                shares_f = min(raw_shares, max_cash_shares)
+
+                shares = int(shares_f // 100) * 100
+                if shares < 100:
+                    state["unfilled_summary"]["unfilled_cash"] += 1
+                    state["order_history"].append(
+                        {
+                            "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                            "ticker": t,
+                            "mode": ord_mode,
+                            "decision_date": ord_info["decision_date"],
+                            "execution_date": str(eval_date),
+                            "status": "UNFILLED_CASH",
+                            "reason": "Insufficient cash for 100-share lot",
+                        }
+                    )
+                    continue
+
+                gross_outlay = shares * fill_price
+                entry_fee = gross_outlay * self.commission_buy
+                total_outlay = gross_outlay + entry_fee
+
+                if total_outlay > float(state["cash"]):
+                    shares = (
+                        int(
+                            (float(state["cash"]) / (fill_price * (1.0 + self.commission_buy)))
+                            // 100
+                        )
+                        * 100
+                    )
+                    if shares < 100:
+                        state["unfilled_summary"]["unfilled_cash"] += 1
+                        state["order_history"].append(
+                            {
+                                "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                                "ticker": t,
+                                "mode": ord_mode,
+                                "decision_date": ord_info["decision_date"],
+                                "execution_date": str(eval_date),
+                                "status": "UNFILLED_CASH",
+                                "reason": "Insufficient cash after fee",
+                            }
+                        )
+                        continue
+                    gross_outlay = shares * fill_price
+                    entry_fee = gross_outlay * self.commission_buy
+                    total_outlay = gross_outlay + entry_fee
+
+                state["cash"] = float(state["cash"]) - total_outlay
+                state["open_positions"][t] = {
+                    "ticker": t,
+                    "mode": ord_mode,
+                    "signal_date": str(ord_info["decision_date"]),
+                    "entry_date": str(eval_date),
+                    "entry_price": fill_price,
+                    "raw_entry": b_open,
+                    "shares": shares,
+                    "gross_outlay": gross_outlay,
+                    "entry_fee": entry_fee,
+                    "tp_pct": ord_tp,
+                    "sl_pct": ord_sl,
+                    "tp_price": fill_price * (1.0 + ord_tp),
+                    "sl_price": fill_price * (1.0 - ord_sl),
+                    "highest_watermark": fill_price,
+                    "lowest_watermark": fill_price,
+                    "max_holding_days": ord_h,
+                    "holding_days": 1,
+                    "score": float(ord_info["score"]),
+                    "size_multiplier": ord_mult,
+                    "regime_category": ord_reg_cat,
+                }
+                state["order_history"].append(
+                    {
+                        "order_id": f"ORD-{ord_info['decision_date']}-{t}",
+                        "ticker": t,
+                        "mode": ord_mode,
+                        "decision_date": ord_info["decision_date"],
+                        "execution_date": str(eval_date),
+                        "status": "FILLED",
+                        "fill_price": fill_price,
+                        "shares": shares,
+                        "outlay_idr": total_outlay,
+                    }
+                )
+                orders_filled_count += 1
+
+        state["pending_orders"] = remaining_pending
+
+        # -----------------------------------------------------------------
+        # 2. Update Open Positions & Check Intraday Barrier Exits
+        # -----------------------------------------------------------------
+        positions_closed_count = 0
+        active_tickers = list(state["open_positions"].keys())
+
+        for t in active_tickers:
+            pos = state["open_positions"][t]
+            bar_curr = bars_today.get(t)
+
+            if bar_curr is None or bar_curr["volume"] <= 0:
+                pos["holding_days"] += 1
+                continue
+
+            pos["highest_watermark"] = max(pos["highest_watermark"], float(bar_curr["high"]))
+            pos["lowest_watermark"] = min(pos["lowest_watermark"], float(bar_curr["low"]))
+
+            tp_hit = bar_curr["high"] >= pos["tp_price"]
+            sl_hit = bar_curr["low"] <= pos["sl_price"]
+            expiry_hit = pos["holding_days"] >= pos["max_holding_days"]
+
+            exit_reason = None
+            exit_raw = None
+
+            if tp_hit and sl_hit:
+                exit_reason = "SL"
+                exit_raw = (
+                    pos["sl_price"]
+                    if pos["holding_days"] == 1
+                    else (
+                        bar_curr["open"] if bar_curr["open"] <= pos["sl_price"] else pos["sl_price"]
+                    )
+                )
+            elif tp_hit:
+                exit_reason = "TP"
+                exit_raw = (
+                    float(bar_curr["open"])
+                    if (pos["holding_days"] > 1 and bar_curr["open"] >= pos["tp_price"])
+                    else pos["tp_price"]
+                )
+            elif sl_hit:
+                exit_reason = "SL"
+                exit_raw = (
+                    float(bar_curr["open"])
+                    if (pos["holding_days"] > 1 and bar_curr["open"] <= pos["sl_price"])
+                    else pos["sl_price"]
+                )
+            elif expiry_hit:
+                exit_reason = "EXPIRY"
+                exit_raw = float(bar_curr["close"])
+
+            if exit_reason is not None and exit_raw is not None:
+                exit_fill = exit_raw * (1.0 - self.slippage_exit_bps / 10000.0)
+                gross_proceeds = pos["shares"] * exit_fill
+                exit_fee = gross_proceeds * self.commission_sell
+                net_proceeds = gross_proceeds - exit_fee
+                state["cash"] = float(state["cash"]) + net_proceeds
+
+                invested = pos["gross_outlay"] + pos["entry_fee"]
+                net_pnl = net_proceeds - invested
+                net_ret = net_pnl / invested if invested > 0 else 0.0
+                gross_pnl = gross_proceeds - pos["gross_outlay"]
+                gross_ret = gross_pnl / pos["gross_outlay"] if pos["gross_outlay"] > 0 else 0.0
+
+                mfe_pct = (pos["highest_watermark"] - pos["entry_price"]) / pos["entry_price"]
+                mae_pct = (pos["lowest_watermark"] - pos["entry_price"]) / pos["entry_price"]
+
+                trade_dict = {
+                    "ticker": pos["ticker"],
+                    "mode": pos["mode"],
+                    "signal_date": pos["signal_date"],
+                    "entry_date": pos["entry_date"],
+                    "exit_date": str(eval_date),
+                    "entry_price": pos["entry_price"],
+                    "exit_price": exit_fill,
+                    "shares": pos["shares"],
+                    "size_multiplier": pos["size_multiplier"],
+                    "regime_category": pos["regime_category"],
+                    "gross_outlay": pos["gross_outlay"],
+                    "gross_proceeds": gross_proceeds,
+                    "gross_pnl": gross_pnl,
+                    "gross_return": gross_ret,
+                    "entry_fee": pos["entry_fee"],
+                    "exit_fee": exit_fee,
+                    "total_friction_idr": pos["entry_fee"] + exit_fee,
+                    "net_pnl": net_pnl,
+                    "net_return": net_ret,
+                    "exit_reason": exit_reason,
+                    "holding_days": pos["holding_days"],
+                    "mfe_pct": mfe_pct,
+                    "mae_pct": mae_pct,
+                    "highest_watermark": pos["highest_watermark"],
+                    "lowest_watermark": pos["lowest_watermark"],
+                    "planned_tp_price": pos["tp_price"],
+                    "planned_sl_price": pos["sl_price"],
+                }
+                state["completed_trades"].append(trade_dict)
+                del state["open_positions"][t]
+                positions_closed_count += 1
+            else:
+                pos["holding_days"] += 1
+
+        # -----------------------------------------------------------------
+        # 3. Mark-to-Market Equity at Close
+        # -----------------------------------------------------------------
+        for t_open in state["open_positions"].keys():
+            bar_c = bars_today.get(t_open)
+            if bar_c is not None and bar_c["close"] > 0:
+                state["last_known_close"][t_open] = float(bar_c["close"])
+
+        eod_open_val = sum(
+            pos["shares"] * state["last_known_close"].get(pos["ticker"], pos["entry_price"])
+            for pos in state["open_positions"].values()
+        )
+        total_eq = float(state["cash"]) + eod_open_val
+        alloc_pct = (eod_open_val / total_eq * 100.0) if total_eq > 0 else 0.0
+        cash_exp_pct = 100.0 - alloc_pct
+
+        if total_eq > float(state["peak_equity"]):
+            state["peak_equity"] = total_eq
+        dd_amt = float(state["peak_equity"]) - total_eq
+        dd_pct = dd_amt / float(state["peak_equity"]) if float(state["peak_equity"]) > 0 else 0.0
+
+        if dd_amt > float(state["max_drawdown_amount"]):
+            state["max_drawdown_amount"] = dd_amt
+        if dd_pct > float(state["max_drawdown_pct"]):
+            state["max_drawdown_pct"] = dd_pct
+
+        daily_equity_rec = {
+            "date": str(eval_date),
+            "mode": "PORTFOLIO",
+            "cash": float(state["cash"]),
+            "invested_capital": eod_open_val,
+            "total_equity": total_eq,
+            "peak_equity": float(state["peak_equity"]),
+            "drawdown_amount": dd_amt,
+            "drawdown_pct": dd_pct,
+            "open_positions_count": len(state["open_positions"]),
+            "cash_exposure_pct": cash_exp_pct,
+            "portfolio_allocation_pct": alloc_pct,
         }
+        state["daily_equity_history"].append(daily_equity_rec)
+
+        # -----------------------------------------------------------------
+        # 4. Evening Candidate Scoring & Scheduling Decisions for Next Session
+        # -----------------------------------------------------------------
+        price_map = {t: b["close"] for t, b in bars_today.items() if b["close"] > 0}
 
         reg_info = self.regime_lookup.get(eval_date, {})
         trend_bull = reg_info.get("ihsg_vs_ema20", 0.0) > 0.0
@@ -1415,99 +1979,136 @@ class PaperTradingEngine:
         scored_candidates: list[PaperCandidate] = []
         new_decisions: list[PaperDecision] = []
 
-        for mode, policy in self.frozen_bundle.policies.items():
-            model_path = root / policy.model_artifact_path
-            if mode == "LOW_PRICE" and hasattr(ResearchRegressorModel, "load"):
-                try:
-                    model = ResearchRegressorModel.load(model_path)
-                except Exception:
-                    model = joblib.load(model_path)
-            elif mode == "HIGHER_PRICE" and hasattr(ResearchClassifierModel, "load"):
-                try:
-                    model = ResearchClassifierModel.load(model_path)
-                except Exception:
-                    model = joblib.load(model_path)
-            else:
-                model = joblib.load(model_path)
+        if not df_feat.empty:
+            next_exec_d = self.get_next_trading_date(eval_date)
 
-            mode_rows = []
-            for _, row in df_feat.iterrows():
-                t = row["ticker"].strip().upper().removesuffix(".JK")
-                p = price_map.get(t)
-                if p is None:
+            for mode, policy in self.frozen_bundle.policies.items():
+                model_path = root / policy.model_artifact_path
+                if mode == "LOW_PRICE" and hasattr(ResearchRegressorModel, "load"):
+                    try:
+                        model = ResearchRegressorModel.load(model_path)
+                    except Exception:
+                        model = joblib.load(model_path)
+                elif mode == "HIGHER_PRICE" and hasattr(ResearchClassifierModel, "load"):
+                    try:
+                        model = ResearchClassifierModel.load(model_path)
+                    except Exception:
+                        model = joblib.load(model_path)
+                else:
+                    model = joblib.load(model_path)
+
+                mode_rows = []
+                for _, row in df_feat.iterrows():
+                    t = str(row["ticker"]).strip().upper().removesuffix(".JK")
+                    p = price_map.get(t)
+                    if p is None:
+                        continue
+                    if mode == "LOW_PRICE" and 50.0 <= p <= 300.0:
+                        mode_rows.append((t, p, row))
+                    elif mode == "HIGHER_PRICE" and p > 300.0:
+                        mode_rows.append((t, p, row))
+
+                if not mode_rows:
                     continue
-                if mode == "LOW_PRICE" and 50.0 <= p <= 300.0:
-                    mode_rows.append((t, p, row))
-                elif mode == "HIGHER_PRICE" and p > 300.0:
-                    mode_rows.append((t, p, row))
 
-            if not mode_rows:
-                continue
+                tickers = [r[0] for r in mode_rows]
+                prices = [r[1] for r in mode_rows]
+                X_df = pd.DataFrame([r[2] for r in mode_rows])[self.frozen_bundle.feature_schema]
 
-            tickers = [r[0] for r in mode_rows]
-            prices = [r[1] for r in mode_rows]
-            X_df = pd.DataFrame([r[2] for r in mode_rows])[self.frozen_bundle.feature_schema]
+                if mode == "LOW_PRICE":
+                    scores = model.predict(X_df)
+                else:
+                    scores = (
+                        model.predict_proba(X_df)[:, 1]
+                        if hasattr(model, "predict_proba")
+                        else model.predict(X_df)
+                    )
 
-            if mode == "LOW_PRICE":
-                scores = model.predict(X_df)
-            else:
-                scores = (
-                    model.predict_proba(X_df)[:, 1]
-                    if hasattr(model, "predict_proba")
-                    else model.predict(X_df)
-                )
+                cand_items = list(zip(tickers, prices, scores, strict=True))
+                cand_items.sort(key=lambda x: (-x[2], x[0]))
 
-            cand_items = list(zip(tickers, prices, scores, strict=True))
-            cand_items.sort(key=lambda x: (-x[2], x[0]))
+                n_cands = len(cand_items)
+                n_select = max(1, math.ceil(n_cands * policy.selectivity_top_pct))
 
-            n_cands = len(cand_items)
-            n_select = max(1, math.ceil(n_cands * policy.selectivity_top_pct))
+                for rank_idx, (t, p, sc) in enumerate(cand_items, start=1):
+                    is_top = rank_idx <= n_select
+                    is_elig = is_top and trend_bull
 
-            for rank_idx, (t, p, sc) in enumerate(cand_items, start=1):
-                is_top = rank_idx <= n_select
-                is_elig = is_top and trend_bull
-
-                cand_rec = PaperCandidate(
-                    date=eval_date,
-                    ticker=t,
-                    mode=mode,
-                    decision_price=p,
-                    score=float(sc),
-                    rank_in_date=rank_idx,
-                    total_candidates_date=n_cands,
-                    is_top_pct=is_top,
-                    regime_bull=trend_bull,
-                    is_eligible=is_elig,
-                    score_col=policy.score_metric,
-                    model_id=f"h15_{mode.lower()}_variant_b",
-                )
-                scored_candidates.append(cand_rec)
-
-                if is_elig:
-                    planned_tp = p * (1.0 + policy.tp_pct)
-                    planned_sl = p * (1.0 - policy.sl_pct)
-                    base_alloc = self.initial_capital * 0.20
-                    planned_alloc = base_alloc * mult
-
-                    dec_rec = PaperDecision(
-                        decision_date=eval_date,
-                        execution_date=eval_date,
+                    cand_rec = PaperCandidate(
+                        date=eval_date,
                         ticker=t,
                         mode=mode,
+                        decision_price=p,
                         score=float(sc),
-                        rank=rank_idx,
-                        close_t=p,
-                        size_multiplier=mult,
-                        regime_category=reg_cat,
-                        planned_tp_pct=policy.tp_pct,
-                        planned_sl_pct=policy.sl_pct,
-                        planned_tp_price=planned_tp,
-                        planned_sl_price=planned_sl,
-                        planned_allocation_idr=planned_alloc,
-                        max_holding_days=policy.horizon_days,
+                        rank_in_date=rank_idx,
+                        total_candidates_date=n_cands,
+                        is_top_pct=is_top,
+                        regime_bull=trend_bull,
+                        is_eligible=is_elig,
+                        score_col=policy.score_metric,
+                        model_id=f"h15_{mode.lower()}_variant_b",
                     )
-                    new_decisions.append(dec_rec)
+                    scored_candidates.append(cand_rec)
 
+                    if is_elig:
+                        planned_tp = p * (1.0 + policy.tp_pct)
+                        planned_sl = p * (1.0 - policy.sl_pct)
+                        base_alloc = min(
+                            total_eq / self.max_positions,
+                            total_eq * policy.portfolio_constraints["equity_cap_pct"],
+                        )
+                        planned_alloc = base_alloc * mult
+
+                        dec_rec = PaperDecision(
+                            decision_date=eval_date,
+                            execution_date=next_exec_d,
+                            ticker=t,
+                            mode=mode,
+                            score=float(sc),
+                            rank=rank_idx,
+                            close_t=p,
+                            size_multiplier=mult,
+                            regime_category=reg_cat,
+                            planned_tp_pct=policy.tp_pct,
+                            planned_sl_pct=policy.sl_pct,
+                            planned_tp_price=planned_tp,
+                            planned_sl_price=planned_sl,
+                            planned_allocation_idr=planned_alloc,
+                            max_holding_days=policy.horizon_days,
+                        )
+                        new_decisions.append(dec_rec)
+
+                        # Queue pending order for next trading session
+                        state["pending_orders"].append(
+                            {
+                                "ticker": t,
+                                "mode": mode,
+                                "decision_date": str(eval_date),
+                                "scheduled_execution_date": str(next_exec_d),
+                                "close_t": p,
+                                "score": float(sc),
+                                "max_holding_days": policy.horizon_days,
+                                "tp_pct": policy.tp_pct,
+                                "sl_pct": policy.sl_pct,
+                                "size_multiplier": mult,
+                                "regime_category": reg_cat,
+                                "status": "PENDING",
+                            }
+                        )
+
+        # -----------------------------------------------------------------
+        # 5. Persist State, Sync CSVs, Update Operational Status
+        # -----------------------------------------------------------------
+        state["last_execution_date"] = str(eval_date)
+        state["last_decision_date"] = str(eval_date)
+        state["processed_dates"].append(str(eval_date))
+        if state.get("first_observation_date") is None:
+            state["first_observation_date"] = str(eval_date)
+            state["first_prospective_run_timestamp"] = datetime.now(timezone.utc).isoformat()
+
+        self.save_state(state)
+
+        # Candidates CSV
         cands_csv = self.artifacts_dir / "paper_trading_candidates.csv"
         if scored_candidates:
             df_new_cands = pd.DataFrame([asdict(c) for c in scored_candidates])
@@ -1537,6 +2138,7 @@ class PaperTradingEngine:
             else:
                 df_new_cands.to_csv(cands_csv, index=False)
 
+        # Decisions CSV
         decs_csv = self.artifacts_dir / "paper_trading_decisions.csv"
         if new_decisions:
             df_new_decs = pd.DataFrame([asdict(d) for d in new_decisions])
@@ -1566,11 +2168,33 @@ class PaperTradingEngine:
             else:
                 df_new_decs.to_csv(decs_csv, index=False)
 
+        # Trades CSV
+        trades_csv = self.artifacts_dir / "paper_trading_trades.csv"
+        if state["completed_trades"]:
+            df_trades = pd.DataFrame(state["completed_trades"])
+            df_trades.to_csv(trades_csv, index=False)
+
+        # Daily Equity CSV
+        eq_csv = self.artifacts_dir / "paper_trading_daily_equity.csv"
+        if state["daily_equity_history"]:
+            df_eq = pd.DataFrame(state["daily_equity_history"])
+            df_eq.to_csv(eq_csv, index=False)
+
+        # Refresh operational status JSON
+        self.generate_operational_status(user_approved=user_approved, base_dir=base_dir)
+
         return {
             "date": str(eval_date),
             "status": "SCORED",
             "candidates_count": len(scored_candidates),
             "decisions_count": len(new_decisions),
+            "orders_processed": orders_processed_count,
+            "orders_filled": orders_filled_count,
+            "positions_closed": positions_closed_count,
+            "open_positions_count": len(state["open_positions"]),
+            "pending_orders_count": len(state["pending_orders"]),
+            "cash": float(state["cash"]),
+            "total_equity": total_eq,
             "regime_category": reg_cat,
             "size_multiplier": mult,
         }

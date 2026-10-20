@@ -1313,9 +1313,20 @@ class PaperTradingEngine:
                 f"got {type(state).__name__}."
             )
 
+        if state.get("version") != "1.1":
+            raise StateIntegrityError(
+                f"Incompatible state schema version in {target}: "
+                f"found '{state.get('version')}', expected '1.1'. Explicit migration required."
+            )
+
         required_fields = [
             "version",
+            "phase",
             "policy_bundle_hash",
+            "user_approved",
+            "approval_timestamp",
+            "approval_data_cutoff",
+            "initial_capital",
             "cash",
             "peak_equity",
             "max_drawdown_amount",
@@ -1347,6 +1358,20 @@ class PaperTradingEngine:
                 f"found '{state_hash}', expected '{expected_hash}'."
             )
 
+        if not isinstance(state["user_approved"], bool):
+            raise StateIntegrityError(
+                f"Corrupted user_approved type in state: {type(state['user_approved']).__name__}"
+            )
+        if state["approval_timestamp"] is not None and not isinstance(
+            state["approval_timestamp"], str
+        ):
+            t_name = type(state["approval_timestamp"]).__name__
+            raise StateIntegrityError(f"Corrupted approval_timestamp type in state: {t_name}")
+        if state["approval_data_cutoff"] is not None and not isinstance(
+            state["approval_data_cutoff"], str
+        ):
+            t_name = type(state["approval_data_cutoff"]).__name__
+            raise StateIntegrityError(f"Corrupted approval_data_cutoff type in state: {t_name}")
         if not isinstance(state["cash"], (int, float)) or state["cash"] < 0:
             raise StateIntegrityError(f"Corrupted cash balance in state: {state['cash']}")
         if not isinstance(state["open_positions"], dict):
@@ -1361,13 +1386,6 @@ class PaperTradingEngine:
             raise StateIntegrityError(
                 f"Corrupted pending_orders type in state: {type(state['pending_orders'])}"
             )
-
-        if "user_approved" not in state:
-            state["user_approved"] = False
-        if "approval_timestamp" not in state:
-            state["approval_timestamp"] = None
-        if "approval_data_cutoff" not in state:
-            state["approval_data_cutoff"] = None
 
         return state
 
@@ -1483,6 +1501,28 @@ class PaperTradingEngine:
             cand += timedelta(days=1)
         return cand
 
+    def get_first_prospective_date(self) -> Optional[date]:
+        """Determines the first prospective observation date dynamically.
+
+        If observation has already started, returns persisted first_observation_date.
+        If approved with a market data cutoff, returns the next trading date after cutoff.
+        Otherwise, returns next trading date after the latest market data date in DB.
+        """
+        try:
+            state = self.load_state()
+            if state.get("first_observation_date"):
+                return pd.to_datetime(state["first_observation_date"]).date()
+            if state.get("approval_data_cutoff"):
+                cutoff_d = pd.to_datetime(state["approval_data_cutoff"]).date()
+                return self.get_next_trading_date(cutoff_d)
+        except Exception:
+            pass
+
+        latest_d_str = self.get_latest_market_data_date()
+        if latest_d_str:
+            return self.get_next_trading_date(pd.to_datetime(latest_d_str).date())
+        return None
+
     def generate_operational_status(
         self,
         replay_summaries: Optional[dict[str, Any]] = None,
@@ -1504,8 +1544,17 @@ class PaperTradingEngine:
             state_error = str(e)
             state = self._default_state()
 
+        persisted_approved = bool(
+            not state_corrupt
+            and state.get("user_approved") is True
+            and (
+                state.get("approval_timestamp") is not None
+                or state.get("first_prospective_run_timestamp") is not None
+            )
+        )
         has_started = bool(
             not state_corrupt
+            and persisted_approved
             and state.get("first_observation_date") is not None
             and state.get("first_prospective_run_timestamp") is not None
             and len(state.get("processed_dates", [])) > 0
@@ -1524,7 +1573,7 @@ class PaperTradingEngine:
             scoring_artifacts_status = STATUS_SCORING_ARTIFACTS_READY
             if has_started:
                 operational_status = STATUS_OBSERVATION_ACTIVE
-            elif is_approved:
+            elif is_approved or persisted_approved:
                 operational_status = STATUS_APPROVED_PENDING_FIRST_OBSERVATION
             else:
                 operational_status = STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL
@@ -1604,7 +1653,9 @@ class PaperTradingEngine:
                 "training_decision_cutoff_date": "2026-09-25",
                 "forward_label_final_bar_date": "2026-10-16",
                 "training_build_timestamp": "2026-10-19T09:22:28.960379+00:00",
-                "first_allowed_prospective_date": "2026-10-19",
+                "first_allowed_prospective_date": str(
+                    self.get_first_prospective_date() or "UNKNOWN"
+                ),
                 "data_finality_proof": (
                     "All 15-day forward outcome horizons for training decisions up to 2026-09-25 "
                     "matured on or before market close 2026-10-16 (15 trading days: Sep 28-Oct 2, "
@@ -1711,16 +1762,6 @@ class PaperTradingEngine:
                 "Prospective observation date scoring requires explicit user approval."
             )
 
-        # Cutoff date check: prospective decision date must be strictly later than approval cutoff
-        cutoff_str = state.get("approval_data_cutoff")
-        if cutoff_str is not None:
-            cutoff_d = pd.to_datetime(cutoff_str).date()
-            if eval_date <= cutoff_d:
-                raise InvalidProspectiveDateError(
-                    f"Decision date {eval_date} is at or before the approval market data cutoff "
-                    f"{cutoff_d}. Historical prospective observation is prohibited."
-                )
-
         # Idempotency check: if session already processed, return existing state
         if str(eval_date) in state.get("processed_dates", []):
             return {
@@ -1741,6 +1782,16 @@ class PaperTradingEngine:
                 ),
             }
 
+        # Cutoff date check: prospective decision date must be strictly later than approval cutoff
+        cutoff_str = state.get("approval_data_cutoff")
+        if cutoff_str is not None:
+            cutoff_d = pd.to_datetime(cutoff_str).date()
+            if eval_date <= cutoff_d:
+                raise InvalidProspectiveDateError(
+                    f"Decision date {eval_date} is at or before the approval market data cutoff "
+                    f"{cutoff_d}. Historical prospective observation is prohibited."
+                )
+
         # Monotonicity & sequential session check
         if state.get("processed_dates"):
             last_d_str = state["processed_dates"][-1]
@@ -1759,6 +1810,16 @@ class PaperTradingEngine:
                         "must process every active trading session sequentially without gaps. "
                         f"Recovery action: ingest and step through {expected_next} first."
                     )
+        elif state.get("approval_data_cutoff") is not None:
+            cutoff_d = pd.to_datetime(state["approval_data_cutoff"]).date()
+            expected_first = self.get_next_trading_date(cutoff_d)
+            if eval_date > expected_first:
+                raise MissedSessionError(
+                    "Missed initial trading session detected. Expected first prospective trading "
+                    f"date was {expected_first}, but received {eval_date}. Prospective observation "
+                    "must process every active trading session sequentially without gaps. "
+                    f"Recovery action: ingest and step through {expected_first} first."
+                )
 
         root = base_dir or Path(__file__).resolve().parent.parent.parent
         conn = sqlite3.connect(self.db_path)
@@ -2294,7 +2355,27 @@ class PaperTradingEngine:
         # -----------------------------------------------------------------
         price_map = {t: b["close"] for t, b in bars_today.items() if b["close"] > 0}
 
-        reg_info = self.regime_lookup.get(eval_date, {})
+        if not df_feat.empty and "ihsg_vs_ema20" in df_feat.columns:
+            reg_info = {
+                "ihsg_vs_ema20": float(df_feat["ihsg_vs_ema20"].mean()),
+                "market_breadth": (
+                    float(df_feat["market_breadth"].mean())
+                    if "market_breadth" in df_feat
+                    else 0.5
+                ),
+                "ihsg_return_20d": (
+                    float(df_feat["ihsg_return_20d"].mean())
+                    if "ihsg_return_20d" in df_feat
+                    else 0.0
+                ),
+                "market_volatility": (
+                    float(df_feat["market_volatility"].mean())
+                    if "market_volatility" in df_feat
+                    else 0.0075
+                ),
+            }
+        else:
+            reg_info = self.regime_lookup.get(eval_date, {})
         trend_bull = reg_info.get("ihsg_vs_ema20", 0.0) > 0.0
         mult, reg_cat = classify_regime_three_tier(reg_info)
 
@@ -2424,6 +2505,10 @@ class PaperTradingEngine:
         state["last_execution_date"] = str(eval_date)
         state["last_decision_date"] = str(eval_date)
         state["processed_dates"].append(str(eval_date))
+        if not state.get("user_approved"):
+            state["user_approved"] = True
+            if not state.get("approval_timestamp"):
+                state["approval_timestamp"] = datetime.now(timezone.utc).isoformat()
         if state.get("first_observation_date") is None:
             state["first_observation_date"] = str(eval_date)
             state["first_prospective_run_timestamp"] = datetime.now(timezone.utc).isoformat()

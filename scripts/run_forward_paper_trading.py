@@ -51,6 +51,11 @@ def parse_args() -> argparse.Namespace:
         help="Record explicit human authorization and cutoff for prospective paper trading",
     )
     parser.add_argument(
+        "--migrate-state",
+        action="store_true",
+        help="Migrate legacy paper trading state to latest schema with automatic backup",
+    )
+    parser.add_argument(
         "--export-benchmarks",
         action="store_true",
         help="Export frozen policy configuration and reference benchmark tables",
@@ -159,6 +164,7 @@ def main() -> None:
     no_cmd = not (
         args.status
         or args.approve_observation
+        or args.migrate_state
         or args.export_benchmarks
         or args.run_replay
         or args.date
@@ -174,9 +180,36 @@ def main() -> None:
         logger.info("State reset complete.")
         return
 
+    if args.migrate_state:
+        logger.info("Migrating paper trading persistent state...")
+        try:
+            migrated = engine.migrate_state(backup=True)
+            logger.info(
+                "State successfully migrated to schema version %s.",
+                migrated.get("version"),
+            )
+            print("=" * 80)
+            print("PHASE 11F — STATE MIGRATION COMPLETE")
+            print("=" * 80)
+            print(f"Schema Version:         {migrated.get('version')}")
+            print(f"Policy Bundle Hash:     {migrated.get('policy_bundle_hash')}")
+            print(f"User Approved:          {migrated.get('user_approved')}")
+            print("Backup preserved in artifacts directory.")
+            print("=" * 80)
+        except StateIntegrityError as e:
+            logger.error("Migration failed: %s", e)
+            print(f"FAIL_CLOSED: Migration failed: {e}")
+            sys.exit(1)
+        return
+
     if args.approve_observation:
         logger.info("Recording explicit user approval for prospective observation...")
-        approval_info = engine.approve_observation()
+        try:
+            approval_info = engine.approve_observation()
+        except StateIntegrityError as e:
+            logger.error("Approval aborted due to state corruption: %s", e)
+            print(f"FAIL_CLOSED: {e}")
+            sys.exit(1)
         logger.info("Approval recorded: %s", approval_info)
         print("=" * 80)
         print("PHASE 11F — PROSPECTIVE OBSERVATION APPROVAL RECORDED")
@@ -206,7 +239,12 @@ def main() -> None:
         return
 
     if args.date:
-        state = engine.load_state()
+        try:
+            state = engine.load_state()
+        except StateIntegrityError as e:
+            logger.error("Prospective scoring blocked: state is corrupted: %s", e)
+            print(f"FAIL_CLOSED: {e}")
+            sys.exit(1)
         if not state.get("user_approved") and not args.user_approved:
             logger.error(
                 "Prospective observation date scoring on %s requires explicit user approval.",

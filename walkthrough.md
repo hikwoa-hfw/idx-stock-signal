@@ -66,7 +66,7 @@ In Phase 11F.4, we completed all final fail-closed readiness corrections for for
 
 ### 5. Exhaustive Regression Testing Suite
 **Files:** `tests/unit/test_fail_closed_readiness.py`, `tests/unit/test_research_scoring_integrity.py`
-- Created `tests/unit/test_fail_closed_readiness.py` with 16 comprehensive tests:
+- Created `tests/unit/test_fail_closed_readiness.py` with 23 comprehensive tests:
   1. `test_approval_recorded_without_scoring_does_not_activate_observation`
   2. `test_status_user_approved_flag_does_not_activate_observation`
   3. `test_historical_date_at_or_before_data_cutoff_rejected`
@@ -83,6 +83,13 @@ In Phase 11F.4, we completed all final fail-closed readiness corrections for for
   14. `test_duplicate_and_out_of_order_dates_cannot_alter_portfolio`
   15. `test_missed_session_in_prospective_observation_fails_closed`
   16. `test_production_champion_fallback_remains_strictly_prohibited`
+  17. `test_first_prospective_session_missed_fails_closed`
+  18. `test_observation_active_requires_persisted_approval`
+  19. `test_step_prospective_date_persists_approval_fields`
+  20. `test_missing_required_feature_columns_fails_closed`
+  21. `test_date_mismatch_in_bars_fails_closed`
+  22. `test_zero_joined_tickers_fails_closed`
+  23. `test_cli_migrate_state_action`
 - Updated operational status tests in `tests/unit/test_research_scoring_integrity.py`:
   - Adjusted `test_operational_status_observation_active` to verify `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`.
   - Added `test_operational_status_active_only_after_persisted_first_run`.
@@ -93,8 +100,9 @@ In Phase 11F.4, we completed all final fail-closed readiness corrections for for
 
 | Verification Step | Command | Result |
 |---|---|---|
-| Fail-closed regression suite | `.venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py -v` | **PASS** (16/16 passed in 2.28s) |
-| Combined paper trading suite | `.venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py tests/unit/test_prospective_lifecycle.py tests/unit/test_forward_paper_trading.py` | **PASS** (76/76 passed in 11.05s) |
+| Fail-closed regression suite | `.venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py -v` | **PASS** (23/23 passed in 6.35s) |
+| Combined paper trading suite | `.venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py tests/unit/test_prospective_lifecycle.py tests/unit/test_forward_paper_trading.py` | **PASS** (83/83 passed in 11.01s) |
+| Full repository test suite | `.venv\Scripts\python -m pytest` | **PASS** (586/586 passed in 108.37s) |
 | Repository linter | `.venv\Scripts\ruff check .` | **PASS** (0 errors) |
 | Unstarted state confirmation | `git status` | Clean; no production state file created |
 
@@ -132,7 +140,7 @@ After pulling these changes, the operator should verify the following items:
   ```powershell
   python -m pytest tests/unit/test_fail_closed_readiness.py -v
   ```
-  *Verify all 16 fail-closed readiness tests pass.*
+  *Verify all 23 fail-closed readiness tests pass.*
 
 - [ ] **6. Ingest Next Trading Session & Step Observation:**
   ```powershell

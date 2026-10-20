@@ -29,12 +29,12 @@ All fail-closed corrections have been implemented and verified. Production champ
    - Persistent approval state fields added to `paper_trading_state.json`: `user_approved: bool`, `approval_timestamp: Optional[str]`, `approval_data_cutoff: Optional[str]`.
    - Dedicated CLI command `--approve-observation` records human approval without executing scoring, generating orders, or modifying trading state.
    - Introduced distinct lifecycle status `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`.
-   - Calling `--status --user-approved` or passing `user_approved=True` cannot independently activate observation; observation transitions to `OBSERVATION_ACTIVE` only after an authorized prospective run succeeds and records are persisted to disk.
+   - Calling `--status --user-approved` or passing `user_approved=True` cannot independently activate observation; observation transitions to `OBSERVATION_ACTIVE` only after an authorized prospective run succeeds and records are persisted to disk. State transitions require both persisted approval and a valid initial prospective run record.
 
 2. **Prevented Backdated or Stale Observations:**
-   - Dynamic `approval_data_cutoff` established from `MAX(date)` in `daily_bars` (or explicit parameter). Any prospective date at or before this cutoff is strictly rejected with `InvalidProspectiveDateError`.
-   - Strict monotonic progression enforced: any date earlier than the last processed date raises `InvalidProspectiveDateError`.
-   - Gaps between trading sessions fail closed with `MissedSessionError`, requiring sequential step-through rather than silently skipping days. Stale pending orders from missed sessions fail closed with `MissedSessionError` rather than silently filling at later market opens.
+   - Dynamic `approval_data_cutoff` established from `MAX(date)` in `daily_bars` (or explicit parameter). Any prospective date at or before this cutoff is strictly rejected with `InvalidProspectiveDateError`. Dynamic first allowed prospective date determined via `get_first_prospective_date()`.
+   - Strict monotonic progression enforced: any date earlier than or equal to the last processed date raises `InvalidProspectiveDateError`.
+   - Gaps between trading sessions fail closed with `MissedSessionError`, requiring sequential step-through rather than silently skipping days (both initial post-cutoff session and subsequent sessions). Stale pending orders from missed sessions fail closed with `MissedSessionError` rather than silently filling at later market opens.
 
 3. **Strict Data Quality Guards in `step_prospective_date()`:**
    - Independent validation failures for missing price bars when features exist, or missing features when price bars exist (`DataQualityError`).
@@ -44,14 +44,15 @@ All fail-closed corrections have been implemented and verified. Production champ
    - Fail-closed rejection of non-finite (Inf/-Inf) values and entirely null columns in the candidate feature matrix.
 
 4. **Fail-Closed Persistent State Integrity:**
-   - `load_state()` validates JSON syntax, dictionary root, all required fields, non-negative cash balance, and validates `policy_bundle_hash` against `frozen_bundle.config_sha256`.
+   - `load_state()` validates JSON syntax, dictionary root, all required fields (`user_approved`, `approval_timestamp`, `approval_data_cutoff`), non-negative cash balance, and validates `policy_bundle_hash` against `frozen_bundle.config_sha256`. Missing fields in legacy v1.0 state raise `StateIntegrityError` without silent defaulting.
    - Any corruption or tampering raises `StateIntegrityError`; state is never silently overwritten with defaults.
    - `generate_operational_status()` transitions to `STATUS_BLOCKED_ON_STATE_CORRUPTION` upon state corruption.
-   - `migrate_state(backup=True)` provides an authorized path for schema upgrades, creating a timestamped `.bak` copy prior to writing.
+   - State migration supported programmatically via `migrate_state(backup=True)` and via CLI `--migrate-state`, creating a timestamped `.bak` copy prior to writing.
 
 5. **Exhaustive Unit & Regression Suite:**
-   - Created `tests/unit/test_fail_closed_readiness.py` with 16 targeted tests covering all 10 fail-closed requirements. All 16 tests pass in 2.28s.
-   - Verified 76 total paper trading tests across the complete test suite.
+   - Expanded `tests/unit/test_fail_closed_readiness.py` to 23 targeted tests covering all fail-closed requirements. All 23 tests pass in 6.35s.
+   - Verified 83 total paper trading tests across the lifecycle suite.
+   - Verified 586 total tests across the entire repository test suite (100% pass rate).
    - Clean linting pass with `ruff check .` (0 errors across entire repository).
 
 ### Important Findings
@@ -91,12 +92,12 @@ Await human operator invocation of `--approve-observation` followed by `--date 2
 | `python/experiments/paper_trading.py` | Added status constants `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`, `STATUS_BLOCKED_ON_STATE_CORRUPTION`. | Explicit semantic states for approval prior to first run and corrupted state detection. |
 | `python/experiments/paper_trading.py` | Updated `_default_state()` with schema `version: "1.1"`, `user_approved: False`, `approval_timestamp: None`, `approval_data_cutoff: None`. | Persistent schema support for decoupled approval and cutoff tracking. |
 | `python/experiments/paper_trading.py` | Enhanced `load_state()` to validate root dict, required fields, and policy hash, raising `StateIntegrityError` without fallback. | Prevents silent state reset upon JSON corruption or field omission. |
-| `python/experiments/paper_trading.py` | Added `migrate_state(backup=True)` creating timestamped `.json_backup_*.json`. | Safe schema upgrade mechanism preserving historical balances and orders. |
+| `python/experiments/paper_trading.py` | Added `migrate_state(backup=True)` and dynamic `get_first_prospective_date()`. | Safe schema upgrade preserving historical balances and dynamic prospective date resolution. |
 | `python/experiments/paper_trading.py` | Added `approve_observation()` and `get_latest_market_data_date()`. | Records human authorization and data cutoff without scoring or mutating trading state. |
 | `python/experiments/paper_trading.py` | Enhanced `step_prospective_date()` with data quality checks, monotonicity check, missed session check, and stale order guards. | Prevents backdated runs, skips, silent order fills at later opens, and corrupted data ingestion. |
-| `scripts/run_forward_paper_trading.py` | Added `--approve-observation` CLI action, updated `--status` display, added cutoff enforcement in `--date`. | CLI exposure of decoupled approval and cutoff verification. |
+| `scripts/run_forward_paper_trading.py` | Added `--approve-observation` and `--migrate-state` CLI actions, updated `--status` display, added cutoff enforcement in `--date`. | CLI exposure of decoupled approval, automated state backup migration, and cutoff verification. |
 | `tests/unit/test_research_scoring_integrity.py` | Updated operational status tests for decoupled approval; added `test_operational_status_active_only_after_persisted_first_run`. | Alignment of existing research scoring suite with Phase 11F.4 statuses. |
-| `tests/unit/test_fail_closed_readiness.py` | Created comprehensive 16-test suite covering all 10 fail-closed requirements. | Exhaustive regression and boundary verification. |
+| `tests/unit/test_fail_closed_readiness.py` | Expanded test suite to 23 comprehensive tests covering all fail-closed requirements. | Exhaustive regression and boundary verification. |
 
 ---
 
@@ -105,8 +106,9 @@ Await human operator invocation of `--approve-observation` followed by `--date 2
 ### Quantitative Verification Results
 
 1. **Unit Test Pass Rate:**
-   - `tests/unit/test_fail_closed_readiness.py`: 16/16 passed (100%) in 2.28s.
-   - Paper trading combined suite (`test_fail_closed_readiness.py`, `test_research_scoring_integrity.py`, `test_prospective_lifecycle.py`, `test_forward_paper_trading.py`): 76/76 passed (100%) in 11.05s.
+   - `tests/unit/test_fail_closed_readiness.py`: 23/23 passed (100%) in 6.35s.
+   - Paper trading combined suite (`test_fail_closed_readiness.py`, `test_research_scoring_integrity.py`, `test_prospective_lifecycle.py`, `test_forward_paper_trading.py`): 83/83 passed (100%) in 10.79s.
+   - Full repository test suite (`pytest`): 586/586 passed (100%) in 108.37s.
 2. **Linter Compliance:**
    - `ruff check .`: 0 errors across all repository Python files.
 3. **Observation Invariant:**
@@ -132,8 +134,9 @@ Await human operator invocation of `--approve-observation` followed by `--date 2
 
 | Check | Command or Method | Result | Evidence/Notes |
 |---|---|---|---|
-| Unit tests (Fail-closed) | `python -m pytest tests/unit/test_fail_closed_readiness.py -v` | PASS (16/16 passed) | Executed in 2.28s |
-| Unit tests (Paper trading) | `python -m pytest tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py tests/unit/test_prospective_lifecycle.py tests/unit/test_forward_paper_trading.py` | PASS (76/76 passed) | Executed in 11.05s |
+| Unit tests (Fail-closed) | `python -m pytest tests/unit/test_fail_closed_readiness.py -v` | PASS (23/23 passed) | Executed in 6.35s |
+| Unit tests (Paper trading) | `python -m pytest tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py tests/unit/test_prospective_lifecycle.py tests/unit/test_forward_paper_trading.py` | PASS (83/83 passed) | Executed in 10.79s |
+| Full repository tests | `python -m pytest` | PASS (586/586 passed) | Executed in 108.37s |
 | Linting | `ruff check .` | PASS (0 errors) | Full repository verified |
 | Idempotency check | `test_duplicate_and_out_of_order_dates_cannot_alter_portfolio` | PASS | Re-running identical date returns `ALREADY_PROCESSED` without state mutation |
 | State corruption guard | `test_malformed_json_state_raises_state_integrity_error` | PASS | Malformed state raises `StateIntegrityError`, preserves file on disk |
@@ -153,7 +156,7 @@ Await human operator invocation of `--approve-observation` followed by `--date 2
   - `summary.md`
   - `walkthrough.md`
 - **Files deleted:** None
-- **Data/schema migrations:** Schema version updated to `1.1` in `paper_trading_state.json` defaults; `migrate_state()` provides automated migration with backup.
+- **Data/schema migrations:** Schema version updated to `1.1` in `paper_trading_state.json` defaults; `migrate_state()` and `--migrate-state` CLI provide automated migration with backup.
 - **Generated artifacts:** None (production paper trading state remains unstarted).
 - **Production state changed:** No. Production champions and datasets remain unmodified.
 
@@ -162,7 +165,7 @@ Await human operator invocation of `--approve-observation` followed by `--date 2
 ## 9. Safeguards and Backward Compatibility
 
 - **Existing behavior preserved:** Historical replay validation and research model scoring remain intact.
-- **Backward compatibility:** Legacy `version: "1.0"` states are migratable via `migrate_state(backup=True)` without loss of balances or trades.
+- **Backward compatibility:** Legacy `version: "1.0"` states are migratable via `migrate_state(backup=True)` or CLI `--migrate-state` without loss of balances or trades.
 - **Champion protection:** Production models (`lightgbm_classification_20261014_093522` and `lightgbm_classification_20261014_093607`) remain untouched.
 
 ---
@@ -174,9 +177,10 @@ Await human operator invocation of `--approve-observation` followed by `--date 2
   ```powershell
   .venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py -v
   .venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py tests/unit/test_prospective_lifecycle.py tests/unit/test_forward_paper_trading.py
+  .venv\Scripts\python -m pytest
   .venv\Scripts\ruff check .
   ```
-- **Expected output:** 76 passed tests, 0 linter errors.
+- **Expected output:** 23 fail-closed tests passed, 83 paper trading tests passed, 586 total tests passed, 0 linter errors.
 
 ---
 

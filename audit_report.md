@@ -6,7 +6,7 @@
 - **Audit Date:** `2026-10-20 14:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11F.4 fail-closed readiness corrections, persistent approval & cutoff decoupling, strict data quality guards, state integrity protection, and 76 passed paper trading unit tests
+- **Latest Commit SHA:** Working tree with Phase 11F.4 fail-closed readiness corrections, persistent approval & cutoff decoupling, strict data quality guards, state integrity protection, 23 fail-closed tests, and 83 passed paper trading unit tests (586 total repository tests passed)
 - **Overall Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
@@ -84,7 +84,7 @@ The repository maintains dedicated, detailed reports for each major governance a
 12. [docs/20_phase_11f_final_readiness_report.md](docs/20_phase_11f_final_readiness_report.md)
     - **Phase 11F.4:** Final Fail-Closed Readiness Corrections
     - **Scope:** Decoupled persistent human approval state and cutoff tracking (`--approve-observation`), distinct `APPROVED_PENDING_FIRST_OBSERVATION` status, fail-closed historical date rejection ($\le$ cutoff), monotonicity enforcement, missed session and stale order execution guards (`MissedSessionError`), comprehensive data quality validation (`DataQualityError` for missing bars, missing features, schema/coverage, Inf values), state corruption detection (`StateIntegrityError` and `BLOCKED_ON_STATE_CORRUPTION`), and safe migration with timestamped backups.
-    - **Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (16 unit tests in fail-closed module, 76 total paper trading tests passed; ruff clean 0 error; champions preserved).
+    - **Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (23 unit tests in fail-closed module, 83 total paper trading tests passed, 586 total repository tests passed 100%; ruff clean 0 error; champions preserved).
 
 ---
 

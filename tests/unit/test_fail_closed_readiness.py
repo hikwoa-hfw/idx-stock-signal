@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -472,6 +474,10 @@ def test_state_migration_preserves_backup_and_upgrades_schema(tmp_path: Path):
 
     state_file.write_text(json.dumps(legacy_state), encoding="utf-8")
 
+    # Before migration, load_state must fail closed on incompatible schema
+    with pytest.raises(StateIntegrityError, match="Incompatible state schema version"):
+        engine.load_state()
+
     # Run authorized migration
     migrated = engine.migrate_state(backup=True)
     assert migrated["version"] == "1.1"
@@ -585,3 +591,189 @@ def test_production_champion_fallback_remains_strictly_prohibited(tmp_path: Path
     assert status["champion_protection"]["fallback_permitted"] is False
     assert status["champion_protection"]["LOW_PRICE_champion"] == CHAMPION_MODELS["LOW_PRICE"]
     assert status["champion_protection"]["HIGHER_PRICE_champion"] == CHAMPION_MODELS["HIGHER_PRICE"]
+
+
+def test_first_prospective_session_missed_fails_closed(tmp_path: Path):
+    """Verifies that skipping the initial trading session strictly after cutoff
+    fails closed with MissedSessionError.
+    """
+    db_file = tmp_path / "test_stock.db"
+    create_isolated_test_db(db_file)
+    populate_mock_models(tmp_path)
+
+    # Ingest 2026-10-19 and 2026-10-20
+    add_session_to_test_db(db_file, "2026-10-19", ticker="BBCA", price=10000.0)
+    add_session_to_test_db(db_file, "2026-10-20", ticker="BBCA", price=10100.0)
+
+    engine = PaperTradingEngine(db_path=str(db_file), artifacts_dir=tmp_path / "artifacts")
+    engine.approve_observation(cutoff_date="2026-10-16", base_dir=tmp_path)
+
+    # Attempt to skip 2026-10-19 and start directly on 2026-10-20
+    with pytest.raises(MissedSessionError, match="Missed initial trading session detected"):
+        engine.step_prospective_date(date(2026, 10, 20), user_approved=True, base_dir=tmp_path)
+
+    # State must not record any dates
+    state = engine.load_state()
+    assert state["processed_dates"] == []
+    assert state["first_observation_date"] is None
+
+
+def test_observation_active_requires_persisted_approval(tmp_path: Path):
+    """Verifies OBSERVATION_ACTIVE cannot be reported if user_approved is False,
+    even if first_observation_date or processed_dates are present.
+    """
+    art_dir = tmp_path / "artifacts"
+    engine = PaperTradingEngine(db_path="datasets/stock_signals.db", artifacts_dir=art_dir)
+    state = engine._default_state()
+    state["user_approved"] = False  # unapproved
+    state["first_observation_date"] = "2026-10-19"
+    state["first_prospective_run_timestamp"] = "2026-10-19T09:00:00Z"
+    state["processed_dates"] = ["2026-10-19"]
+    engine.save_state(state)
+
+    status = engine.generate_operational_status()
+    # Must NOT report OBSERVATION_ACTIVE
+    assert status["operational_status"] != STATUS_OBSERVATION_ACTIVE
+    assert status["operational_status"] == STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL
+    assert status["prospective_lifecycle"]["has_started"] is False
+
+
+def test_step_prospective_date_persists_approval_fields(tmp_path: Path):
+    """Verifies that running step_prospective_date with user_approved=True
+    persists user_approved=True and approval_timestamp into state.
+    """
+    db_file = tmp_path / "test_stock.db"
+    create_isolated_test_db(db_file)
+    populate_mock_models(tmp_path)
+    add_session_to_test_db(db_file, "2026-10-19", ticker="BBCA", price=10000.0)
+
+    engine = PaperTradingEngine(db_path=str(db_file), artifacts_dir=tmp_path / "artifacts")
+    # State has user_approved=False initially
+    s0 = engine.load_state()
+    assert s0["user_approved"] is False
+
+    res = engine.step_prospective_date(date(2026, 10, 19), user_approved=True, base_dir=tmp_path)
+    assert res["status"] == "SCORED"
+
+    s1 = engine.load_state()
+    assert s1["user_approved"] is True
+    assert s1["approval_timestamp"] is not None
+    assert s1["first_observation_date"] == "2026-10-19"
+
+    status = engine.generate_operational_status(base_dir=tmp_path)
+    assert status["operational_status"] == STATUS_OBSERVATION_ACTIVE
+
+
+def test_missing_required_feature_columns_fails_closed(tmp_path: Path):
+    """Verifies that missing required columns in features_daily raises DataQualityError."""
+    db_file = tmp_path / "test_stock.db"
+    conn = sqlite3.connect(db_file)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE daily_bars (
+            date TEXT NOT NULL,
+            ticker TEXT NOT NULL,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            volume REAL NOT NULL,
+            PRIMARY KEY (date, ticker)
+        );
+    """)
+    # Omit the last column from FEATURE_SCHEMA_30
+    partial_schema = FEATURE_SCHEMA_30[:-1]
+    cols = ", ".join(f"{col} REAL" for col in partial_schema)
+    cur.execute(
+        f"CREATE TABLE features_daily ("
+        f"date TEXT NOT NULL, ticker TEXT NOT NULL, {cols}, PRIMARY KEY (date, ticker));"
+    )
+    cur.execute(
+        "INSERT INTO daily_bars VALUES "
+        "('2026-10-19', 'BBCA', 10000.0, 10200.0, 9900.0, 10100.0, 100000.0);"
+    )
+    feat_vals = ", ".join("0.05" for _ in partial_schema)
+    cur.execute(f"INSERT INTO features_daily VALUES ('2026-10-19', 'BBCA', {feat_vals});")
+    conn.commit()
+    conn.close()
+
+    populate_mock_models(tmp_path)
+    engine = PaperTradingEngine(db_path=str(db_file), artifacts_dir=tmp_path / "artifacts")
+    engine.approve_observation(cutoff_date="2026-10-16", base_dir=tmp_path)
+
+    with pytest.raises(DataQualityError, match="missing required feature columns"):
+        engine.step_prospective_date(date(2026, 10, 19), user_approved=True, base_dir=tmp_path)
+
+
+def test_date_mismatch_in_bars_fails_closed(tmp_path: Path):
+    """Verifies that mismatched dates in daily_bars raises DataQualityError."""
+    db_file = tmp_path / "test_stock.db"
+    create_isolated_test_db(db_file)
+    populate_mock_models(tmp_path)
+
+    conn = sqlite3.connect(db_file)
+    feat_vals = ", ".join("0.05" for _ in FEATURE_SCHEMA_30)
+    conn.execute(f"INSERT INTO features_daily VALUES ('2026-10-19', 'BBCA', {feat_vals});")
+    conn.commit()
+    conn.close()
+
+    engine = PaperTradingEngine(db_path=str(db_file), artifacts_dir=tmp_path / "artifacts")
+    engine.approve_observation(cutoff_date="2026-10-16", base_dir=tmp_path)
+
+    with pytest.raises(DataQualityError, match="daily price bars are missing"):
+        engine.step_prospective_date(date(2026, 10, 19), user_approved=True, base_dir=tmp_path)
+
+
+def test_zero_joined_tickers_fails_closed(tmp_path: Path):
+    """Verifies that disjoint tickers between features and bars raises DataQualityError."""
+    db_file = tmp_path / "test_stock.db"
+    create_isolated_test_db(db_file)
+    populate_mock_models(tmp_path)
+
+    conn = sqlite3.connect(db_file)
+    feat_vals = ", ".join("0.05" for _ in FEATURE_SCHEMA_30)
+    conn.execute(f"INSERT INTO features_daily VALUES ('2026-10-19', 'BBCA', {feat_vals});")
+    conn.execute(
+        "INSERT INTO daily_bars VALUES "
+        "('2026-10-19', 'TLKM', 3000.0, 3100.0, 2950.0, 3050.0, 100000.0);"
+    )
+    conn.commit()
+    conn.close()
+
+    engine = PaperTradingEngine(db_path=str(db_file), artifacts_dir=tmp_path / "artifacts")
+    engine.approve_observation(cutoff_date="2026-10-16", base_dir=tmp_path)
+
+    with pytest.raises(DataQualityError, match="zero valid joined tickers"):
+        engine.step_prospective_date(date(2026, 10, 19), user_approved=True, base_dir=tmp_path)
+
+
+def test_cli_migrate_state_action(tmp_path: Path):
+    """Verifies that running CLI with --migrate-state upgrades legacy state."""
+    art_dir = tmp_path / "artifacts"
+    art_dir.mkdir(parents=True, exist_ok=True)
+    state_file = art_dir / "paper_trading_state.json"
+
+    engine = PaperTradingEngine(db_path="datasets/stock_signals.db", artifacts_dir=art_dir)
+    legacy = engine._default_state()
+    legacy["version"] = "1.0"
+    del legacy["user_approved"]
+    del legacy["approval_timestamp"]
+    del legacy["approval_data_cutoff"]
+    legacy["cash"] = 75_000_000.0
+    state_file.write_text(json.dumps(legacy), encoding="utf-8")
+
+    cmd = [
+        sys.executable,
+        "scripts/run_forward_paper_trading.py",
+        "--migrate-state",
+        "--artifacts-dir",
+        str(art_dir),
+    ]
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    assert p.returncode == 0
+    assert "STATE MIGRATION COMPLETE" in p.stdout
+
+    migrated = engine.load_state()
+    assert migrated["version"] == "1.1"
+    assert migrated["cash"] == 75_000_000.0
+    assert migrated["user_approved"] is False

@@ -52,7 +52,7 @@ Production champion models (`lightgbm_classification_20261014_093522` and `light
 ### Important Findings
 
 - **Windows Task Scheduler Access:** Standard user privileges on Windows 11 allow registering user-level scheduled tasks via `Register-ScheduledTask` / `schtasks.exe` without admin elevation.
-- **Pre-Approval Historical Data Protection:** Current database contains bars up to `2026-10-16`. Approved state cutoff is `effective_observation_cutoff = '2026-10-21'`. Running `--date 2026-10-16` properly halts Stage E with status `SKIPPED_PRE_APPROVAL_SESSION`, guaranteeing zero backdating and zero historical contamination.
+- **Pre-Approval Historical Data Protection:** Current database contains bars up to `2026-10-21` (244,622 bars across 2,657 sessions). Approved state cutoff is `effective_observation_cutoff = '2026-10-21'`. Running `--date 2026-10-21` or any prior session properly halts Stage E with status `SKIPPED_PRE_APPROVAL_SESSION`, guaranteeing zero backdating and zero historical contamination.
 - **Phase 11F Prospective Continuity:** Prospective lifecycle strictly checks `get_next_trading_date(last_processed_date)`. When simulating multiple prospective dates, sessions must be consecutive trading days without gaps.
 
 ### Next Recommended Action
@@ -129,9 +129,9 @@ None. All 12 requirements were completed and verified.
    - LastRunTime: `10/21/2026 4:30:00 PM`, LastTaskResult: `0` (Success), NumberOfMissedRuns: `0`
    - Action: `wscript.exe "C:\Users\DROSE250122\Documents\Personal\indonesian-stock-ai\scripts\run_scheduled_pipeline.vbs"` (silent execution without terminal window popups)
 5. **What is the last fully completed trading session in the persisted database?**
-   `2026-10-21` (244,213 daily bars in `daily_bars` spanning 2,655 trading sessions; 192 distinct tickers recorded on `2026-10-21`, representing 91.4% coverage of the 210 seed universe).
+   `2026-10-21` (244,622 daily bars in `daily_bars` spanning 2,657 trading sessions; 192 distinct tickers recorded on `2026-10-21`, representing 91.4% coverage of the 210 seed universe).
 6. **Are the feature rows saved and fresh for that session?**
-   **Yes.** SQLite table `features_daily` contains 186,702 total rows, with valid, fully populated feature rows for `2026-10-16`.
+   **Yes.** SQLite table `features_daily` contains 187,296 total rows, with valid, fully populated feature rows for `2026-10-21` (192 distinct tickers generated and verified in DB).
 7. **Is forward paper trading ready to process its next eligible session?**
    **Yes.** Operator approval has been recorded in `artifacts/phase_11f/paper_trading_state.json` (`user_approved: True`, `effective_observation_cutoff: '2026-10-21'`). When the next trading session strictly after `2026-10-21` is ingested (e.g. `2026-10-22`), the pipeline will process orders, fills, exits, and new decisions.
 8. **What, if anything, must still be configured manually?**
@@ -223,7 +223,7 @@ None. All 12 requirements were completed and verified.
   - `python/experiments/paper_trading.py` (fixed `np.isinf` object column type handling)
   - `Makefile` (added `daily-pipeline` target)
   - `audit_report.md` (indexed Phase 11G)
-  - `summary.md` (appended Logs 69 and 70)
+  - `summary.md` (appended Logs 69, 70, and 71)
   - `walkthrough.md` (updated work session details and checklist)
 - **Production state changed:** No. Production champions and frozen policy bundle hashes remain immutable.
 

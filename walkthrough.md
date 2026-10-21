@@ -33,10 +33,12 @@ Sesi kerja ini menuntaskan rekonsiliasi final repositori dan status runtime untu
 #### 3. Rekonsiliasi Laporan Validasi Phase 11G
 - **File:** `docs/22_daily_pipeline_automation_validation_report.md`
   - **Baris 38, 49–50:** Memperbarui ringkasan item yang diselesaikan (Makefile reconciliation, hitungan test 20/20 dan total 617/617 passed, sinkronisasi AWS).
+  - **Baris 55:** Memperbarui rentang bar riil database hingga `2026-10-21` (244,622 bar, 2,657 sesi) dan penegasan cutoff `2026-10-21`.
   - **Baris 69, 73:** Memperbarui tabel R2 (Makefile recipe & Windows native execution) dan R6 (ambang batas 80% terkunci).
   - **Baris 98–103:** Memperbarui tabel Ringkasan Implementasi (koreksi hitungan unit test dari 13 menjadi 20, penambahan catatan sinkronisasi S3 dan Lambda).
-  - **Baris 120–130:** Memperbarui jawaban Section 5.1 pertanyaan 3, 4, dan 5 dengan rincian runtime scheduler terverifikasi (`Get-ScheduledTaskInfo`) dan jumlah bar pada sesi terakhir `2026-10-21` (192 ticker, 91.4% coverage).
+  - **Baris 124–136:** Memperbarui jawaban Section 5.1 pertanyaan 3, 4, 5, dan 6 dengan rincian runtime scheduler terverifikasi (`Get-ScheduledTaskInfo`), jumlah bar pada sesi terakhir `2026-10-21` (192 ticker, 91.4% coverage, 244,622 total bar di 2,657 sesi), dan fitur tersimpan `2026-10-21` (192 baris, total 187,296 baris di `features_daily`).
   - **Baris 193–204:** Memperbarui tabel Verifikasi dengan hasil aktual `pytest` (20/20 unit tests, 617/617 full suite tests), pemeriksaan resep Makefile, status riil Task Scheduler, upload S3 database, dan deployment Lambda.
+  - **Baris 226:** Menyertakan pencatatan Log 71 pada `summary.md`.
 
 #### 4. Pembaruan Status Operasional & Index Audit
 - **File:** `audit_report.md` (Baris 5–25, 96–100)

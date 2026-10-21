@@ -2,23 +2,25 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11F.4 — Final Fail-Closed Readiness Corrections`
-- **Audit Date:** `2026-10-20 14:30 WIB`
+- **Current Phase:** `Phase 11F.4 — Final Fail-Closed Readiness & Approval-Time Cutoff Patch`
+- **Audit Date:** `2026-10-21 09:15 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11F.4 fail-closed readiness corrections, persistent approval & cutoff decoupling, strict data quality guards, state integrity protection, 23 fail-closed tests, and 83 passed paper trading unit tests (586 total repository tests passed)
+- **Latest Commit SHA:** Working tree with Phase 11F.4 approval-time cutoff enforcement, persistent effective cutoff tracking, dynamic prospective session resolution, 28 fail-closed tests, and 88 passed paper trading unit tests (591 total repository tests passed)
 - **Overall Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Completed Phase 11F.4 fail-closed readiness corrections:
-    1. **Decoupled User Approval from Observation Activation:** Persistent approval fields (`user_approved`, `approval_timestamp`, `approval_data_cutoff`), dedicated CLI `--approve-observation`, distinct `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`. Calling `--status --user-approved` cannot activate observation; observation transitions to `OBSERVATION_ACTIVE` only after an approved run succeeds and is persisted.
-    2. **Dynamic Cutoff & Monotonicity Guards:** Dynamic `approval_data_cutoff` prevents backdated or historical prospective runs (`InvalidProspectiveDateError`). Non-monotonic date execution blocked. Gaps between sessions and stale pending orders fail closed with `MissedSessionError`.
-    3. **Strict Data Quality Guards:** Missing bars, missing features, date mismatches, missing required columns, zero-join ticker coverage, and infinite feature values fail closed independently with `DataQualityError`.
-    4. **Fail-Closed State Integrity:** Root dictionary validation, required fields check, policy bundle hash verification; corrupted state raises `StateIntegrityError` without silent overwriting. `migrate_state(backup=True)` creates timestamped backup copy.
-    5. **Decision:** Production champions protected and active. Candidate models remain research-only. Zero prospective observation started.
-- **Next Permitted Action:** Await explicit human operator execution of `--approve-observation` followed by `--date 2026-10-19 --user-approved` upon ingestion of new market data. Do not execute prospective scoring without approval.
+  - Completed Phase 11F.4 fail-closed readiness corrections and approval-time cutoff patch:
+    1. **Approval-Time Cutoff & Dynamic Prospective Start:** Recorded approval timestamp and explicit `effective_observation_cutoff` (`max(data_cutoff, approval_date)` in WIB). Decision sessions occurring before approval cannot be accepted even if bars are ingested later. Eliminated hardcoded/recommended past dates; unapproved state fails closed with `first_allowed_prospective_date=None` and `PENDING_USER_APPROVAL`. When approved, dynamic date resolves to next trading date after cutoff.
+    2. **Exception Propagation in Dynamic Date Resolution:** Replaced silent `except Exception: pass` in `get_first_prospective_date()` with explicit propagation of `StateIntegrityError`, correctly setting status to `BLOCKED_ON_STATE_CORRUPTION`.
+    3. **Decoupled User Approval from Observation Activation:** Persistent approval fields (`user_approved`, `approval_timestamp`, `approval_data_cutoff`, `effective_observation_cutoff`), dedicated CLI `--approve-observation`, distinct `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`. Calling `--status --user-approved` cannot activate observation; observation transitions to `OBSERVATION_ACTIVE` only after an approved run succeeds and is persisted.
+    4. **Dynamic Cutoff & Monotonicity Guards:** Dynamic `approval_data_cutoff` and `effective_observation_cutoff` prevent backdated or historical prospective runs (`InvalidProspectiveDateError`). Non-monotonic date execution blocked. Gaps between sessions and stale pending orders fail closed with `MissedSessionError`.
+    5. **Strict Data Quality Guards:** Missing bars, missing features, date mismatches, missing required columns, zero-join ticker coverage, and infinite feature values fail closed independently with `DataQualityError`.
+    6. **Fail-Closed State Integrity:** Root dictionary validation, required fields check, policy bundle hash verification; corrupted state raises `StateIntegrityError` without silent overwriting. `migrate_state(backup=True)` creates timestamped backup copy.
+    7. **Decision:** Production champions protected and active. Candidate models remain research-only. Zero prospective observation started.
+- **Next Permitted Action:** Await explicit human operator execution of `--approve-observation`. When the next trading session strictly after approval is ingested, execute prospective scoring with `--date <date> --user-approved`. Do not execute prospective scoring without approval.
 
 ---
 
@@ -82,9 +84,9 @@ The repository maintains dedicated, detailed reports for each major governance a
     - **Status:** `PASS (READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (14 unit tests in lifecycle module, 562 total suite tests passed: 530 unit, 32 integration; champions preserved).
 
 12. [docs/20_phase_11f_final_readiness_report.md](docs/20_phase_11f_final_readiness_report.md)
-    - **Phase 11F.4:** Final Fail-Closed Readiness Corrections
-    - **Scope:** Decoupled persistent human approval state and cutoff tracking (`--approve-observation`), distinct `APPROVED_PENDING_FIRST_OBSERVATION` status, fail-closed historical date rejection ($\le$ cutoff), monotonicity enforcement, missed session and stale order execution guards (`MissedSessionError`), comprehensive data quality validation (`DataQualityError` for missing bars, missing features, schema/coverage, Inf values), state corruption detection (`StateIntegrityError` and `BLOCKED_ON_STATE_CORRUPTION`), and safe migration with timestamped backups.
-    - **Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (23 unit tests in fail-closed module, 83 total paper trading tests passed, 586 total repository tests passed 100%; ruff clean 0 error; champions preserved).
+    - **Phase 11F.4:** Final Fail-Closed Readiness & Approval-Time Cutoff Patch
+    - **Scope:** Decoupled persistent human approval state and cutoff tracking (`--approve-observation`), explicit `effective_observation_cutoff` (`max(data_cutoff, approval_date)`), rejection of pre-approval sessions even if bars are ingested later, dynamic prospective date resolution (`first_allowed_prospective_date`), exception propagation for corrupt state in date resolution, fail-closed historical date rejection ($\le$ cutoff), monotonicity enforcement, missed session and stale order execution guards (`MissedSessionError`), comprehensive data quality validation (`DataQualityError` for missing bars, missing features, schema/coverage, Inf values), state corruption detection (`StateIntegrityError` and `BLOCKED_ON_STATE_CORRUPTION`), and safe migration with timestamped backups.
+    - **Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (28 unit tests in fail-closed module, 88 total paper trading tests passed, 591 total repository tests passed 100%; ruff clean 0 error; champions preserved).
 
 ---
 

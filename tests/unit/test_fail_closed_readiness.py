@@ -645,20 +645,21 @@ def test_step_prospective_date_persists_approval_fields(tmp_path: Path):
     db_file = tmp_path / "test_stock.db"
     create_isolated_test_db(db_file)
     populate_mock_models(tmp_path)
-    add_session_to_test_db(db_file, "2026-10-19", ticker="BBCA", price=10000.0)
+    # Ingest baseline and a future session strictly after today (e.g. 2026-10-21)
+    add_session_to_test_db(db_file, "2026-10-21", ticker="BBCA", price=10000.0)
 
     engine = PaperTradingEngine(db_path=str(db_file), artifacts_dir=tmp_path / "artifacts")
     # State has user_approved=False initially
     s0 = engine.load_state()
     assert s0["user_approved"] is False
 
-    res = engine.step_prospective_date(date(2026, 10, 19), user_approved=True, base_dir=tmp_path)
+    res = engine.step_prospective_date(date(2026, 10, 21), user_approved=True, base_dir=tmp_path)
     assert res["status"] == "SCORED"
 
     s1 = engine.load_state()
     assert s1["user_approved"] is True
     assert s1["approval_timestamp"] is not None
-    assert s1["first_observation_date"] == "2026-10-19"
+    assert s1["first_observation_date"] == "2026-10-21"
 
     status = engine.generate_operational_status(base_dir=tmp_path)
     assert status["operational_status"] == STATUS_OBSERVATION_ACTIVE
@@ -777,3 +778,149 @@ def test_cli_migrate_state_action(tmp_path: Path):
     assert migrated["version"] == "1.1"
     assert migrated["cash"] == 75_000_000.0
     assert migrated["user_approved"] is False
+
+
+# ==============================================================================
+# Phase 11F.4 Final Patch: Approval-Time Cutoff & Dynamic Prospective Start
+# ==============================================================================
+
+
+def test_decision_session_before_approval_rejected_when_bars_ingested_later(
+    tmp_path: Path,
+):
+    """Verifies that a decision session occurring before approval is rejected
+    even when its market bars are ingested into the database afterward.
+    """
+    db_file = tmp_path / "test_stock.db"
+    create_isolated_test_db(db_file)
+    populate_mock_models(tmp_path)
+
+    engine = PaperTradingEngine(db_path=str(db_file), artifacts_dir=tmp_path / "artifacts")
+    # Record approval on 2026-10-20 with market data cutoff 2026-10-16
+    app_info = engine.approve_observation(
+        cutoff_date="2026-10-16",
+        effective_cutoff="2026-10-20",
+        approval_timestamp="2026-10-20T10:00:00Z",
+        base_dir=tmp_path,
+    )
+    assert app_info["effective_observation_cutoff"] == "2026-10-20"
+
+    # Ingest 2026-10-19 bars afterward
+    add_session_to_test_db(db_file, "2026-10-19", ticker="BBCA", price=10000.0)
+
+    # Attempting to score 2026-10-19 must fail closed
+    with pytest.raises(
+        InvalidProspectiveDateError, match="at or before effective observation cutoff"
+    ):
+        engine.step_prospective_date(date(2026, 10, 19), user_approved=True, base_dir=tmp_path)
+
+    # State must remain clean and unmutated
+    state = engine.load_state()
+    assert len(state["processed_dates"]) == 0
+    assert state["first_observation_date"] is None
+
+
+def test_first_session_eligible_after_approval_can_be_processed(tmp_path: Path):
+    """Verifies that the first session eligible after approval (strictly after effective cutoff)
+    can be processed when its required data is complete, transitioning status to active.
+    """
+    db_file = tmp_path / "test_stock.db"
+    create_isolated_test_db(db_file)
+    populate_mock_models(tmp_path)
+
+    engine = PaperTradingEngine(db_path=str(db_file), artifacts_dir=tmp_path / "artifacts")
+    engine.approve_observation(
+        cutoff_date="2026-10-16",
+        effective_cutoff="2026-10-20",
+        approval_timestamp="2026-10-20T10:00:00Z",
+        base_dir=tmp_path,
+    )
+
+    # First prospective date must be determined dynamically (2026-10-21, strictly after 2026-10-20)
+    first_d = engine.get_first_prospective_date()
+    assert first_d == date(2026, 10, 21)
+
+    # Ingest session for 2026-10-21
+    add_session_to_test_db(db_file, "2026-10-21", ticker="BBCA", price=10000.0)
+
+    # Step prospective date 2026-10-21
+    res = engine.step_prospective_date(date(2026, 10, 21), user_approved=True, base_dir=tmp_path)
+    assert res["status"] == "SCORED"
+    assert res["candidates_count"] > 0
+
+    state = engine.load_state()
+    assert state["first_observation_date"] == "2026-10-21"
+    assert "2026-10-21" in state["processed_dates"]
+
+    status = engine.generate_operational_status(base_dir=tmp_path)
+    assert status["operational_status"] == STATUS_OBSERVATION_ACTIVE
+    assert status["prospective_lifecycle"]["has_started"] is True
+
+
+def test_old_or_stale_date_cannot_be_accepted_through_user_approved(tmp_path: Path):
+    """Verifies that an old or stale date cannot be accepted through --user-approved
+    when observation has not yet been approved.
+    """
+    art_dir = tmp_path / "artifacts"
+    art_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable,
+        "scripts/run_forward_paper_trading.py",
+        "--date",
+        "2026-10-19",
+        "--user-approved",
+        "--artifacts-dir",
+        str(art_dir),
+    ]
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    assert p.returncode == 1
+    assert (
+        "Pre-approval sessions cannot be accepted" in p.stdout
+        or "at or before market data cutoff" in p.stdout
+    )
+
+
+def test_corrupt_state_cannot_produce_misleading_first_prospective_date(tmp_path: Path):
+    """Verifies that get_first_prospective_date propagates StateIntegrityError
+    when state is corrupted, rather than silently falling back to a database date.
+    """
+    art_dir = tmp_path / "artifacts"
+    art_dir.mkdir(parents=True, exist_ok=True)
+    state_file = art_dir / "paper_trading_state.json"
+    state_file.write_text("{corrupt_json: true,", encoding="utf-8")
+
+    engine = PaperTradingEngine(db_path="datasets/stock_signals.db", artifacts_dir=art_dir)
+
+    # Must raise StateIntegrityError directly
+    with pytest.raises(StateIntegrityError):
+        engine.get_first_prospective_date()
+
+    # generate_operational_status must report BLOCKED_ON_STATE_CORRUPTION without guessing
+    status = engine.generate_operational_status(base_dir=tmp_path)
+    assert status["operational_status"] == STATUS_BLOCKED_ON_STATE_CORRUPTION
+    assert (
+        status["cutoff_metadata"]["first_allowed_prospective_date"]
+        == "BLOCKED_ON_STATE_CORRUPTION"
+    )
+
+
+def test_unapproved_state_first_prospective_date_is_none_and_status_pending(
+    tmp_path: Path,
+):
+    """Verifies that when observation is not approved, get_first_prospective_date returns None
+    and operational status reports PENDING_USER_APPROVAL without hardcoding a past date.
+    """
+    populate_mock_models(tmp_path)
+    engine = PaperTradingEngine(
+        db_path="datasets/stock_signals.db", artifacts_dir=tmp_path / "artifacts"
+    )
+    first_d = engine.get_first_prospective_date()
+    assert first_d is None
+
+    status = engine.generate_operational_status(base_dir=tmp_path)
+    assert status["operational_status"] == STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL
+    assert (
+        status["cutoff_metadata"]["first_allowed_prospective_date"]
+        == "PENDING_USER_APPROVAL"
+    )
+

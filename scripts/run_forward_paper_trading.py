@@ -106,6 +106,7 @@ def print_status_summary(status: dict) -> None:
     app_meta = status.get("approval_metadata", {})
     print(f"Approval Timestamp:     {app_meta.get('approval_timestamp', 'NONE')}")
     print(f"Approval Data Cutoff:   {app_meta.get('approval_data_cutoff', 'NONE')}")
+    print(f"Effective Obs Cutoff:   {app_meta.get('effective_observation_cutoff', 'NONE')}")
     print(f"Timestamp:              {status['timestamp']}")
     print(f"Policy Bundle Hash:     {status['policy_bundle_hash']}")
     fc_active = status["scoring_artifacts_audit"]["fail_closed_guard_active"]
@@ -217,6 +218,7 @@ def main() -> None:
         print(f"User Approved:          {approval_info['user_approved']}")
         print(f"Approval Timestamp:     {approval_info['approval_timestamp']}")
         print(f"Market Data Cutoff:     {approval_info['approval_data_cutoff']}")
+        print(f"Effective Obs Cutoff:   {approval_info.get('effective_observation_cutoff')}")
         print(f"Operational Status:     {approval_info['operational_status']}")
         print("=" * 80)
         return
@@ -270,6 +272,25 @@ def main() -> None:
             print(
                 f"Error: Requested prospective date {d} is at or before market data cutoff "
                 f"{cutoff}. Historical prospective observation is prohibited."
+            )
+            sys.exit(1)
+
+        eff_cutoff = state.get("effective_observation_cutoff")
+        if eff_cutoff is None:
+            from datetime import timedelta, timezone
+            wib_tz = timezone(timedelta(hours=7))
+            eff_cutoff = str(datetime.now(timezone.utc).astimezone(wib_tz).date())
+
+        if d <= datetime.strptime(eff_cutoff, "%Y-%m-%d").date():
+            logger.error(
+                "Requested prospective date %s is at or before effective observation cutoff %s. "
+                "Sessions occurring before or on approval cannot be accepted.",
+                d,
+                eff_cutoff,
+            )
+            print(
+                f"Error: Requested prospective date {d} is at or before effective cutoff "
+                f"{eff_cutoff}. Pre-approval sessions cannot be accepted."
             )
             sys.exit(1)
 

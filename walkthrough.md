@@ -1,97 +1,97 @@
-# Walkthrough: Phase 11F.4 — Fail-Closed Readiness & Approval-Time Cutoff Patch
+# Walkthrough — Offline Challenger Retraining & Controlled Evaluation
 
-## Overview
+## Sesi Kerja: 21 Oktober 2026
 
-In this patch, we enforced the prospective start-date contract and approval-time cutoff in `python/experiments/paper_trading.py` and `scripts/run_forward_paper_trading.py`. We recorded the approval timestamp and an explicit `effective_observation_cutoff` (`max(data_cutoff, approval_date)` in WIB), rejected pre-approval sessions even if bars are ingested later, dynamically resolved the first eligible prospective date, eliminated hardcoded past dates (`2026-10-19`), eliminated exception swallowing in `get_first_prospective_date()`, and added 5 new regression tests proving all target scenarios (28/28 tests passed).
-
----
-
-## Task Breakdown & Changes
-
-### 1. Approval-Time Cutoff & Dynamic Prospective Start
-**Files:** `python/experiments/paper_trading.py`, `scripts/run_forward_paper_trading.py`
-- Added `effective_observation_cutoff` to schema 1.1 state defaults, required fields, and type validation in `load_state()`.
-- Enhanced `approve_observation()`:
-  - Records `approval_timestamp` and computes `approval_date` in WIB (`Asia/Jakarta`).
-  - Sets `effective_observation_cutoff = max(data_cutoff, approval_date)`.
-  - Ensures decision sessions that occurred on or before approval cannot be accepted even if market bars are ingested later.
-- Overhauled `get_first_prospective_date()`:
-  - When unapproved (`not user_approved`), returns `None` (fails closed, no guessing).
-  - When approved, dynamically returns `get_next_trading_date(effective_observation_cutoff)`.
-  - Replaced silent `except Exception: pass` with direct propagation of `StateIntegrityError`.
-- Updated `generate_operational_status()`:
-  - Reports `effective_observation_cutoff` in `approval_metadata`.
-  - Reports `first_allowed_prospective_date = "PENDING_USER_APPROVAL"` when unapproved.
-  - Catches `StateIntegrityError` to set `first_allowed_prospective_date = "BLOCKED_ON_STATE_CORRUPTION"`.
-- Enhanced `step_prospective_date()`:
-  - Validates date against `approval_data_cutoff` and `effective_observation_cutoff`.
-  - Raises `InvalidProspectiveDateError` if `eval_date <= cutoff`.
-  - Checks missed sessions against `first_eligible` dynamically determined.
-- Updated CLI in `scripts/run_forward_paper_trading.py`:
-  - Displays `Effective Obs Cutoff` in `--status` and `--approve-observation`.
-  - Enforces effective cutoff in `--date`: blocks pre-approval sessions with a descriptive error.
-
-### 2. Comprehensive Fail-Closed Test Suite (28 Tests)
-**File:** `tests/unit/test_fail_closed_readiness.py`
-- Added 5 new targeted regression tests covering all target scenarios:
-  1. `test_decision_session_before_approval_rejected_when_bars_ingested_later`: Proves session that occurred before approval cannot be accepted even if bars are ingested later.
-  2. `test_first_session_eligible_after_approval_can_be_processed`: Proves first session strictly after approval can be processed successfully.
-  3. `test_old_or_stale_date_cannot_be_accepted_through_user_approved`: Proves stale/backdated dates cannot be forced through via `--user-approved`.
-  4. `test_corrupt_state_cannot_produce_misleading_first_prospective_date`: Proves corrupt state propagates `StateIntegrityError` and sets status to `BLOCKED_ON_STATE_CORRUPTION`.
-  5. `test_unapproved_state_first_prospective_date_is_none_and_status_pending`: Proves unapproved state returns `first_allowed_prospective_date=None` and reports `PENDING_USER_APPROVAL`.
-- Total tests in `test_fail_closed_readiness.py`: 28 passed (100%).
+### Ringkasan Eksekutif
+Telah diselesaikan evaluasi dan pelatihan ulang offline challenger classifier untuk BEI Dual-Mode Stock Signals menggunakan data historis yang sepenuhnya matang (`2026-09-25` cutoff, bar hingga `2026-10-16`) di bawah kontrak target riset Variant B H=15 (Next-Session Open MOO, TP +5%, SL -2%, friksi 50 bps). Hasil empiris menunjukkan bahwa meskipun model kandidat menunjukkan diferensiasi prediktif, seluruh konfigurasi menghasilkan return neto negatif (-0.35% s.d. -0.68%) di bawah friksi 50 bps, sehingga **tidak ada model yang dipromosikan (DO_NOT_PROMOTE)**. Champion produksi dan sistem Phase 11F tetap diisolasi dan tidak berubah.
 
 ---
 
-## Verification Record
+### Task Breakdown & Perubahan File
 
-| Verification Step | Command | Result |
-|---|---|---|
-| Fail-closed regression suite | `.venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py -v` | **PASS** (28/28 passed in 7.97s) |
-| Combined paper trading suite | `.venv\Scripts\python -m pytest tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py tests/unit/test_prospective_lifecycle.py tests/unit/test_forward_paper_trading.py` | **PASS** (88/88 passed in 10.70s) |
-| Full repository test suite | `.venv\Scripts\python -m pytest` | **PASS** (591/591 passed in 101.90s) |
-| Repository linter | `.venv\Scripts\ruff check .` | **PASS** (0 errors) |
-| Unstarted state confirmation | `git status` | Clean; no production state file created |
+#### 1. Audit Dataset & Data Maturity Cutoff
+- **File:** `scripts/inspect_dataset_splits.py` (Baru, 185 baris)
+- **Rincian Perubahan:**
+  - Menginspeksi tabel SQLite `daily_bars` (244,021 bar, 2,654 tanggal, max `2026-10-16`), `features_daily` (186,702 baris, 900 tanggal, max `2026-10-16`), dan `labels_daily` (185,515 baris, max `2026-10-13`).
+  - Menetapkan batas matematis kedewasaan data: untuk target Variant B H=15 dengan entry Open $t+1$, tanggal keputusan terakhir dengan 15 bar forward lengkap hingga `2026-10-16` adalah `2026-09-25`.
+  - Menganalisis kenaikan baris data:
+    - Terhadap Champion Produksi (cutoff train 2025-08-14): penambahan **+46,343 baris valid (+36.60%)** melintasi 13.5 bulan kalender tambahan (LOW_PRICE valid 31,794 baris, HIGHER_PRICE valid 94,821 baris, terpisah dari 1,452 baris penny stock `EXCLUDED_BELOW_50`).
+    - Terhadap Phase 11F (cutoff 2026-09-25): **0 baris inkremental (0.0%)**, karena tidak ada bar pasar baru setelah 2026-10-16.
+
+#### 2. Engine Evaluasi Walk-Forward & Retraining Challenger
+- **File:** `python/experiments/challenger_retraining.py` (Baru, 1,074 baris)
+- **Rincian Perubahan:**
+  - `ChallengerModelSpec`: Mendefinisikan spesifikasi kandidat (Full LightGBM, Ablasi Fitur, Regularized Logistic Regression, Prevalence Baseline, Production Champion).
+  - `ChallengerRetrainingRunner.load_matured_data()`: Memuat bar dan fitur, memotong secara ketat pada `date <= 2026-09-25` untuk mencegah kebocoran atau bias survivorship right-censoring.
+  - `run_walk_forward_evaluation()`: Menjalankan 3-fold expanding walk-forward validation dengan purge window 15 hari bursa antar fold. Menghitung metrik klasifikasi (ROC-AUC, PR-AUC, Brier score, Log loss, ECE 10 bin, Daily Top-10% & Top-5% precision, Top-5 fixed precision).
+  - `_simulate_trading()`: Mensimulasikan eksekusi portofolio harian di bawah friksi 50 bps (15 bps komisi beli, 25 bps komisi jual, 5 bps entry slip, 5 bps exit slip), modal 100jt IDR, max 5 posisi (cap 20%), lot 100 lembar, filter gap pre-entry, preseden konservatif candle ambigu, dan expiry bar 15.
+  - `fit_and_serialize_challengers()`: Melatih ulang model kandidat pada seluruh data historis valid hingga `2026-09-25` dan menyimpan 6 biner `.joblib` beserta hash SHA-256 pada `artifacts/offline_challengers/<run_id>/`.
+
+#### 3. CLI Runner Script
+- **File:** `scripts/run_offline_challenger_retraining.py` (Baru, 121 baris)
+- **Rincian Perubahan:**
+  - Menyediakan antarmuka CLI yang dapat dikonfigurasi (`--db-path`, `--cutoff-date`, `--run-id`, `--n-splits`, `--purge-days`, `--random-state`).
+  - Menampilkan ringkasan metrik klasifikasi dan simulasi trading secara terstruktur pada konsol.
+
+#### 4. Pengujian Otomatis
+- **File:** `tests/unit/test_challenger_retraining.py` (Baru, 142 baris)
+- **Rincian Perubahan:**
+  - `test_challenger_model_specs`: Menguji kebenaran jumlah fitur dan exclusion group (Full 30, minus trend 23, minus market_regime 24).
+  - `test_matured_data_cutoff_enforcement`: Menguji bahwa tanggal keputusan $\le$ `2026-09-25`, LOW_PRICE memiliki 0 incomplete, dan 2 incomplete pada HIGHER_PRICE (MPMX) terfilter keluar dari sampel valid.
+  - `test_inspect_dataset_splits`: Menguji keakuratan inspeksi split dataset dan metrik row counts.
+  - `test_walk_forward_fold_purge_window`: Menguji penegakan purge window $\ge 15$ hari bursa di seluruh fold.
+  - `test_compute_file_sha256`: Menguji integritas perhitungan hash SHA-256.
+  - `test_champion_immutability`: Menguji bahwa model champion produksi di registry tetap utuh dan aktif.
+
+#### 5. Dokumentasi dan Laporan Formal
+- **File:** `docs/21_offline_challenger_retraining_report.md` (Baru, 281 baris)
+  - Menyusun laporan komprehensif mengikuti `docs/AGENT_REPORT_TEMPLATE.md`.
+- **File:** `audit_report.md` (Diperbarui baris 91–95)
+  - Menambahkan entri indeks 13 untuk laporan retraining challenger.
+- **File:** `summary.md` (Diperbarui baris 994–1015)
+  - Menambahkan Log Entry 67 (strictly append-only).
 
 ---
 
-## Testing Checklist
+### Ringkasan Temuan Empiris
 
-After pulling these changes, the operator should verify the following items:
+#### Metrik Klasifikasi (Macro Mean antar Fold)
+- **LOW_PRICE:**
+  - Candidate A (Full LGBM): ROC-AUC **0.5615** | PR-AUC **0.3025** | Top-10% Prec **31.03%**
+  - Candidate B (Ablation minus trend): ROC-AUC **0.5643** | PR-AUC **0.3000** | Top-10% Prec **30.40%**
+  - Candidate C (Logistic Baseline): ROC-AUC **0.5613** | PR-AUC **0.2979** | Top-10% Prec **30.54%**
+  - Prevalence Baseline: ROC-AUC **0.5000** | PR-AUC **0.2512** | Top-10% Prec **26.33%**
+  - Production Champion (Ref): ROC-AUC **0.6527** | PR-AUC **0.4202** | Top-10% Prec **43.41%**
+- **HIGHER_PRICE:**
+  - Candidate A (Full LGBM): ROC-AUC **0.5337** | PR-AUC **0.2635** | Top-10% Prec **25.67%**
+  - Candidate B (Ablation minus market_regime): ROC-AUC **0.5488** (std 0.0054) | PR-AUC **0.2623** | Top-10% Prec **26.95%**
+  - Candidate C (Logistic Baseline): ROC-AUC **0.5512** | PR-AUC **0.2792** | Top-10% Prec **24.69%**
+  - Prevalence Baseline: ROC-AUC **0.5000** | PR-AUC **0.2375** | Top-10% Prec **24.32%**
+  - Production Champion (Ref): ROC-AUC **0.6226** | PR-AUC **0.3559** | Top-10% Prec **35.74%**
 
-- [ ] **1. Verify Operational Status Before Approval:**
-  ```powershell
-  python -m scripts.run_forward_paper_trading --status
-  ```
-  *Verify that operational status reports `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`, `user_approved: False`, and `First Allowed Prospective Date: PENDING_USER_APPROVAL`.*
+#### Metrik Trading Simulasi (Pooled antar Fold, Friksi 50 bps)
+- **LOW_PRICE:**
+  - Candidate A (Full LGBM): 1,242 trade | WinRate **29.39%** | Avg Net Ret **-0.351%** | Pooled PF **0.79** | Cont MaxDD **60.54%**
+  - Candidate B (Ablation): 1,270 trade | WinRate **28.19%** | Avg Net Ret **-0.478%** | Pooled PF **0.71** | Cont MaxDD **73.51%**
+  - Candidate C (Logistic): 1,652 trade | WinRate **29.06%** | Avg Net Ret **-0.422%** | Pooled PF **0.75** | Cont MaxDD **77.69%**
+  - Production Champion (Ref): 1,414 trade | WinRate **37.34%** | Avg Net Ret **+0.205%** | Pooled PF **1.20** | Cont MaxDD **42.69%**
+- **HIGHER_PRICE:**
+  - Candidate A (Full LGBM): 959 trade | WinRate **29.09%** | Avg Net Ret **-0.432%** | Pooled PF **0.74** | Cont MaxDD **59.88%**
+  - Candidate B (Ablation): 1,007 trade | WinRate **25.72%** | Avg Net Ret **-0.675%** | Pooled PF **0.63** | Cont MaxDD **74.90%**
+  - Candidate C (Logistic): 1,644 trade | WinRate **23.24%** | Avg Net Ret **-0.852%** | Pooled PF **0.55** | Cont MaxDD **93.79%**
+  - Production Champion (Ref): 1,448 trade | WinRate **37.84%** | Avg Net Ret **+0.183%** | Pooled PF **1.33** | Cont MaxDD **58.48%**
 
-- [ ] **2. Authorize Prospective Observation:**
-  ```powershell
-  python -m scripts.run_forward_paper_trading --approve-observation
-  ```
-  *Verify that operational status transitions to `APPROVED_PENDING_FIRST_OBSERVATION`, recording `approval_timestamp`, `approval_data_cutoff: "2026-10-16"`, and `effective_observation_cutoff: "<approval_date>"`, with `First Allowed Prospective Date` dynamically set to the next valid trading session.*
+---
 
-- [ ] **3. Verify Status Flag Does Not Activate Observation:**
-  ```powershell
-  python -m scripts.run_forward_paper_trading --status --user-approved
-  ```
-  *Verify that status remains `APPROVED_PENDING_FIRST_OBSERVATION` and `has_started` remains `False`.*
+### Testing Checklist
 
-- [ ] **4. Verify Pre-Approval Session Rejection:**
-  ```powershell
-  python -m scripts.run_forward_paper_trading --date 2026-10-16 --user-approved
-  ```
-  *Verify that the command fails closed with an error indicating the date is at or before the market data or effective cutoff.*
+Setelah sesi kerja ini, verifikasi hal-hal berikut:
 
-- [ ] **5. Run Full Unit Test Suite:**
-  ```powershell
-  python -m pytest tests/unit/test_fail_closed_readiness.py -v
-  ```
-  *Verify all 28 fail-closed readiness tests pass.*
-
-- [ ] **6. Ingest Next Trading Session Strictly After Approval & Step Observation:**
-  ```powershell
-  python -m scripts.ingest_daily --date <next_eligible_date>
-  python -m scripts.run_forward_paper_trading --date <next_eligible_date> --user-approved
-  ```
-  *Verify that upon successful completion, operational status transitions to `OBSERVATION_ACTIVE` with 1 processed date.*
+- [x] **Audit Kontrak & Dataset:** Jalankan `.venv\Scripts\python.exe scripts/inspect_dataset_splits.py` (Verifikasi bar max `2026-10-16`, cutoff `2026-09-25`, +46,343 baris valid [+36.60%], 0 baris incremental vs Phase 11F).
+- [x] **Unit Testing Pipeline:** Jalankan `.venv\Scripts\python.exe -m pytest tests/unit/test_challenger_retraining.py -v` (Semua 6 pengujian lulus 100%).
+- [x] **Full Repository Test Suite:** Jalankan `.venv\Scripts\python.exe -m pytest -q` (597 tests passed, 0 failures).
+- [x] **Linter Cleanliness:** Jalankan `.venv\Scripts\python.exe -m ruff check .` (All checks passed, 0 errors).
+- [x] **Integritas Champion Produksi:** Pastikan file `models/registry/lightgbm_classification_20261014_093522.*` dan `093607.*` tidak berubah status atau bobotnya.
+- [x] **Isolasi Phase 11F:** Pastikan artefak `artifacts/phase_11f/` tidak dimodifikasi dan flag `--approve-observation` tidak dijalankan.
+- [x] **Kelengkapan Artefak Challenger:** Verifikasi 6 model `.joblib`, `metadata.json`, `challenger_retraining_summary.json`, dan file CSV pada `artifacts/offline_challengers/run_20261021_retraining/`.
+- [x] **Keputusan Governance:** Verifikasi keputusan eksplisit `DO_NOT_PROMOTE` terdokumentasi jelas pada `docs/21_offline_challenger_retraining_report.md` dan `audit_report.md`.

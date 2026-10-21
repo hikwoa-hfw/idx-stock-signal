@@ -88,6 +88,11 @@ The repository maintains dedicated, detailed reports for each major governance a
     - **Scope:** Decoupled persistent human approval state and cutoff tracking (`--approve-observation`), explicit `effective_observation_cutoff` (`max(data_cutoff, approval_date)`), rejection of pre-approval sessions even if bars are ingested later, dynamic prospective date resolution (`first_allowed_prospective_date`), exception propagation for corrupt state in date resolution, fail-closed historical date rejection ($\le$ cutoff), monotonicity enforcement, missed session and stale order execution guards (`MissedSessionError`), comprehensive data quality validation (`DataQualityError` for missing bars, missing features, schema/coverage, Inf values), state corruption detection (`StateIntegrityError` and `BLOCKED_ON_STATE_CORRUPTION`), and safe migration with timestamped backups.
     - **Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)` (28 unit tests in fail-closed module, 88 total paper trading tests passed, 591 total repository tests passed 100%; ruff clean 0 error; champions preserved).
 
+13. [docs/21_offline_challenger_retraining_report.md](docs/21_offline_challenger_retraining_report.md)
+    - **Offline Challenger Retraining:** Fresh Historical Data & Controlled Evaluation
+    - **Scope:** 3-fold expanding walk-forward controlled evaluation of candidate classifiers (Full LightGBM, feature ablation, regularized logistic regression, constant prevalence) against production champions under Variant B H=15 MOO target contract and 50 bps round-trip friction. Audited data cutoffs (`scripts/inspect_dataset_splits.py`; latest bar: `2026-10-16`; latest fully observable decision: `2026-09-25`; +36.60% valid rows over champions [+46,343 rows], +0.0% over Phase 11F). Serialized research models in `artifacts/offline_challengers/run_20261021_retraining/`.
+    - **Status:** `PASS (DO_NOT_PROMOTE)` (Candidates produce negative net returns between -0.35% and -0.68%; production champions preserved; 6 unit tests added, 597 total repository tests passed 100%; ruff clean 0 error).
+
 ---
 
 ## Core Operational Invariants & Safeguards

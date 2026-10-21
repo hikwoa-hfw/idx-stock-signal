@@ -221,18 +221,16 @@ class OutcomeEngine:
         if not deduped_bars:
             return None, []
 
-        policy_str = (
-            getattr(signal, "entry_policy", None) or "IMMEDIATE"
-        ).strip().upper()
+        policy_str = (getattr(signal, "entry_policy", None) or "IMMEDIATE").strip().upper()
         signal_status = (
-            getattr(signal, "status", None) or getattr(signal, "signal", None) or "BUY"
-        ).strip().upper()
+            (getattr(signal, "status", None) or getattr(signal, "signal", None) or "BUY")
+            .strip()
+            .upper()
+        )
         is_breakout = policy_str == "BREAKOUT" or signal_status == "WAIT_FOR_BREAKOUT"
 
         eff_enforce_band = (
-            self.enforce_entry_band
-            if enforce_entry_band is None
-            else enforce_entry_band
+            self.enforce_entry_band if enforce_entry_band is None else enforce_entry_band
         )
         eff_max_dev = (
             max_entry_deviation_pct
@@ -315,7 +313,8 @@ class OutcomeEngine:
                             exit_price=None,
                             exit_reason="UNFILLED_EXPIRED",
                             resolved_at=datetime.now(timezone.utc),
-                            notes=notes or (
+                            notes=notes
+                            or (
                                 f"Breakout trigger price {trigger_level:,.1f} never reached "
                                 f"before expiry. Max high observed: {max_observed_high:,.1f}."
                             ),
@@ -449,9 +448,7 @@ class OutcomeEngine:
                         outcome_id=outcome_id,
                         notes=notes,
                     )
-                if eff_enforce_band and (
-                    cand_px < signal.entry_low or cand_px > signal.entry_high
-                ):
+                if eff_enforce_band and (cand_px < signal.entry_low or cand_px > signal.entry_high):
                     gap_note = (
                         f"Pre-entry open outside band "
                         f"[{signal.entry_low:,.1f}, {signal.entry_high:,.1f}]: "
@@ -535,9 +532,7 @@ class OutcomeEngine:
         full_h_mae = min(0.0, (h_min_low - ep) / ep)
         full_h_mfe_p = max(0.0, h_max_high - ep)
         full_h_mae_p = min(0.0, h_min_low - ep)
-        full_h_ttp = next(
-            i for i, b in enumerate(horizon_bars, start=1) if b.high == h_max_high
-        )
+        full_h_ttp = next(i for i, b in enumerate(horizon_bars, start=1) if b.high == h_max_high)
         h_end_price = float(last_h_bar.close)
         h_end_ret = (h_end_price - ep) / ep
         h_end_date = last_h_bar.date
@@ -1024,8 +1019,7 @@ class OutcomeEngine:
 
         outcome_id = existing_outcome.outcome_id if existing_outcome else None
         existing_notes = (
-            None if force_recompute
-            else (existing_outcome.notes if existing_outcome else None)
+            None if force_recompute else (existing_outcome.notes if existing_outcome else None)
         )
 
         bars = bar_repo.get_daily_bars(

@@ -105,7 +105,7 @@ class FakeS3Client:
 
     def list_objects_v2(self, Bucket: str, Prefix: str = ""):
         contents = []
-        for (b, k) in self.storage:
+        for b, k in self.storage:
             if b == Bucket and k.startswith(Prefix):
                 contents.append({"Key": k, "Size": len(self.storage[(b, k)])})
         return {"Contents": contents}
@@ -431,7 +431,6 @@ def test_deploy_aws_helpers():
     )
     assert func_arn == "arn:aws:lambda:123:func"
 
-
     # EventBridge helper
     mock_events.put_rule.return_value = {"RuleArn": "arn:aws:events:123:rule/test"}
     setup_eventbridge_schedule(
@@ -552,9 +551,7 @@ def test_duplicate_run_protection_db(tmp_path: Path):
 def test_duplicate_run_protection_s3_log(tmp_path: Path):
     s3 = FakeS3Client()
     bucket = "idx-test-bucket"
-    s3.storage[(bucket, "logs/daily_pipeline_2026-10-13_120000.json")] = (
-        b'{"status": "SUCCESS"}'
-    )
+    s3.storage[(bucket, "logs/daily_pipeline_2026-10-13_120000.json")] = b'{"status": "SUCCESS"}'
 
     event = {
         "s3_bucket": bucket,
@@ -579,9 +576,10 @@ def test_market_provider_failure_retry_and_alert(tmp_path: Path):
         call_count += 1
         raise ConnectionError("Provider API rate limited")
 
-    with patch("python.cloud.handlers.run_ingest", side_effect=mock_failing_ingest), \
-         patch("python.cloud.handlers.dispatch_failure_alert") as mock_alert:
-
+    with (
+        patch("python.cloud.handlers.run_ingest", side_effect=mock_failing_ingest),
+        patch("python.cloud.handlers.dispatch_failure_alert") as mock_alert,
+    ):
         event = {
             "s3_bucket": None,
             "tmp_dir": str(tmp_path),
@@ -625,8 +623,9 @@ def test_deploy_aws_stage_support():
     mock_apigw.get_routes.return_value = {"Items": []}
     mock_apigw.get_stages.return_value = {"Items": []}
 
-    with patch("boto3.Session") as MockSession, patch(
-        "scripts.deploy_aws.register_telegram_webhook", return_value={"ok": True}
+    with (
+        patch("boto3.Session") as MockSession,
+        patch("scripts.deploy_aws.register_telegram_webhook", return_value={"ok": True}),
     ):
         mock_sess = MagicMock()
         mock_sess.client.side_effect = lambda svc, **kwargs: {
@@ -639,12 +638,17 @@ def test_deploy_aws_stage_support():
         }[svc]
         MockSession.return_value = mock_sess
 
-        ret = deploy_main([
-            "--stage", "staging",
-            "--deploy-lambda",
-            "--bucket", "test-b",
-            "--region", "ap-southeast-3",
-        ])
+        ret = deploy_main(
+            [
+                "--stage",
+                "staging",
+                "--deploy-lambda",
+                "--bucket",
+                "test-b",
+                "--region",
+                "ap-southeast-3",
+            ]
+        )
         assert ret == 0
         call_names = [
             call.kwargs.get("FunctionName")
@@ -698,9 +702,7 @@ def test_duplicate_run_protection_job_recovery_vs_duplicate(tmp_path: Path):
     assert resp_recovery["body"]["status"] == "SUCCESS"
 
     # 2. Previous run was SUCCESS -> must skip as duplicate
-    s3.storage[(bucket, "logs/daily_pipeline_2026-10-13_120000.json")] = (
-        b'{"status": "SUCCESS"}'
-    )
+    s3.storage[(bucket, "logs/daily_pipeline_2026-10-13_120000.json")] = b'{"status": "SUCCESS"}'
     resp_dup = lambda_daily_pipeline_handler(event, None)
     assert resp_dup["statusCode"] == 200
     assert resp_dup["body"]["status"] == "SKIPPED_DUPLICATE"
@@ -714,8 +716,10 @@ def test_duplicate_run_protection_job_recovery_vs_duplicate(tmp_path: Path):
 
 
 def test_lambda_retraining_handler_failure_alert(tmp_path: Path):
-    with patch("python.cloud.handlers.RetrainingPipeline") as MockPipe, \
-         patch("python.cloud.handlers.dispatch_failure_alert") as mock_alert:
+    with (
+        patch("python.cloud.handlers.RetrainingPipeline") as MockPipe,
+        patch("python.cloud.handlers.dispatch_failure_alert") as mock_alert,
+    ):
         mock_instance = MagicMock()
         mock_instance.run.side_effect = RuntimeError("GPU out of memory")
         MockPipe.return_value = mock_instance
@@ -741,13 +745,15 @@ def test_lambda_telegram_webhook_handler_help_command(tmp_path: Path):
     import json
 
     event = {
-        "body": json.dumps({
-            "update_id": 100,
-            "message": {
-                "chat": {"id": 12345},
-                "text": "/help",
-            },
-        }),
+        "body": json.dumps(
+            {
+                "update_id": 100,
+                "message": {
+                    "chat": {"id": 12345},
+                    "text": "/help",
+                },
+            }
+        ),
         "allowed_chat_id": "12345",
         "skip_telegram": True,
         "tmp_dir": str(tmp_path),
@@ -764,13 +770,15 @@ def test_lambda_telegram_webhook_handler_unauthorized(tmp_path: Path):
     import json
 
     event = {
-        "body": json.dumps({
-            "update_id": 101,
-            "message": {
-                "chat": {"id": 99999},
-                "text": "/daily",
-            },
-        }),
+        "body": json.dumps(
+            {
+                "update_id": 101,
+                "message": {
+                    "chat": {"id": 99999},
+                    "text": "/daily",
+                },
+            }
+        ),
         "allowed_chat_id": "12345",
         "tmp_dir": str(tmp_path),
         "local_db_path": str(tmp_path / "webhook_test.db"),
@@ -816,10 +824,12 @@ def test_lambda_telegram_webhook_handler_empty_text(tmp_path: Path):
     import json
 
     event = {
-        "body": json.dumps({
-            "update_id": 102,
-            "message": {"chat": {"id": 12345}},
-        }),
+        "body": json.dumps(
+            {
+                "update_id": 102,
+                "message": {"chat": {"id": 12345}},
+            }
+        ),
         "allowed_chat_id": "12345",
     }
     resp = lambda_telegram_webhook_handler(event, None)
@@ -860,9 +870,7 @@ def test_lambda_telegram_webhook_handler_position_mutation_uploads_db(tmp_path: 
     bootstrap_database(db_file)
 
     event = {
-        "body": json.dumps({
-            "message": {"chat": {"id": 12345}, "text": "/enter BBCA 10000 100"}
-        }),
+        "body": json.dumps({"message": {"chat": {"id": 12345}, "text": "/enter BBCA 10000 100"}}),
         "allowed_chat_id": "12345",
         "s3_bucket": bucket,
         "local_db_path": str(db_file),
@@ -882,14 +890,16 @@ def test_lambda_telegram_webhook_handler_group_user_authorization(tmp_path: Path
     import json
 
     event = {
-        "body": json.dumps({
-            "update_id": 104,
-            "message": {
-                "chat": {"id": -100987654321, "type": "group"},
-                "from": {"id": 12345, "first_name": "Admin"},
-                "text": "/help",
-            },
-        }),
+        "body": json.dumps(
+            {
+                "update_id": 104,
+                "message": {
+                    "chat": {"id": -100987654321, "type": "group"},
+                    "from": {"id": 12345, "first_name": "Admin"},
+                    "text": "/help",
+                },
+            }
+        ),
         "allowed_chat_id": "12345",
         "skip_telegram": True,
         "tmp_dir": str(tmp_path),
@@ -988,9 +998,7 @@ def test_telegram_client_webhook_methods():
     client = TelegramClient(bot_token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
 
     mock_resp = MagicMock()
-    mock_resp.read.return_value = (
-        b'{"ok": true, "result": true, "description": "Webhook was set"}'
-    )
+    mock_resp.read.return_value = b'{"ok": true, "result": true, "description": "Webhook was set"}'
     mock_resp.__enter__.return_value = mock_resp
 
     with patch("urllib.request.urlopen", return_value=mock_resp):
@@ -1069,16 +1077,10 @@ def test_setup_api_gateway_http_api_existing_flow():
     }
     fn_arn = "arn:aws:lambda:ap-southeast-3:123456789012:function:idx-telegram-webhook"
     mock_apigw.get_integrations.return_value = {
-        "Items": [
-            {"IntegrationId": "int999", "IntegrationUri": fn_arn}
-        ]
+        "Items": [{"IntegrationId": "int999", "IntegrationUri": fn_arn}]
     }
-    mock_apigw.get_routes.return_value = {
-        "Items": [{"RouteKey": "POST /webhook"}]
-    }
-    mock_apigw.get_stages.return_value = {
-        "Items": [{"StageName": "$default"}]
-    }
+    mock_apigw.get_routes.return_value = {"Items": [{"RouteKey": "POST /webhook"}]}
+    mock_apigw.get_stages.return_value = {"Items": [{"StageName": "$default"}]}
 
     mock_lambda = MagicMock()
     mock_lambda.add_permission.side_effect = ClientError(
@@ -1103,21 +1105,26 @@ def test_setup_api_gateway_http_api_existing_flow():
 
 
 def test_deploy_main_webhook_options_dry_run():
-    ret = deploy_main([
-        "--dry-run",
-        "--set-webhook",
-        "--webhook-type", "apigw",
-        "--stage", "staging",
-    ])
+    ret = deploy_main(
+        [
+            "--dry-run",
+            "--set-webhook",
+            "--webhook-type",
+            "apigw",
+            "--stage",
+            "staging",
+        ]
+    )
     assert ret == 0
 
-    ret_both = deploy_main([
-        "--dry-run",
-        "--set-webhook",
-        "--webhook-type", "both",
-        "--stage", "staging",
-    ])
+    ret_both = deploy_main(
+        [
+            "--dry-run",
+            "--set-webhook",
+            "--webhook-type",
+            "both",
+            "--stage",
+            "staging",
+        ]
+    )
     assert ret_both == 0
-
-
-

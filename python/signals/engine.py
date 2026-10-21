@@ -137,7 +137,7 @@ class SignalEngine:
     ) -> list[SignalRecord]:
         """Generate ranked signals for a given trading date and optional price mode."""
         cfg = config or self.config
-        eff_mode = (mode or cfg.mode)
+        eff_mode = mode or cfg.mode
         if eff_mode:
             eff_mode = eff_mode.strip().upper()
 
@@ -254,7 +254,8 @@ class SignalEngine:
                     champ = self.model_registry.get_champion(task="classification")
                 if champ is None and eff_mode and eff_mode not in ("ALL", "*"):
                     legacy_champs = [
-                        m for m in self.model_registry.list_models(task="classification")
+                        m
+                        for m in self.model_registry.list_models(task="classification")
                         if m.mode is None and m.status.lower() == "champion"
                     ]
                     if legacy_champs:
@@ -276,7 +277,8 @@ class SignalEngine:
                     champ = self.model_registry.get_champion(task="classification")
                 if champ is None and eff_mode and eff_mode not in ("ALL", "*"):
                     legacy_champs = [
-                        m for m in self.model_registry.list_models(task="classification")
+                        m
+                        for m in self.model_registry.list_models(task="classification")
                         if m.mode is None and m.status.lower() == "champion"
                     ]
                     if legacy_champs:
@@ -292,7 +294,8 @@ class SignalEngine:
                     )
                     if not candidates and eff_mode and eff_mode not in ("ALL", "*"):
                         candidates = [
-                            m for m in self.model_registry.list_models(task="classification")
+                            m
+                            for m in self.model_registry.list_models(task="classification")
                             if m.mode is None
                         ]
                     if candidates:
@@ -319,7 +322,8 @@ class SignalEngine:
                 champ_reg = self.model_registry.get_champion(task="regression")
             if champ_reg is None and eff_mode and eff_mode not in ("ALL", "*"):
                 legacy_regs = [
-                    m for m in self.model_registry.list_models(task="regression")
+                    m
+                    for m in self.model_registry.list_models(task="regression")
                     if m.mode is None and m.status.lower() == "champion"
                 ]
                 if legacy_regs:
@@ -654,9 +658,7 @@ class SignalEngine:
                 max_holding_days=cfg.max_holding_days,
                 predicted_probability=round(prob, 4),
                 expected_return=(
-                    round(exp_ret, 4)
-                    if (exp_ret is not None and math.isfinite(exp_ret))
-                    else None
+                    round(exp_ret, 4) if (exp_ret is not None and math.isfinite(exp_ret)) else None
                 ),
                 net_ev=(
                     round(cand["net_ev"], 4)

@@ -677,6 +677,40 @@ class DailyBarRepository:
             if not self._is_memory:
                 conn.close()
 
+    def get_ingestion_runs(self, limit: int = 10) -> list[IngestionRun]:
+        conn = self._get_connection()
+        try:
+            cur = conn.execute(
+                "SELECT * FROM ingestion_runs ORDER BY started_at DESC LIMIT ?", [limit]
+            )
+            rows = cur.fetchall()
+            return [
+                IngestionRun(
+                    id=row["id"],
+                    provider=row["provider"],
+                    job_type=row["job_type"],
+                    started_at=datetime.fromisoformat(row["started_at"]),
+                    finished_at=datetime.fromisoformat(row["finished_at"])
+                    if row["finished_at"]
+                    else None,
+                    status=row["status"],
+                    tickers_requested=row["tickers_requested"],
+                    tickers_succeeded=row["tickers_succeeded"],
+                    tickers_partial=row["tickers_partial"],
+                    tickers_failed=row["tickers_failed"],
+                    rows_inserted=row["rows_inserted"],
+                    rows_updated=row["rows_updated"],
+                    rows_unchanged=row["rows_unchanged"],
+                    rows_rejected=row["rows_rejected"],
+                    error_summary=row["error_summary"],
+                    config_version=row["config_version"],
+                )
+                for row in rows
+            ]
+        finally:
+            if not self._is_memory:
+                conn.close()
+
     def get_ticker_statuses(self, run_id: str) -> list[IngestionTickerStatus]:
         conn = self._get_connection()
         try:

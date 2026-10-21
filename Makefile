@@ -1,4 +1,4 @@
-.PHONY: test lint format clean install-dev ingest validate features labels train backtest signals telegram send-daily positions outcomes evaluate retrain deploy
+.PHONY: test lint format clean install-dev ingest validate features labels train backtest signals telegram send-daily positions outcomes evaluate retrain deploy daily-pipeline
 
 VENV_PYTHON = .venv/Scripts/python
 VENV_PYTEST = .venv/Scripts/pytest
@@ -12,6 +12,9 @@ lint:
 
 format:
 	$(VENV_RUFF) format .
+
+daily-pipeline:
+	$(VENV_PYTHON) -m scripts.run_daily_pipeline
 
 ingest:
 	$(VENV_PYTHON) -m scripts.ingest_daily

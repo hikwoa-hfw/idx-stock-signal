@@ -88,14 +88,10 @@ class RetrainingTriggerEvaluator:
 
         # 2. Performance degradation: evaluates recent rolling window across market outcomes
         all_outcomes = (
-            new_outcomes
-            if anchor_date is None
-            else self.outcome_repo.get_matured_outcomes()
+            new_outcomes if anchor_date is None else self.outcome_repo.get_matured_outcomes()
         )
         if self.config.exclude_ambiguous:
-            eval_outcomes = [
-                o for o in all_outcomes if o.outcome_status.upper() != "AMBIGUOUS"
-            ]
+            eval_outcomes = [o for o in all_outcomes if o.outcome_status.upper() != "AMBIGUOUS"]
         else:
             eval_outcomes = all_outcomes
 

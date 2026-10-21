@@ -404,4 +404,3 @@ def test_outcome_engine_standalone_decoupling():
     assert "SignalEngine" not in engine_globals
     assert "ModelRegistry" not in engine_globals
     assert "LightGBM" not in engine_globals
-

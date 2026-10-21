@@ -65,4 +65,3 @@ __all__ = [
     "format_comparison_markdown",
     "format_comparison_json",
 ]
-

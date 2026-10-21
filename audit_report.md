@@ -2,12 +2,12 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11F.4 — Final Fail-Closed Readiness & Approval-Time Cutoff Patch`
-- **Audit Date:** `2026-10-21 09:15 WIB`
+- **Current Phase:** `Phase 11G — Daily Pipeline Automation & Operational Validation`
+- **Audit Date:** `2026-10-21 16:00 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11F.4 approval-time cutoff enforcement, persistent effective cutoff tracking, dynamic prospective session resolution, 28 fail-closed tests, and 88 passed paper trading unit tests (591 total repository tests passed)
-- **Overall Status:** `PASS (APPROVED_PENDING_FIRST_OBSERVATION / READY_FOR_OBSERVATION_PENDING_USER_APPROVAL)`
+- **Latest Commit SHA:** Working tree with Phase 11G Daily Market-Data-to-Paper-Trading Pipeline Automation (6-stage orchestrator, Windows Task Scheduler automation with StartWhenAvailable, fail-closed provider guards, 616 repository tests passed 100%)
+- **Overall Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL / APPROVED_PENDING_FIRST_OBSERVATION)`
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
@@ -92,6 +92,11 @@ The repository maintains dedicated, detailed reports for each major governance a
     - **Offline Challenger Retraining:** Fresh Historical Data & Controlled Evaluation
     - **Scope:** 3-fold expanding walk-forward controlled evaluation of candidate classifiers (Full LightGBM, feature ablation, regularized logistic regression, constant prevalence) against production champions under Variant B H=15 MOO target contract and 50 bps round-trip friction. Audited data cutoffs (`scripts/inspect_dataset_splits.py`; latest bar: `2026-10-16`; latest fully observable decision: `2026-09-25`; +36.60% valid rows over champions [+46,343 rows], +0.0% over Phase 11F). Serialized research models in `artifacts/offline_challengers/run_20261021_retraining/`.
     - **Status:** `PASS (DO_NOT_PROMOTE)` (Candidates produce negative net returns between -0.35% and -0.68%; production champions preserved; 6 unit tests added, 597 total repository tests passed 100%; ruff clean 0 error).
+
+14. [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
+    - **Phase 11G:** Daily Market-Data-to-Paper-Trading Pipeline Automation & Operational Validation
+    - **Scope:** 6-stage operational pipeline orchestrator (`Stage A: Ingestion -> Stage B: Validation Gate -> Stage C: Feature Generation -> Stage D: Feature Readiness -> Stage E: Paper Trading -> Stage F: Reporting`), single CLI entry point (`scripts/run_daily_pipeline.py`), Windows Task Scheduler automation (`IDX_Stock_Signal_Daily_Pipeline` scheduled Mon-Fri 16:30 WIB with `StartWhenAvailable: True`), fail-closed provider rejection (`allow_mock_fallback=False`), point-in-time readiness check, idempotent re-runs, and full prospective lifecycle integration.
+    - **Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL)` (19 unit/integration tests added, 616 total repository tests passed 100%; ruff clean 0 error; champions and frozen Phase 11F research models preserved).
 
 ---
 

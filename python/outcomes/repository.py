@@ -238,16 +238,14 @@ class OutcomeRepository:
                     "AND (entry_status IS NULL OR entry_status != 'UNFILLED');"
                 )
                 conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_outcomes_mode "
-                    "ON outcomes_daily(mode);"
+                    "CREATE INDEX IF NOT EXISTS idx_outcomes_mode ON outcomes_daily(mode);"
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_outcomes_signal_id "
                     "ON outcomes_daily(signal_id);"
                 )
                 conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_outcomes_ticker "
-                    "ON outcomes_daily(ticker);"
+                    "CREATE INDEX IF NOT EXISTS idx_outcomes_ticker ON outcomes_daily(ticker);"
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_outcomes_signal_date "
@@ -280,9 +278,7 @@ class OutcomeRepository:
                 )
                 snap_cols = {
                     row[1]: row
-                    for row in conn.execute(
-                        "PRAGMA table_info(signal_snapshots_daily);"
-                    ).fetchall()
+                    for row in conn.execute("PRAGMA table_info(signal_snapshots_daily);").fetchall()
                 }
                 new_snap_cols = [
                     ("mfe_min_so_far", "REAL"),
@@ -305,9 +301,7 @@ class OutcomeRepository:
 
     def _row_to_outcome(self, row: sqlite3.Row) -> SignalOutcomeRecord:
         exit_date_val = date.fromisoformat(row["exit_date"]) if row["exit_date"] else None
-        resolved_at_val = (
-            datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None
-        )
+        resolved_at_val = datetime.fromisoformat(row["resolved_at"]) if row["resolved_at"] else None
         keys = set(row.keys())
         mode_val = row["mode"] if "mode" in keys else None
 

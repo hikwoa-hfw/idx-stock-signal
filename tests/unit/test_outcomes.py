@@ -971,8 +971,7 @@ def test_extended_metrics_mfe_mae_price_and_time_to_events():
 
     # Net return after all modeled costs (fees + 10 bps slippage)
     expected_all = (
-        (110.0 * (1.0 - 0.0005) * (1.0 - 0.0025))
-        / (100.0 * (1.0 + 0.0005) * (1.0 + 0.0015))
+        (110.0 * (1.0 - 0.0005) * (1.0 - 0.0025)) / (100.0 * (1.0 + 0.0005) * (1.0 + 0.0015))
     ) - 1.0
     assert outcome.net_return == pytest.approx(expected_all)
     assert outcome.return_after_fees_and_slippage == pytest.approx(expected_all)
@@ -2402,6 +2401,7 @@ def test_regression_ambiguous_policy_candle_touching_both_barriers():
 def test_regression_reconciliation_report_statistics_with_stored_trade_rows():
     """Verify reconciliation of published performance statistics with exact unrounded DB rows."""
     import sqlite3
+
     con = sqlite3.connect("datasets/stock_signals.db")
     con.row_factory = sqlite3.Row
     cur = con.cursor()
@@ -2413,7 +2413,8 @@ def test_regression_reconciliation_report_statistics_with_stored_trade_rows():
     ).fetchall()
 
     filled = [
-        r for r in rows
+        r
+        for r in rows
         if r["entry_status"] == "FILLED" and r["outcome_status"] in ("TP", "SL", "EXPIRY")
     ]
     unfilled = [r for r in rows if r["entry_status"] != "FILLED"]
@@ -2458,4 +2459,3 @@ def test_regression_reconciliation_report_statistics_with_stored_trade_rows():
     assert sl_count == 17
     assert exp_count == 2
     assert mean_hold == pytest.approx(121 / 27, abs=1e-4)
-

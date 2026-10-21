@@ -220,17 +220,13 @@ def evaluate_variant_b_multi_horizon(
         elif tp_hit:
             first_hit_day = k
             first_hit_outcome = "TP"
-            first_hit_exit_price = (
-                float(bar.open) if (k > 1 and bar.open >= tp_price) else tp_price
-            )
+            first_hit_exit_price = float(bar.open) if (k > 1 and bar.open >= tp_price) else tp_price
             first_hit_exit_date = bar.date
             break
         elif sl_hit:
             first_hit_day = k
             first_hit_outcome = "SL"
-            first_hit_exit_price = (
-                float(bar.open) if (k > 1 and bar.open <= sl_price) else sl_price
-            )
+            first_hit_exit_price = float(bar.open) if (k > 1 and bar.open <= sl_price) else sl_price
             first_hit_exit_date = bar.date
             break
 
@@ -410,9 +406,7 @@ def compute_regression_binned_diagnostics(
             {
                 "bin_label": lbl,
                 "count": n_bin,
-                "pct_of_total": (
-                    round(n_bin / len(y_true) * 100.0, 2) if len(y_true) > 0 else 0.0
-                ),
+                "pct_of_total": (round(n_bin / len(y_true) * 100.0, 2) if len(y_true) > 0 else 0.0),
                 "mean_predicted_ret": round(mean_pred, 5),
                 "mean_realized_ret": round(mean_realized, 5),
                 "error": round(error, 5),
@@ -688,9 +682,7 @@ class MultiHorizonEvaluationRunner:
                 X_all_train = df_train[ALL_FEATURE_COLUMNS].to_numpy(dtype=np.float64)
                 X_all_test = df_test[ALL_FEATURE_COLUMNS].to_numpy(dtype=np.float64)
 
-                imputer = SimpleImputer(
-                    strategy="median", keep_empty_features=True, fill_value=0.0
-                )
+                imputer = SimpleImputer(strategy="median", keep_empty_features=True, fill_value=0.0)
                 X_all_train_imp = imputer.fit_transform(X_all_train)
                 X_all_test_imp = imputer.transform(X_all_test)
 
@@ -1018,9 +1010,7 @@ class MultiHorizonEvaluationRunner:
                         "vb_realized_net": list(df_test[net_ret_col]),
                         "vb_outcome": list(df_test[outcome_col]),
                         "prob_lgb_full": list(predictions_map["lgb_full"]),
-                        "prob_lgb_ablation": list(
-                            predictions_map[BEST_ABLATIONS[mode]["name"]]
-                        ),
+                        "prob_lgb_ablation": list(predictions_map[BEST_ABLATIONS[mode]["name"]]),
                         "prob_logistic": list(predictions_map["logistic_baseline"]),
                         "prob_prevalence": list(predictions_map["prevalence_baseline"]),
                         "pred_return_lgb": list(predictions_map["lgb_regressor"]),
@@ -1150,8 +1140,7 @@ class MultiHorizonEvaluationRunner:
                     # Sizing: Equal weight allocation capped at 20% equity
                     # Causal: Use strictly previous day's close or entry price (no lookahead)
                     open_val = sum(
-                        pos["shares"]
-                        * last_known_close.get(pos["ticker"], pos["entry_price"])
+                        pos["shares"] * last_known_close.get(pos["ticker"], pos["entry_price"])
                         for pos in open_positions.values()
                     )
                     current_equity = cash + open_val
@@ -1245,9 +1234,7 @@ class MultiHorizonEvaluationRunner:
                     net_proceeds = gross_proceeds - exit_fee
                     cash += net_proceeds
 
-                    net_pnl = net_proceeds - (
-                        pos["shares"] * pos["entry_price"] + pos["entry_fee"]
-                    )
+                    net_pnl = net_proceeds - (pos["shares"] * pos["entry_price"] + pos["entry_fee"])
                     invested = pos["shares"] * pos["entry_price"] + pos["entry_fee"]
                     net_ret = net_pnl / invested if invested > 0 else 0.0
 
@@ -1340,9 +1327,7 @@ class MultiHorizonEvaluationRunner:
             sum(t.holding_days for t in completed_trades) / n_trades if n_trades > 0 else 0.0
         )
 
-        total_invalidated = (
-            invalidated_gap_down + invalidated_gap_up + invalidated_excessive_dev
-        )
+        total_invalidated = invalidated_gap_down + invalidated_gap_up + invalidated_excessive_dev
         total_unfilled = unfilled_suspended + unfilled_capacity + unfilled_cash
 
         return {
@@ -1399,9 +1384,7 @@ class MultiHorizonEvaluationRunner:
             log_loss_mean = float(m_df["log_loss"].mean())
             ece_mean = float(m_df["ece"].mean())
             daily_top10_mean = float(m_df["daily_top10_prec"].mean())
-            daily_top10_std = (
-                float(m_df["daily_top10_prec"].std(ddof=1)) if len(m_df) > 1 else 0.0
-            )
+            daily_top10_std = float(m_df["daily_top10_prec"].std(ddof=1)) if len(m_df) > 1 else 0.0
             daily_top5_mean = float(m_df["daily_top5_prec"].mean())
 
             summaries.append(

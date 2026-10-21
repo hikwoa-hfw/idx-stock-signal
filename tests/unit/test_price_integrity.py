@@ -830,5 +830,3 @@ def test_csv_export_includes_all_audit_fields(capsys):
     assert "entry_high" in header
     assert "entry_policy" in header
     assert "status" in header
-
-

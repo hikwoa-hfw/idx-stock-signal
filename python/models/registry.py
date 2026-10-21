@@ -11,6 +11,7 @@ except ImportError:
 try:
     from pydantic import BaseModel, Field, field_validator, model_validator
 except ImportError:
+
     class BaseModel:  # type: ignore[no-redef]
         def __init__(self, **kwargs):
             for k, v in kwargs.items():
@@ -38,6 +39,7 @@ except ImportError:
             return fn
 
         return dec
+
 
 from python.config.settings import settings
 
@@ -90,9 +92,7 @@ class ModelRegistry:
     """Manages serialization, versioning, and status (champion/challenger) of model artifacts."""
 
     def __init__(self, registry_dir: Optional[Union[str, Path]] = None) -> None:
-        raw_path = (
-            Path(registry_dir) if registry_dir is not None else settings.model_registry_path
-        )
+        raw_path = Path(registry_dir) if registry_dir is not None else settings.model_registry_path
         sub_reg = raw_path / "registry"
         if raw_path.is_dir() and sub_reg.is_dir() and any(sub_reg.glob("*.json")):
             self.registry_dir = sub_reg
@@ -233,8 +233,7 @@ class ModelRegistry:
         else:
             eff_mode = mode
             candidates = [
-                m for m in self.list_models(task=task, mode=mode)
-                if m.model_version != current_ver
+                m for m in self.list_models(task=task, mode=mode) if m.model_version != current_ver
             ]
             archived = [m for m in candidates if m.status.lower() == "archived_champion"]
             if archived:

@@ -535,4 +535,3 @@ def test_telegram_client_ssl_cert_verification_fallback():
         # Verify second call passed an unverified SSL context
         _, kwargs = mock_urlopen.call_args_list[1]
         assert "context" in kwargs
-

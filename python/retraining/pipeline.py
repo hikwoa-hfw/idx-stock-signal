@@ -74,15 +74,11 @@ class RetrainingPipeline:
             win_rate_safety_floor=self.config.win_rate_safety_floor,
             force=self.config.force,
         )
-        self.trigger_evaluator = trigger_evaluator or RetrainingTriggerEvaluator(
-            config=trigger_cfg
-        )
+        self.trigger_evaluator = trigger_evaluator or RetrainingTriggerEvaluator(config=trigger_cfg)
         self.dataset_assembler = dataset_assembler or RetrainingDatasetAssembler(
             purge_days=self.config.purge_days
         )
-        self.gate_manager = gate_manager or PromotionGateManager(
-            registry=self.registry
-        )
+        self.gate_manager = gate_manager or PromotionGateManager(registry=self.registry)
 
     def run(
         self,
@@ -94,9 +90,7 @@ class RetrainingPipeline:
         check_trigger_only: bool = False,
     ) -> RetrainingPipelineResult:
         is_force = force if force is not None else self.config.force
-        is_auto_promote = (
-            auto_promote if auto_promote is not None else self.config.auto_promote
-        )
+        is_auto_promote = auto_promote if auto_promote is not None else self.config.auto_promote
         is_dry_run = dry_run if dry_run is not None else self.config.dry_run
 
         current_champ = self.registry.get_champion(task=self.config.task)
@@ -107,11 +101,7 @@ class RetrainingPipeline:
         anchor_since: Optional[date] = None
         s_date = since_date or self.config.since_date
         if s_date is not None:
-            anchor_since = (
-                date.fromisoformat(s_date.strip())
-                if isinstance(s_date, str)
-                else s_date
-            )
+            anchor_since = date.fromisoformat(s_date.strip()) if isinstance(s_date, str) else s_date
         elif current_champ is not None and current_champ[1].training_end:
             try:
                 t_end = current_champ[1].training_end.strip()
@@ -210,8 +200,7 @@ class RetrainingPipeline:
             # 5. Save Challenger Artifact into ModelRegistry
             now_str = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             challenger_version = (
-                self.config.model_version
-                or f"challenger_{self.config.algorithm}_{now_str}"
+                self.config.model_version or f"challenger_{self.config.algorithm}_{now_str}"
             )
 
             val_start = str(min(val_ds.dates)) if val_ds and len(val_ds) > 0 else None

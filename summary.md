@@ -1011,3 +1011,48 @@ Log Perubahan Tambahan (15 Oktober 2026)
    1. Menjalankan perintah otorisasi operator resmi: `python -m scripts.run_forward_paper_trading --approve-observation`.
    2. Status persisten `artifacts/phase_11f/paper_trading_state.json` berhasil diperbarui: `user_approved: True`, `approval_timestamp: '2026-10-21T07:19:05.601655+00:00'`, `approval_data_cutoff: '2026-10-16'`, dan `effective_observation_cutoff: '2026-10-21'`.
    3. Status operasional bertransisi menjadi `APPROVED_PENDING_FIRST_OBSERVATION`. Belum ada transaksi yang dieksekusi (0 trades, 0 open positions, saldo kas utuh 100jt IDR). Observasi akan aktif saat sesi data bursa setelah 2026-10-21 di-ingest dan diproses.
+
+69. Phase 11G — Otomasi & Orkestrasi Pipeline Harian Market Data ke Paper Trading (21 Oktober 2026)
+   Masalah:
+   1. Script harian sebelumnya terfragmentasi (`scripts/ingest_daily.py`, `scripts/build_features.py`, `scripts/run_forward_paper_trading.py`) tanpa satu titik orkestrasi terpusat (single entry point) yang mengelola transisi data end-to-end dari Stage A s.d. Stage F.
+   2. Script ingest dan build features memiliki fallback sintetik/mock secara default jika provider gagal atau data kosong, berisiko mengontaminasi database operasional dengan data tiruan.
+   3. Perhitungan fitur sebelumnya default `save_db=False`, sehingga fitur baru berisiko hanya berada di memori tanpa tersimpan ke tabel `features_daily`.
+   4. Evaluasi `np.isinf` pada `PaperTradingEngine` memicu `TypeError` jika matriks fitur mengandung kolom bertipe `object` dengan nilai `None`.
+   5. Belum adanya penjadwalan otomatis di tingkat sistem operasi (Windows Task Scheduler) untuk memicu pipeline pada akhir jam bursa (Senin–Jumat 16:30 WIB).
+   Solusi:
+   1. Mengembangkan pipeline orchestrator `python/pipeline/daily_pipeline.py` (`DailyPipeline` & `PipelineRunReport`) dan CLI `scripts/run_daily_pipeline.py` yang mengoordinasikan 6 stage operasional secara ketat dan fail-closed:
+      - Stage A: Ingest market data harian.
+      - Stage B: Ingestion Validation Gate (cakupan ticker >= ambang batas).
+      - Stage C: Feature Generation & DB Persistence (menyimpan ke `features_daily` dan memvalidasi hitungan baris DB).
+      - Stage D: Feature Readiness Gate (verifikasi skema 30 fitur, kecocokan tanggal, dan ketiadaan NaN/Inf).
+      - Stage E: Paper Trading Lifecycle (eksekusi order tertunda, evaluasi barrier, penskoran prospektif).
+      - Stage F: Pelaporan operasional komprehensif ke file JSON di `reports/daily_runs/`.
+   2. Menambahkan parameter `allow_mock_fallback: bool` pada `scripts/ingest_daily.py` dan `scripts/build_features.py`. Pada pipeline operasional, nilai disetel secara eksplisit ke `False`, sehingga kegagalan provider memicu error dan menghentikan pipeline tanpa fallback tiruan.
+   3. Memperbaiki sanitasi tipe numerik pada `python/experiments/paper_trading.py` sebelum pemanggilan `np.isinf` menggunakan `apply(pd.to_numeric, errors="coerce")`.
+   4. Mengembangkan otomasi Windows Task Scheduler via skrip PowerShell:
+      - `scripts/run_scheduled_pipeline.ps1`: wrapper operasional dengan penanganan concurrency lockfile (`.pipeline.lock`), deteksi virtualenv otomatis, logging permanen UTF-8 di `logs/`, dan propagasi exit code.
+      - `scripts/register_daily_scheduler.ps1`: mendaftarkan task `\IDX_Stock_Signal_Daily_Pipeline` untuk berjalan setiap hari kerja (Senin–Jumat) pukul 16:30 WIB. Berhasil didaftarkan dan berstatus `Ready`.
+      - `scripts/unregister_daily_scheduler.ps1`: skrip pelepasan task secara bersih.
+   5. Menambahkan target `daily-pipeline` pada `Makefile`.
+   6. Menambahkan 13 unit dan integration test pada `tests/unit/test_daily_pipeline.py` yang memvalidasi ke-8 skenario kegagalan dan keberhasilan operasional (provider failure fail-closed, mock rejection, partial coverage, DB persistence verification, DB reuse, idempotensi tanpa duplikasi, deteksi data basi, dan immutabilitas hash artefak).
+   7. Menyusun laporan audit universal `docs/22_daily_pipeline_automation_validation_report.md` dan memperbarui `audit_report.md` (entri 14).
+
+70. Phase 11G — Review Kritis, Perbaikan Bug Pipeline Harian, & Rekonsiliasi Metrik Operasional (21 Oktober 2026)
+   Masalah:
+   1. `DailyBarRepository` tidak memiliki method `get_ingestion_runs(limit)`, memicu `AttributeError` di Stage A saat penarikan data nyata dijalankan.
+   2. Skrip wrapper `scripts/run_scheduled_pipeline.ps1` memicu `NativeCommandError` PowerShell saat yfinance mencetak pesan ke stderr, memutus pipeline di batch tengah dan meninggalkan data parsial.
+   3. Skrip pendaftaran Task Scheduler `register_daily_scheduler.ps1` belum menyertakan pengaturan `-StartWhenAvailable`, sehingga eksekusi berisiko terlewat jika komputer mati pada pukul 16:30.
+   4. Tipe data string vs objek `datetime.date` pada `processed_dates` di Stage B menyebabkan perbandingan selalu bernilai False, sehingga skip sesi yang sudah diproses gagal terpicu.
+   5. Urutan pengecekan ambang batas cakupan ticker dan proxy benchmark di Stage B terbalik, menyebabkan error benchmark muncul mendahului error cakupan ticker.
+   6. Laporan operasional `PipelineRunReport` belum memuat metrik audit lengkap (14 metrik: schema hash, model hashes, policy bundle hash, candidate/decision count, fill/exit count, position count, pnl, drawdown, equity).
+   7. Stage D belum memverifikasi kecocokan ticker fitur terhadap `daily_bars`, belum memvalidasi non-null kolom benchmark, dan meloloskan kondisi ketika kandidat dengan histori lengkap berjumlah 0.
+   Solusi:
+   1. Mengimplementasikan `get_ingestion_runs(limit)` pada `DailyBarRepository` di `python/data/repository.py`.
+   2. Menyetel `$ErrorActionPreference = "Continue"` secara lokal selama pemanggilan `python.exe` pada `scripts/run_scheduled_pipeline.ps1` dan meneruskan argumen CLI `@args`.
+   3. Menambahkan `-StartWhenAvailable` pada `scripts/register_daily_scheduler.ps1` dan mendaftarkan ulang task `\IDX_Stock_Signal_Daily_Pipeline` (status: `Ready`, `StartWhenAvailable: True`).
+   4. Menormalisasi perbandingan `str(session_d_check) in processed_dates` pada Stage B sehingga aman dari perbedaan tipe.
+   5. Mengevaluasi ambang batas cakupan ticker terlebih dahulu sebelum evaluasi ketersediaan proxy benchmark di Stage B.
+   6. Melengkapi seluruh 14 metrik operasional pada `PipelineRunReport` dan ringkasan eksekusi CLI `scripts/run_daily_pipeline.py`.
+   7. Menambahkan validasi silang ticker fitur terhadap bar harga di `daily_bars`, validasi kelengkapan kolom benchmark, dan verifikasi `complete_history_candidates > 0` di Stage D.
+   8. Menambahkan 6 unit test baru pada `tests/unit/test_daily_pipeline.py` (total 19 unit test). Total test suite repositori menjadi 616 passed (100%), ruff clean 0 error.
+

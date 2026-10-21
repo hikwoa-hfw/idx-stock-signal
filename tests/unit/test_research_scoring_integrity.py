@@ -82,9 +82,7 @@ def sample_feature_dataframe() -> pd.DataFrame:
 
 
 class TestResearchScoringIntegrity:
-    def test_artifacts_load_successfully(
-        self, low_price_model: Any, higher_price_model: Any
-    ):
+    def test_artifacts_load_successfully(self, low_price_model: Any, higher_price_model: Any):
         """Verifies both artifacts load from artifacts/phase_11f/research_models/."""
         assert isinstance(low_price_model, ResearchRegressorModel)
         assert isinstance(higher_price_model, ResearchClassifierModel)
@@ -380,9 +378,7 @@ class TestResearchScoringIntegrity:
         probs_high = higher_price_model.predict_probability(df_all_nan)
         assert np.all(np.isfinite(probs_high))
 
-    def test_runtime_bundle_hash_matches_frozen_policy_config_json(
-        self, repo_root: Path
-    ):
+    def test_runtime_bundle_hash_matches_frozen_policy_config_json(self, repo_root: Path):
         """Verifies runtime hash from get_default_frozen_policies()
         matches frozen_policy_config.json.
         """
@@ -398,9 +394,7 @@ class TestResearchScoringIntegrity:
         assert runtime_sha == canonical_sha
         assert runtime_sha == "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71"
 
-    def test_missing_scoring_artifact_reports_blocked_status(
-        self, repo_root: Path, tmp_path: Path
-    ):
+    def test_missing_scoring_artifact_reports_blocked_status(self, repo_root: Path, tmp_path: Path):
         """Verifies missing research artifacts result in BLOCKED_ON_SCORING_ARTIFACT."""
         empty_dir = tmp_path / "empty_models"
         empty_dir.mkdir(parents=True, exist_ok=True)
@@ -416,9 +410,7 @@ class TestResearchScoringIntegrity:
         assert status["operational_status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
         assert status["scoring_artifacts_status"] == STATUS_BLOCKED_ON_SCORING_ARTIFACT
 
-    def test_hash_mismatch_reports_blocked_status(
-        self, repo_root: Path, tmp_path: Path
-    ):
+    def test_hash_mismatch_reports_blocked_status(self, repo_root: Path, tmp_path: Path):
         """Verifies hash mismatch between artifact and metadata
         reports BLOCKED_ON_SCORING_ARTIFACT.
         """

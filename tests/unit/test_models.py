@@ -589,4 +589,3 @@ def test_causal_calibration_with_validation_set():
     preds = reg.predict(X_val)
     assert len(preds) == 40
     assert np.all(np.isfinite(preds))
-

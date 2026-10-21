@@ -580,6 +580,3 @@ def test_recompute_trading_from_saved_predictions():
     assert vb["mean_profit_factor"] > 0.0
     assert vb["worst_fold_max_drawdown_pct"] > 0.0
     assert vb["continuous_max_drawdown_pct"] > 0.0
-
-
-

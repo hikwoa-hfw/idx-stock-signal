@@ -263,8 +263,7 @@ def main() -> None:
             if has_chall_artifact:
                 registry.promote_to_champion(chall_ver, mode=args.mode)
                 print(
-                    f"[SUCCESS] Model '{chall_ver}' successfully promoted "
-                    f"to champion in registry."
+                    f"[SUCCESS] Model '{chall_ver}' successfully promoted to champion in registry."
                 )
             else:
                 print(f"[WARN] Cannot promote '{chall_ver}': artifact not found in registry.")

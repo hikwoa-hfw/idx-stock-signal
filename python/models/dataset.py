@@ -196,7 +196,7 @@ class DatasetBuilder:
         labels_df: pd.DataFrame,
         mode: Optional[str] = None,
     ) -> Dataset:
-        eff_mode = (mode or self.mode)
+        eff_mode = mode or self.mode
         if eff_mode:
             eff_mode = eff_mode.strip().upper()
 

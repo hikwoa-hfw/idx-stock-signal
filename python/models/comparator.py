@@ -98,9 +98,9 @@ class ModelComparator:
             )
 
         # Rule 2: Brier score must not worsen (lower or equal is better)
-        brier_pass = (
-            chall_p.brier_score - champ_p.brier_score
-        ) <= (self.config.max_brier_worsening + 1e-9)
+        brier_pass = (chall_p.brier_score - champ_p.brier_score) <= (
+            self.config.max_brier_worsening + 1e-9
+        )
         if brier_pass:
             rationale.append(
                 f"Brier Score acceptable: {chall_p.brier_score:.4f} vs {champ_p.brier_score:.4f} "
@@ -115,9 +115,9 @@ class ModelComparator:
             )
 
         # Rule 3: Max drawdown must not worsen beyond tolerance
-        dd_pass = (
-            chall_t.max_drawdown - champ_t.max_drawdown
-        ) <= (self.config.max_drawdown_increase + 1e-9)
+        dd_pass = (chall_t.max_drawdown - champ_t.max_drawdown) <= (
+            self.config.max_drawdown_increase + 1e-9
+        )
         if dd_pass:
             rationale.append(
                 f"Drawdown within tolerance: {chall_t.max_drawdown:.2%} vs "
@@ -131,9 +131,9 @@ class ModelComparator:
             )
 
         # Rule 4: Expectancy must not decrease
-        exp_pass = (
-            chall_t.expectancy - champ_t.expectancy
-        ) >= (self.config.min_expectancy_improvement - 1e-9)
+        exp_pass = (chall_t.expectancy - champ_t.expectancy) >= (
+            self.config.min_expectancy_improvement - 1e-9
+        )
         if exp_pass:
             rationale.append(
                 f"Expectancy acceptable: {chall_t.expectancy:.2%} vs {champ_t.expectancy:.2%} "
@@ -152,9 +152,7 @@ class ModelComparator:
             rationale.append("Promotion gate passed: Challenger satisfies all criteria.")
         elif not pf_pass and not brier_pass and not dd_pass:
             recommendation = ComparisonRecommendation.REJECT.value
-            rationale.append(
-                "Promotion rejected: Challenger underperforms on core metrics."
-            )
+            rationale.append("Promotion rejected: Challenger underperforms on core metrics.")
         elif not pf_pass or not dd_pass:
             recommendation = ComparisonRecommendation.REJECT.value
             rationale.append(
@@ -405,8 +403,7 @@ def format_comparison_markdown(report: ComparisonReport) -> str:
         f"{d.get('roc_auc_delta', 0.0):+.4f} |",
         f"| **Log Loss** | {c_p.log_loss:.4f} | {ch_p.log_loss:.4f} | "
         f"{d.get('log_loss_delta', 0.0):+.4f} |",
-        f"| **ECE** | {c_p.ece:.4f} | {ch_p.ece:.4f} | "
-        f"{d.get('ece_delta', 0.0):+.4f} |",
+        f"| **ECE** | {c_p.ece:.4f} | {ch_p.ece:.4f} | {d.get('ece_delta', 0.0):+.4f} |",
         "",
         "### Rationale",
     ]

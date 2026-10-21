@@ -52,9 +52,11 @@ logger = logging.getLogger("train_phase11f_research_models")
 def get_git_commit() -> str:
     """Retrieves current git commit hash, with fallback."""
     try:
-        res = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
-        ).decode().strip()
+        res = (
+            subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL)
+            .decode()
+            .strip()
+        )
         return res
     except Exception:
         return "UNKNOWN_COMMIT"
@@ -132,9 +134,7 @@ def train_research_models(
     )
     y_tr_low_valid = df_tr_low_valid["vb_realized_net_15"].to_numpy(dtype=np.float64)
 
-    logger.info(
-        "Fitting LightGBM Regressor Baseline (100 est, lr=0.05, depth=5)..."
-    )
+    logger.info("Fitting LightGBM Regressor Baseline (100 est, lr=0.05, depth=5)...")
     reg_estimator = LightGBMRegressorBaseline(
         n_estimators=100,
         learning_rate=0.05,
@@ -224,9 +224,7 @@ def train_research_models(
         prev_high,
     )
 
-    logger.info(
-        "Fitting LightGBM Classifier Baseline (100 est, lr=0.05, depth=5)..."
-    )
+    logger.info("Fitting LightGBM Classifier Baseline (100 est, lr=0.05, depth=5)...")
     clf_estimator = LightGBMClassifierBaseline(
         n_estimators=100,
         learning_rate=0.05,

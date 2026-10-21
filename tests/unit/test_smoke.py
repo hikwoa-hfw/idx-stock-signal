@@ -89,7 +89,3 @@ def test_project_root_exists():
     assert (
         root / "artifacts" / "phase_11f" / "research_models" / "research_model_metadata.json"
     ).is_file()
-
-
-
-

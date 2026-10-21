@@ -45,9 +45,7 @@ class BaseResearchScoringModel:
         """Loads serialized model artifact from path and verifies type."""
         obj = joblib.load(path)
         if not isinstance(obj, cls):
-            raise TypeError(
-                f"Expected instance of {cls.__name__}, got {type(obj).__name__}"
-            )
+            raise TypeError(f"Expected instance of {cls.__name__}, got {type(obj).__name__}")
         return obj
 
     def _validate_and_transform_X(self, X: Union[pd.DataFrame, np.ndarray, list]) -> np.ndarray:
@@ -56,14 +54,10 @@ class BaseResearchScoringModel:
             col_list = list(X.columns)
             missing = [c for c in self.feature_schema if c not in col_list]
             if missing:
-                raise ValueError(
-                    f"Missing required feature columns for {self.mode}: {missing}"
-                )
+                raise ValueError(f"Missing required feature columns for {self.mode}: {missing}")
             unexpected = [c for c in col_list if c not in self.feature_schema]
             if unexpected:
-                raise ValueError(
-                    f"Unexpected feature columns for {self.mode}: {unexpected}"
-                )
+                raise ValueError(f"Unexpected feature columns for {self.mode}: {unexpected}")
             if col_list != self.feature_schema:
                 raise ValueError(
                     f"Feature columns reordered for {self.mode}. "

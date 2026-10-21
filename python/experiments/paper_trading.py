@@ -1436,14 +1436,10 @@ class PaperTradingEngine:
             with open(target, "r", encoding="utf-8") as f:
                 raw_state = json.load(f)
         except Exception as e:
-            raise StateIntegrityError(
-                f"Cannot migrate unparseable state file: {e}"
-            ) from e
+            raise StateIntegrityError(f"Cannot migrate unparseable state file: {e}") from e
 
         if not isinstance(raw_state, dict):
-            raise StateIntegrityError(
-                f"Cannot migrate non-dict state: {type(raw_state)}"
-            )
+            raise StateIntegrityError(f"Cannot migrate non-dict state: {type(raw_state)}")
 
         default = self._default_state()
         for k, v in default.items():
@@ -1988,9 +1984,7 @@ class PaperTradingEngine:
             )
 
         # Data Quality Check 4: Required columns
-        missing_cols = [
-            c for c in self.frozen_bundle.feature_schema if c not in df_feat.columns
-        ]
+        missing_cols = [c for c in self.frozen_bundle.feature_schema if c not in df_feat.columns]
         if missing_cols:
             raise DataQualityError(
                 f"Data quality failure on {eval_date}: missing required feature columns "
@@ -1998,9 +1992,7 @@ class PaperTradingEngine:
             )
 
         # Data Quality Check 5: Common ticker coverage
-        feat_tickers = {
-            str(t).strip().upper().removesuffix(".JK") for t in df_feat["ticker"]
-        }
+        feat_tickers = {str(t).strip().upper().removesuffix(".JK") for t in df_feat["ticker"]}
         bar_tickers = {t for t, b in bars_today.items() if b["close"] > 0}
         common_tickers = feat_tickers.intersection(bar_tickers)
         if not common_tickers:
@@ -2013,7 +2005,11 @@ class PaperTradingEngine:
         df_common_feat = df_feat[
             df_feat["ticker"].str.strip().str.upper().str.removesuffix(".JK").isin(common_tickers)
         ]
-        feat_matrix = df_common_feat[self.frozen_bundle.feature_schema].values
+        feat_matrix = (
+            df_common_feat[self.frozen_bundle.feature_schema]
+            .apply(pd.to_numeric, errors="coerce")
+            .values
+        )
         if np.isinf(feat_matrix).any():
             raise DataQualityError(
                 f"Data quality failure on {eval_date}: invalid infinite values (Inf) "
@@ -2174,9 +2170,7 @@ class PaperTradingEngine:
                             "decision_date": ord_info["decision_date"],
                             "execution_date": str(eval_date),
                             "status": "INVALIDATED_EXCESSIVE_DEV",
-                            "reason": (
-                                f"Open dev {abs(b_open - c_close) / c_close:.4f} > max"
-                            ),
+                            "reason": (f"Open dev {abs(b_open - c_close) / c_close:.4f} > max"),
                         }
                     )
                     continue
@@ -2437,9 +2431,7 @@ class PaperTradingEngine:
             reg_info = {
                 "ihsg_vs_ema20": float(df_feat["ihsg_vs_ema20"].mean()),
                 "market_breadth": (
-                    float(df_feat["market_breadth"].mean())
-                    if "market_breadth" in df_feat
-                    else 0.5
+                    float(df_feat["market_breadth"].mean()) if "market_breadth" in df_feat else 0.5
                 ),
                 "ihsg_return_20d": (
                     float(df_feat["ihsg_return_20d"].mean())

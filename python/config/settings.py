@@ -4,6 +4,7 @@ from pathlib import Path
 try:
     from pydantic import BaseModel, Field
 except ImportError:
+
     class BaseModel:  # type: ignore[no-redef]
         def __init__(self, **kwargs):
             for k, v in kwargs.items():
@@ -13,6 +14,7 @@ except ImportError:
         if default_factory is not None:
             return default_factory()
         return default
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 

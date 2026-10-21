@@ -463,9 +463,7 @@ class CandidateEvaluationRunner:
                 # Daily ranking on native test set
                 fold_df_native = pd.DataFrame(
                     {
-                        "ticker": test_tickers[vb_test_valid]
-                        if target_v == "B"
-                        else test_tickers,
+                        "ticker": test_tickers[vb_test_valid] if target_v == "B" else test_tickers,
                         "date": test_dates[vb_test_valid] if target_v == "B" else test_dates,
                         "binary_target": native_y_true,
                         "y_prob": native_y_prob,
@@ -480,8 +478,8 @@ class CandidateEvaluationRunner:
 
                 # Common-cohort evaluation (ground truth = y_vb on common cohort)
                 common_indices = np.where(common_mask_test)[0]
-                y_common_vb = (
-                    df_test.iloc[common_indices]["vb_binary_target"].to_numpy(dtype=np.int64)
+                y_common_vb = df_test.iloc[common_indices]["vb_binary_target"].to_numpy(
+                    dtype=np.int64
                 )
                 y_prob_common = y_prob[common_indices]
                 common_metrics = evaluate_predictions(y_common_vb, y_prob_common)
@@ -780,9 +778,7 @@ class CandidateEvaluationRunner:
                     net_proceeds = gross_proceeds - exit_fee
                     cash += net_proceeds
 
-                    net_pnl = net_proceeds - (
-                        pos["shares"] * pos["entry_price"] + pos["entry_fee"]
-                    )
+                    net_pnl = net_proceeds - (pos["shares"] * pos["entry_price"] + pos["entry_fee"])
                     invested = pos["shares"] * pos["entry_price"] + pos["entry_fee"]
                     net_ret = net_pnl / invested if invested > 0 else 0.0
 
@@ -871,9 +867,7 @@ class CandidateEvaluationRunner:
             sum(t.holding_days for t in completed_trades) / n_trades if n_trades > 0 else 0.0
         )
 
-        total_invalidated = (
-            invalidated_gap_down + invalidated_gap_up + invalidated_excessive_dev
-        )
+        total_invalidated = invalidated_gap_down + invalidated_gap_up + invalidated_excessive_dev
         total_unfilled = unfilled_suspended + unfilled_capacity + unfilled_cash
 
         return {
@@ -1093,9 +1087,7 @@ class CandidateEvaluationRunner:
             # Mode-specific JSON
             mode_json_path = out_p / f"candidate_results_{mode}.json"
             clean_mode_dict = {
-                k: v
-                for k, v in data.items()
-                if k not in ("oos_predictions", "trading_fold_stats")
+                k: v for k, v in data.items() if k not in ("oos_predictions", "trading_fold_stats")
             }
             with open(mode_json_path, "w", encoding="utf-8") as f:
                 json.dump(clean_mode_dict, f, indent=2, default=str)

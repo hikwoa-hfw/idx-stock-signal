@@ -709,5 +709,3 @@ def test_ev_hurdle_fails_closed_when_regressor_predicts_nan_or_inf():
     assert len(sigs_opt) == 1
     assert math.isfinite(sigs_opt[0].expected_return)
     assert math.isfinite(sigs_opt[0].net_ev)
-
-

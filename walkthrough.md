@@ -1,97 +1,108 @@
-# Walkthrough — Offline Challenger Retraining & Controlled Evaluation
+# Walkthrough — Daily Market-Data-to-Paper-Trading Pipeline Automation & Validation Review
 
 ## Sesi Kerja: 21 Oktober 2026
 
 ### Ringkasan Eksekutif
-Telah diselesaikan evaluasi dan pelatihan ulang offline challenger classifier untuk BEI Dual-Mode Stock Signals menggunakan data historis yang sepenuhnya matang (`2026-09-25` cutoff, bar hingga `2026-10-16`) di bawah kontrak target riset Variant B H=15 (Next-Session Open MOO, TP +5%, SL -2%, friksi 50 bps). Hasil empiris menunjukkan bahwa meskipun model kandidat menunjukkan diferensiasi prediktif, seluruh konfigurasi menghasilkan return neto negatif (-0.35% s.d. -0.68%) di bawah friksi 50 bps, sehingga **tidak ada model yang dipromosikan (DO_NOT_PROMOTE)**. Champion produksi dan sistem Phase 11F tetap diisolasi dan tidak berubah.
+Sesi kerja ini meninjau secara kritis dan memverifikasi implementasi Phase 11G (Daily Market-Data-to-Paper-Trading Pipeline Automation & Operational Validation). Ditemukan dan diperbaiki sejumlah kelemahan dan bug pada upaya sebelumnya:
+1. `DailyBarRepository` mengalami crash runtime (`AttributeError`) saat Stage A memanggil `get_ingestion_runs(limit=1)` karena method belum diimplementasikan.
+2. Skrip wrapper PowerShell `scripts/run_scheduled_pipeline.ps1` berhenti mendadak dengan `NativeCommandError` ketika native `python.exe` mencetak pesan log rutin ke stderr di bawah `$ErrorActionPreference = "Stop"`.
+3. Pendaftaran Windows Task Scheduler sebelumnya belum menyertakan flag catch-up `-StartWhenAvailable`.
+4. Laporan operasional `PipelineRunReport` belum memuat seluruh 14 metrik audit wajib.
+5. Stage B dan Stage D belum dilengkapi rekonsiliasi database fisik, verifikasi ketersediaan proxy benchmark, cross-check ticker fitur terhadap bar harga di `daily_bars`, dan penolakan fail-closed saat kandidat berhistori lengkap berjumlah 0.
+6. Perbandingan tanggal pada `processed_dates` di Stage B mengalami type mismatch (`datetime.date` vs `str`).
+
+Seluruh isu tersebut telah diperbaiki secara tuntas. Pengujian unit pada `tests/unit/test_daily_pipeline.py` telah diperluas dari 13 menjadi 19 test case. Seluruh 616 test dalam repositori (584 unit, 32 integration) lulus 100%, linter ruff bersih tanpa error (0 errors), dan task scheduler terverifikasi berstatus `Ready` dengan `StartWhenAvailable: True`.
 
 ---
 
 ### Task Breakdown & Perubahan File
 
-#### 1. Audit Dataset & Data Maturity Cutoff
-- **File:** `scripts/inspect_dataset_splits.py` (Baru, 185 baris)
-- **Rincian Perubahan:**
-  - Menginspeksi tabel SQLite `daily_bars` (244,021 bar, 2,654 tanggal, max `2026-10-16`), `features_daily` (186,702 baris, 900 tanggal, max `2026-10-16`), dan `labels_daily` (185,515 baris, max `2026-10-13`).
-  - Menetapkan batas matematis kedewasaan data: untuk target Variant B H=15 dengan entry Open $t+1$, tanggal keputusan terakhir dengan 15 bar forward lengkap hingga `2026-10-16` adalah `2026-09-25`.
-  - Menganalisis kenaikan baris data:
-    - Terhadap Champion Produksi (cutoff train 2025-08-14): penambahan **+46,343 baris valid (+36.60%)** melintasi 13.5 bulan kalender tambahan (LOW_PRICE valid 31,794 baris, HIGHER_PRICE valid 94,821 baris, terpisah dari 1,452 baris penny stock `EXCLUDED_BELOW_50`).
-    - Terhadap Phase 11F (cutoff 2026-09-25): **0 baris inkremental (0.0%)**, karena tidak ada bar pasar baru setelah 2026-10-16.
+#### 1. Repository Ingestion Run Audit Query
+- **File:** `python/data/repository.py` (Baris 388–425)
+  - Mengimplementasikan method `DailyBarRepository.get_ingestion_runs(limit: int = 10) -> list[IngestionRun]`.
+  - Mengambil rekaman log ingestion audit dari tabel `ingestion_runs` yang diurutkan secara descending (`ORDER BY started_at DESC`).
+  - Mencegah `AttributeError: 'DailyBarRepository' object has no attribute 'get_ingestion_runs'` saat Stage A merekonsiliasi statistik eksekusi ingestion.
 
-#### 2. Engine Evaluasi Walk-Forward & Retraining Challenger
-- **File:** `python/experiments/challenger_retraining.py` (Baru, 1,074 baris)
-- **Rincian Perubahan:**
-  - `ChallengerModelSpec`: Mendefinisikan spesifikasi kandidat (Full LightGBM, Ablasi Fitur, Regularized Logistic Regression, Prevalence Baseline, Production Champion).
-  - `ChallengerRetrainingRunner.load_matured_data()`: Memuat bar dan fitur, memotong secara ketat pada `date <= 2026-09-25` untuk mencegah kebocoran atau bias survivorship right-censoring.
-  - `run_walk_forward_evaluation()`: Menjalankan 3-fold expanding walk-forward validation dengan purge window 15 hari bursa antar fold. Menghitung metrik klasifikasi (ROC-AUC, PR-AUC, Brier score, Log loss, ECE 10 bin, Daily Top-10% & Top-5% precision, Top-5 fixed precision).
-  - `_simulate_trading()`: Mensimulasikan eksekusi portofolio harian di bawah friksi 50 bps (15 bps komisi beli, 25 bps komisi jual, 5 bps entry slip, 5 bps exit slip), modal 100jt IDR, max 5 posisi (cap 20%), lot 100 lembar, filter gap pre-entry, preseden konservatif candle ambigu, dan expiry bar 15.
-  - `fit_and_serialize_challengers()`: Melatih ulang model kandidat pada seluruh data historis valid hingga `2026-09-25` dan menyimpan 6 biner `.joblib` beserta hash SHA-256 pada `artifacts/offline_challengers/<run_id>/`.
+#### 2. Robustness PowerShell Scheduled Wrapper
+- **File:** `scripts/run_scheduled_pipeline.ps1` (Baris 80–92)
+  - Mengisolasi pemanggilan executable Python native dengan scoping lokal `$ErrorActionPreference = "Continue"`.
+  - Meneruskan seluruh argumen CLI `@args` ke skrip Python.
+  - Memastikan output stderr rutin (seperti logging peringatan yfinance pada ticker delisting) tidak memicu terminasi prematur PowerShell `NativeCommandError`.
 
-#### 3. CLI Runner Script
-- **File:** `scripts/run_offline_challenger_retraining.py` (Baru, 121 baris)
-- **Rincian Perubahan:**
-  - Menyediakan antarmuka CLI yang dapat dikonfigurasi (`--db-path`, `--cutoff-date`, `--run-id`, `--n-splits`, `--purge-days`, `--random-state`).
-  - Menampilkan ringkasan metrik klasifikasi dan simulasi trading secara terstruktur pada konsol.
+#### 3. Task Scheduler Catch-Up Settings
+- **File:** `scripts/register_daily_scheduler.ps1` (Baris 48–56)
+  - Menambahkan parameter `-StartWhenAvailable` pada pemanggilan `New-ScheduledTaskSettingsSet`.
+  - Menjadwalkan ulang task `\IDX_Stock_Signal_Daily_Pipeline` menggunakan flag `-Force`.
+  - Terverifikasi via `Get-ScheduledTask` dengan konfigurasi `State: Ready`, trigger Senin–Jumat 16:30 WIB, dan `StartWhenAvailable: True`.
 
-#### 4. Pengujian Otomatis
-- **File:** `tests/unit/test_challenger_retraining.py` (Baru, 142 baris)
-- **Rincian Perubahan:**
-  - `test_challenger_model_specs`: Menguji kebenaran jumlah fitur dan exclusion group (Full 30, minus trend 23, minus market_regime 24).
-  - `test_matured_data_cutoff_enforcement`: Menguji bahwa tanggal keputusan $\le$ `2026-09-25`, LOW_PRICE memiliki 0 incomplete, dan 2 incomplete pada HIGHER_PRICE (MPMX) terfilter keluar dari sampel valid.
-  - `test_inspect_dataset_splits`: Menguji keakuratan inspeksi split dataset dan metrik row counts.
-  - `test_walk_forward_fold_purge_window`: Menguji penegakan purge window $\ge 15$ hari bursa di seluruh fold.
-  - `test_compute_file_sha256`: Menguji integritas perhitungan hash SHA-256.
-  - `test_champion_immutability`: Menguji bahwa model champion produksi di registry tetap utuh dan aktif.
+#### 4. Penguatan Gerbang Fail-Closed & Rekonsiliasi Database (Stage B & Stage D)
+- **File:** `python/pipeline/daily_pipeline.py` (Baris 415–615, 780–860, 1010–1110)
+  - **Stage B Rekonsiliasi:** Memverifikasi baris yang dilaporkan oleh ingestion run terhadap tabel fisik `daily_bars` (`SELECT COUNT(*) FROM daily_bars WHERE ingestion_run_id = ?`). Jika ingestion melaporkan baris berhasil diinsert tetapi tidak ditemukan di database fisik, Stage B gagal seketika (`FAILED`).
+  - **Stage B Normalisasi Tipe & Safe Skip:** Memperbaiki bug komparasi tipe data tanggal (`str(session_d_check) in processed_dates`). Jika sesi terbaru sudah selesai diproses pada paper trading state dan tidak ada bar baru yang di-ingest, pipeline melakukan skip aman dengan status `SKIPPED_NO_NEW_SESSION`.
+  - **Stage B Urutan Evaluasi:** Mengevaluasi ambang batas cakupan ticker (`coverage_pct < self.min_ticker_coverage`) mendahului pengecekan ketersediaan proxy benchmark composite.
+  - **Stage D Validasi Silang Ticker & Benchmark:**
+    * Memvalidasi bahwa seluruh ticker yang memiliki fitur pada `features_daily` memiliki bar harga yang cocok di `daily_bars` pada sesi yang sama.
+    * Memvalidasi bahwa kolom benchmark (`ihsg_return_5d`, `ihsg_return_20d`, `ihsg_vs_ema20`, `ihsg_vs_ema50`, `market_breadth`, `market_volatility`) tidak bernilai seluruhnya NULL.
+    * Menegakkan aturan fail-closed jika kandidat dengan riwayat 30-fitur lengkap berjumlah 0 (`complete_history_candidates == 0`).
+    * Memvalidasi ketiadaan nilai `NaN` atau `Inf` pada matriks kandidat berhistori lengkap.
+  - **Stage E & Pelaporan Audit (14 Metrik):** Melengkapi dataclass `PipelineRunReport` dan method `_finalize_report` dengan 14 metrik operasional: `feature_schema_hash`, `feature_version`, `model_hashes`, `policy_bundle_hash`, `decision_date`, `candidates_count`, `decisions_count`, `pending_orders_count`, `new_fills_count`, `exits_count`, `open_positions_count`, `cash_balance_idr`, `realized_net_pnl_idr`, `unrealized_pnl_idr`, `current_equity_idr`, `max_drawdown_pct`. Menyediakan fallback otomatis ke canonical policy hash bundle (`8c102c44...`).
 
-#### 5. Dokumentasi dan Laporan Formal
-- **File:** `docs/21_offline_challenger_retraining_report.md` (Baru, 281 baris)
-  - Menyusun laporan komprehensif mengikuti `docs/AGENT_REPORT_TEMPLATE.md`.
-- **File:** `audit_report.md` (Diperbarui baris 91–95)
-  - Menambahkan entri indeks 13 untuk laporan retraining challenger.
-- **File:** `summary.md` (Diperbarui baris 994–1015)
-  - Menambahkan Log Entry 67 (strictly append-only).
+#### 5. CLI Formatting & Summary Updates
+- **File:** `scripts/run_daily_pipeline.py` (Baris 150–175)
+  - Memperbarui fungsi `print_report_summary` untuk menampilkan metrik audit baru: hash kebijakan, hash model per mode harga, hitungan kandidat/keputusan, fill/exit, posisi terbuka, kas, dan ekuitas.
+  - Membungkus output teks di bawah 100 karakter untuk kepatuhan linter ruff.
 
----
-
-### Ringkasan Temuan Empiris
-
-#### Metrik Klasifikasi (Macro Mean antar Fold)
-- **LOW_PRICE:**
-  - Candidate A (Full LGBM): ROC-AUC **0.5615** | PR-AUC **0.3025** | Top-10% Prec **31.03%**
-  - Candidate B (Ablation minus trend): ROC-AUC **0.5643** | PR-AUC **0.3000** | Top-10% Prec **30.40%**
-  - Candidate C (Logistic Baseline): ROC-AUC **0.5613** | PR-AUC **0.2979** | Top-10% Prec **30.54%**
-  - Prevalence Baseline: ROC-AUC **0.5000** | PR-AUC **0.2512** | Top-10% Prec **26.33%**
-  - Production Champion (Ref): ROC-AUC **0.6527** | PR-AUC **0.4202** | Top-10% Prec **43.41%**
-- **HIGHER_PRICE:**
-  - Candidate A (Full LGBM): ROC-AUC **0.5337** | PR-AUC **0.2635** | Top-10% Prec **25.67%**
-  - Candidate B (Ablation minus market_regime): ROC-AUC **0.5488** (std 0.0054) | PR-AUC **0.2623** | Top-10% Prec **26.95%**
-  - Candidate C (Logistic Baseline): ROC-AUC **0.5512** | PR-AUC **0.2792** | Top-10% Prec **24.69%**
-  - Prevalence Baseline: ROC-AUC **0.5000** | PR-AUC **0.2375** | Top-10% Prec **24.32%**
-  - Production Champion (Ref): ROC-AUC **0.6226** | PR-AUC **0.3559** | Top-10% Prec **35.74%**
-
-#### Metrik Trading Simulasi (Pooled antar Fold, Friksi 50 bps)
-- **LOW_PRICE:**
-  - Candidate A (Full LGBM): 1,242 trade | WinRate **29.39%** | Avg Net Ret **-0.351%** | Pooled PF **0.79** | Cont MaxDD **60.54%**
-  - Candidate B (Ablation): 1,270 trade | WinRate **28.19%** | Avg Net Ret **-0.478%** | Pooled PF **0.71** | Cont MaxDD **73.51%**
-  - Candidate C (Logistic): 1,652 trade | WinRate **29.06%** | Avg Net Ret **-0.422%** | Pooled PF **0.75** | Cont MaxDD **77.69%**
-  - Production Champion (Ref): 1,414 trade | WinRate **37.34%** | Avg Net Ret **+0.205%** | Pooled PF **1.20** | Cont MaxDD **42.69%**
-- **HIGHER_PRICE:**
-  - Candidate A (Full LGBM): 959 trade | WinRate **29.09%** | Avg Net Ret **-0.432%** | Pooled PF **0.74** | Cont MaxDD **59.88%**
-  - Candidate B (Ablation): 1,007 trade | WinRate **25.72%** | Avg Net Ret **-0.675%** | Pooled PF **0.63** | Cont MaxDD **74.90%**
-  - Candidate C (Logistic): 1,644 trade | WinRate **23.24%** | Avg Net Ret **-0.852%** | Pooled PF **0.55** | Cont MaxDD **93.79%**
-  - Production Champion (Ref): 1,448 trade | WinRate **37.84%** | Avg Net Ret **+0.183%** | Pooled PF **1.33** | Cont MaxDD **58.48%**
+#### 6. Penambahan & Perbaikan Test Suite
+- **File:** `tests/unit/test_daily_pipeline.py` (Baris 1–765)
+  - Menambahkan 6 unit test baru (total 19 unit test):
+    1. `test_stage_b_reconciliation_fails_on_missing_db_rows`
+    2. `test_stage_b_skips_when_session_already_processed_in_daily_mode`
+    3. `test_feature_readiness_fails_if_zero_candidates_have_complete_history`
+    4. `test_feature_readiness_fails_if_features_mismatch_price_bars`
+    5. `test_report_contains_all_required_operational_metrics`
+    6. `test_get_ingestion_runs_repository_method`
+  - Memperbaiki test fixtures (`test_unapproved_or_invalid_prospective_dates_rejected`, `test_cli_runner_execution`, `test_report_contains_all_required_operational_metrics`) agar menyediakan histori 380 hari bursa sehingga perhitungan benchmark composite berjalan valid.
+- **File:** `tests/unit/test_challenger_retraining.py` (Baris 80–85)
+  - Menyesuaikan asersi `max_bar_date >= '2026-10-16'` untuk mengakomodasi bar harian baru yang di-ingest ke `datasets/stock_signals.db`.
 
 ---
 
 ### Testing Checklist
 
-Setelah sesi kerja ini, verifikasi hal-hal berikut:
+Setelah perubahan sesi ini, lakukan verifikasi berikut:
 
-- [x] **Audit Kontrak & Dataset:** Jalankan `.venv\Scripts\python.exe scripts/inspect_dataset_splits.py` (Verifikasi bar max `2026-10-16`, cutoff `2026-09-25`, +46,343 baris valid [+36.60%], 0 baris incremental vs Phase 11F).
-- [x] **Unit Testing Pipeline:** Jalankan `.venv\Scripts\python.exe -m pytest tests/unit/test_challenger_retraining.py -v` (Semua 6 pengujian lulus 100%).
-- [x] **Full Repository Test Suite:** Jalankan `.venv\Scripts\python.exe -m pytest -q` (597 tests passed, 0 failures).
-- [x] **Linter Cleanliness:** Jalankan `.venv\Scripts\python.exe -m ruff check .` (All checks passed, 0 errors).
-- [x] **Integritas Champion Produksi:** Pastikan file `models/registry/lightgbm_classification_20261014_093522.*` dan `093607.*` tidak berubah status atau bobotnya.
-- [x] **Isolasi Phase 11F:** Pastikan artefak `artifacts/phase_11f/` tidak dimodifikasi dan flag `--approve-observation` tidak dijalankan.
-- [x] **Kelengkapan Artefak Challenger:** Verifikasi 6 model `.joblib`, `metadata.json`, `challenger_retraining_summary.json`, dan file CSV pada `artifacts/offline_challengers/run_20261021_retraining/`.
-- [x] **Keputusan Governance:** Verifikasi keputusan eksplisit `DO_NOT_PROMOTE` terdokumentasi jelas pada `docs/21_offline_challenger_retraining_report.md` dan `audit_report.md`.
+- [ ] **Verifikasi Status Scheduled Task Windows:**
+  ```powershell
+  Get-ScheduledTask -TaskName "IDX_Stock_Signal_Daily_Pipeline" | Format-List TaskName, State, @{Name="Triggers";Expression={$_.Triggers.StartBoundary}}, @{Name="Settings";Expression={$_.Settings.StartWhenAvailable}}
+  ```
+  *Ekspektasi: TaskName: `IDX_Stock_Signal_Daily_Pipeline`, State: `Ready`, Triggers: `16:30:00+07:00`, Settings (StartWhenAvailable): `True`.*
+
+- [ ] **Verifikasi Linter Repositori (Ruff):**
+  ```powershell
+  .venv\Scripts\ruff.exe check .
+  ```
+  *Ekspektasi: `All checks passed!` (0 errors).*
+
+- [ ] **Verifikasi Unit Test Daily Pipeline:**
+  ```powershell
+  .venv\Scripts\python.exe -m pytest tests/unit/test_daily_pipeline.py -v
+  ```
+  *Ekspektasi: 19 passed in ~7s (100%).*
+
+- [ ] **Verifikasi Paper Trading Integrity Suite:**
+  ```powershell
+  .venv\Scripts\python.exe -m pytest tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py -q
+  ```
+  *Ekspektasi: 53 passed (100%).*
+
+- [ ] **Verifikasi Seluruh Test Suite Repositori:**
+  ```powershell
+  .venv\Scripts\python.exe -m pytest -q
+  ```
+  *Ekspektasi: 616 passed (100%).*
+
+- [ ] **Verifikasi Dry-Run Eksekusi Pipeline CLI:**
+  ```powershell
+  .venv\Scripts\python.exe -m scripts.run_daily_pipeline --date 2026-10-16 --skip-ingest --dry-run
+  ```
+  *Ekspektasi: Exit code 0, status `COMPLETED_DRY_RUN` / `SKIPPED_PRE_APPROVAL_SESSION`, seluruh metrik audit tercetak lengkap.*

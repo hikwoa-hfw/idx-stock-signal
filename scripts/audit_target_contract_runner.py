@@ -298,10 +298,7 @@ def run_full_contract_audit() -> dict[str, Any]:
     print(f"Loaded {len(db_labels_df)} production labels from labels_daily.")
 
     # Build row index from DB labels
-    db_labels_map = {
-        (r["ticker"], r["date"]): r
-        for _, r in db_labels_df.iterrows()
-    }
+    db_labels_map = {(r["ticker"], r["date"]): r for _, r in db_labels_df.iterrows()}
 
     engine_v_a = LabelEngine()
 
@@ -384,8 +381,10 @@ def run_full_contract_audit() -> dict[str, Any]:
 
             all_comparison_rows.append(row)
 
-    print(f"Reconciled Variant A with labels_daily: {reconciled_va_count} exact matches, "
-          f"{mismatch_va_count} mismatches.")
+    print(
+        f"Reconciled Variant A with labels_daily: {reconciled_va_count} exact matches, "
+        f"{mismatch_va_count} mismatches."
+    )
 
     df_comp = pd.DataFrame(all_comparison_rows)
 
@@ -458,21 +457,21 @@ def run_full_contract_audit() -> dict[str, Any]:
 
         # Detailed Flip Reason Analysis on Common Cohort:
         for trans_name, cnt in trans_counts.items():
-            transition_records.append({
-                "mode": m,
-                "transition": trans_name,
-                "count": cnt,
-                "pct_of_common": round(cnt / n_common * 100.0, 2) if n_common > 0 else 0.0,
-            })
+            transition_records.append(
+                {
+                    "mode": m,
+                    "transition": trans_name,
+                    "count": cnt,
+                    "pct_of_common": round(cnt / n_common * 100.0, 2) if n_common > 0 else 0.0,
+                }
+            )
 
         print(f"\nMode: {m}")
         print(f"  Total Eligible Decision Rows: {n_eligible:,}")
         print("  Variant A (Close-Anchor):")
         print(f"    TP: {va_tp:,} ({va_prev * 100:.2f}%) | SL: {va_sl:,} | EXPIRY: {va_exp:,}")
         print("  Variant B Execution Breakdown:")
-        print(
-            f"    Valid Modeled Entries: {n_vb_valid:,} ({n_vb_valid / n_eligible * 100:.2f}%)"
-        )
+        print(f"    Valid Modeled Entries: {n_vb_valid:,} ({n_vb_valid / n_eligible * 100:.2f}%)")
         print(
             f"    Invalidated Entries:   {n_vb_invalid:,} ({n_vb_invalid / n_eligible * 100:.2f}%)"
         )
@@ -503,38 +502,40 @@ def run_full_contract_audit() -> dict[str, Any]:
             f"({n_band_invalid / n_eligible * 100:.2f}%)"
         )
 
-        summary_records.append({
-            "mode": m,
-            "total_eligible_decision_rows": n_eligible,
-            "va_tp": va_tp,
-            "va_sl": va_sl,
-            "va_expiry": va_exp,
-            "va_prevalence_pct": round(va_prev * 100.0, 2),
-            "vb_valid_entries": n_vb_valid,
-            "vb_valid_pct": round(n_vb_valid / n_eligible * 100.0, 2),
-            "vb_invalidated_entries": n_vb_invalid,
-            "vb_invalidated_pct": round(n_vb_invalid / n_eligible * 100.0, 2),
-            "vb_gap_sl_invalidation": inv_counts.get("GAP_BELOW_SL", 0),
-            "vb_gap_tp_invalidation": inv_counts.get("GAP_ABOVE_TP", 0),
-            "vb_excessive_dev_invalidation": inv_counts.get("EXCESSIVE_DEV", 0),
-            "vb_suspended_invalidation": inv_counts.get("ZERO_VOLUME_SUSPENDED", 0),
-            "vb_incomplete": n_vb_incomplete,
-            "vb_valid_cohort_tp": vb_tp_valid,
-            "vb_valid_cohort_sl": vb_sl_valid,
-            "vb_valid_cohort_expiry": vb_exp_valid,
-            "vb_valid_cohort_prevalence_pct": round(vb_prev_valid * 100.0, 2),
-            "common_cohort_size": n_common,
-            "common_cohort_same_label": same_label,
-            "common_cohort_same_label_pct": round(same_label / n_common * 100.0, 2),
-            "common_cohort_label_flips": label_flips,
-            "common_cohort_label_flip_pct": round(flip_pct, 2),
-            "flip_va_pos_to_vb_neg": tp_to_loss,
-            "flip_va_pos_to_vb_neg_pct": round(tp_to_loss / n_common * 100.0, 2),
-            "flip_va_neg_to_vb_pos": loss_to_tp,
-            "flip_va_neg_to_vb_pos_pct": round(loss_to_tp / n_common * 100.0, 2),
-            "strict_band_outside_count": n_band_invalid,
-            "strict_band_outside_pct": round(n_band_invalid / n_eligible * 100.0, 2),
-        })
+        summary_records.append(
+            {
+                "mode": m,
+                "total_eligible_decision_rows": n_eligible,
+                "va_tp": va_tp,
+                "va_sl": va_sl,
+                "va_expiry": va_exp,
+                "va_prevalence_pct": round(va_prev * 100.0, 2),
+                "vb_valid_entries": n_vb_valid,
+                "vb_valid_pct": round(n_vb_valid / n_eligible * 100.0, 2),
+                "vb_invalidated_entries": n_vb_invalid,
+                "vb_invalidated_pct": round(n_vb_invalid / n_eligible * 100.0, 2),
+                "vb_gap_sl_invalidation": inv_counts.get("GAP_BELOW_SL", 0),
+                "vb_gap_tp_invalidation": inv_counts.get("GAP_ABOVE_TP", 0),
+                "vb_excessive_dev_invalidation": inv_counts.get("EXCESSIVE_DEV", 0),
+                "vb_suspended_invalidation": inv_counts.get("ZERO_VOLUME_SUSPENDED", 0),
+                "vb_incomplete": n_vb_incomplete,
+                "vb_valid_cohort_tp": vb_tp_valid,
+                "vb_valid_cohort_sl": vb_sl_valid,
+                "vb_valid_cohort_expiry": vb_exp_valid,
+                "vb_valid_cohort_prevalence_pct": round(vb_prev_valid * 100.0, 2),
+                "common_cohort_size": n_common,
+                "common_cohort_same_label": same_label,
+                "common_cohort_same_label_pct": round(same_label / n_common * 100.0, 2),
+                "common_cohort_label_flips": label_flips,
+                "common_cohort_label_flip_pct": round(flip_pct, 2),
+                "flip_va_pos_to_vb_neg": tp_to_loss,
+                "flip_va_pos_to_vb_neg_pct": round(tp_to_loss / n_common * 100.0, 2),
+                "flip_va_neg_to_vb_pos": loss_to_tp,
+                "flip_va_neg_to_vb_pos_pct": round(loss_to_tp / n_common * 100.0, 2),
+                "strict_band_outside_count": n_band_invalid,
+                "strict_band_outside_pct": round(n_band_invalid / n_eligible * 100.0, 2),
+            }
+        )
 
     # Export machine-readable artifacts
     df_summary = pd.DataFrame(summary_records)

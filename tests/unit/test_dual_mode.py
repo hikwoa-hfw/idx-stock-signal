@@ -28,6 +28,7 @@ from services.telegram.formatter import format_dual_mode_signals
 # 1. Price Mode Classification & Boundary Tests
 # ==============================================================================
 
+
 def test_classify_price_mode_boundaries():
     # Invalid / Non-positive
     assert classify_price_mode(None) == PriceMode.INVALID.value
@@ -57,6 +58,7 @@ def test_classify_price_mode_boundaries():
 # ==============================================================================
 # 2. Decision-Time Mode Immutability Across Lifecycle
 # ==============================================================================
+
 
 def test_mode_immutability_on_price_crossing():
     # Position entered at 280 (LOW_PRICE), exits at 350 (would be HIGHER_PRICE if re-classified)
@@ -128,6 +130,7 @@ def test_outcome_record_mode_immutability():
 # 3. Fail-Closed BUY Guards in SignalEngine
 # ==============================================================================
 
+
 def test_signal_engine_fail_closed_on_zero_or_invalid_prob(tmp_path: Path):
     registry = ModelRegistry(registry_dir=tmp_path / "reg")
 
@@ -173,8 +176,10 @@ def test_signal_engine_fail_closed_on_zero_or_invalid_prob(tmp_path: Path):
     class ZeroProbModel:
         feature_names_ = ["return_1d"]
         model_version = "zero_prob"
+
         def predict_probability(self, X):
             import numpy as np
+
             return np.zeros(len(X))
 
     signals = engine.generate_signals(
@@ -211,8 +216,10 @@ def test_signal_engine_strictly_excludes_sub_50(tmp_path: Path):
     class HighProbModel:
         feature_names_ = ["return_1d"]
         model_version = "high_prob"
+
         def predict_probability(self, X):
             import numpy as np
+
             return np.ones(len(X)) * 0.95
 
     signals = engine.generate_signals(
@@ -252,8 +259,10 @@ def test_signal_engine_fail_closed_on_missing_required_expected_return():
     class HighProbModel:
         feature_names_ = ["return_1d"]
         model_version = "high_prob"
+
         def predict_probability(self, X):
             import numpy as np
+
             return np.ones(len(X)) * 0.85
 
     # regressor is None, require_expected_return is True -> must fail closed
@@ -271,6 +280,7 @@ def test_signal_engine_fail_closed_on_missing_required_expected_return():
 # ==============================================================================
 # 4. Independent Champion Lifecycle per PriceMode
 # ==============================================================================
+
 
 def test_independent_champion_lifecycle(tmp_path: Path):
     reg = ModelRegistry(registry_dir=tmp_path / "registry")
@@ -344,6 +354,7 @@ def test_independent_champion_lifecycle(tmp_path: Path):
 # 5. DatasetBuilder Dual-Mode Filtering & Summary
 # ==============================================================================
 
+
 def test_dataset_dual_mode_filter_and_summary():
     import numpy as np
     import pandas as pd
@@ -384,6 +395,7 @@ def test_dataset_dual_mode_filter_and_summary():
 # ==============================================================================
 # 6. Telegram Dual-Mode Formatter Layout (Guide 06 Section 11)
 # ==============================================================================
+
 
 def test_telegram_dual_mode_formatter():
     low_sig = SignalRecord(
@@ -444,6 +456,7 @@ def test_telegram_dual_mode_formatter():
 # ==============================================================================
 # 7. Strict Champion Isolation & Model-Mode Incompatibility Guards
 # ==============================================================================
+
 
 def test_signal_engine_mode_isolation_and_no_cross_champion_borrowing(tmp_path: Path):
     reg = ModelRegistry(registry_dir=tmp_path / "reg")
@@ -533,18 +546,31 @@ def test_signal_engine_mode_isolation_and_no_cross_champion_borrowing(tmp_path: 
 # 8. LabelEngine & LabelRepository Mode Persistence & Migration
 # ==============================================================================
 
+
 def test_label_engine_and_repository_mode_support(tmp_path: Path):
     lbl_engine = LabelEngine(tp_pct=0.05, sl_pct=0.02, max_holding_days=5)
 
     # Low-price entry bar (price 80)
     b_low_entry = DailyBar(
-        ticker="GOTO", date=date(2026, 8, 1), open=80.0, high=82.0, low=78.0,
-        close=80.0, volume=1e5, provider="t",
+        ticker="GOTO",
+        date=date(2026, 8, 1),
+        open=80.0,
+        high=82.0,
+        low=78.0,
+        close=80.0,
+        volume=1e5,
+        provider="t",
     )
     b_low_fwd = [
         DailyBar(
-            ticker="GOTO", date=date(2026, 8, 2), open=80.0, high=86.0, low=79.0,
-            close=85.0, volume=1e5, provider="t",
+            ticker="GOTO",
+            date=date(2026, 8, 2),
+            open=80.0,
+            high=86.0,
+            low=79.0,
+            close=85.0,
+            volume=1e5,
+            provider="t",
         )
     ]
     rec_low = lbl_engine.compute_label_for_bar(b_low_entry, b_low_fwd)
@@ -553,13 +579,25 @@ def test_label_engine_and_repository_mode_support(tmp_path: Path):
 
     # Higher-price entry bar (price 5000)
     b_high_entry = DailyBar(
-        ticker="TLKM", date=date(2026, 8, 1), open=5000.0, high=5100.0, low=4900.0,
-        close=5000.0, volume=1e5, provider="t",
+        ticker="TLKM",
+        date=date(2026, 8, 1),
+        open=5000.0,
+        high=5100.0,
+        low=4900.0,
+        close=5000.0,
+        volume=1e5,
+        provider="t",
     )
     b_high_fwd = [
         DailyBar(
-            ticker="TLKM", date=date(2026, 8, 2), open=5000.0, high=5300.0, low=4950.0,
-            close=5250.0, volume=1e5, provider="t",
+            ticker="TLKM",
+            date=date(2026, 8, 2),
+            open=5000.0,
+            high=5300.0,
+            low=4950.0,
+            close=5250.0,
+            volume=1e5,
+            provider="t",
         )
     ]
     rec_high = lbl_engine.compute_label_for_bar(b_high_entry, b_high_fwd)
@@ -568,13 +606,25 @@ def test_label_engine_and_repository_mode_support(tmp_path: Path):
 
     # Sub-50 entry bar (price 45)
     b_sub_entry = DailyBar(
-        ticker="PENNY", date=date(2026, 8, 1), open=45.0, high=46.0, low=44.0,
-        close=45.0, volume=1e5, provider="t",
+        ticker="PENNY",
+        date=date(2026, 8, 1),
+        open=45.0,
+        high=46.0,
+        low=44.0,
+        close=45.0,
+        volume=1e5,
+        provider="t",
     )
     b_sub_fwd = [
         DailyBar(
-            ticker="PENNY", date=date(2026, 8, 2), open=45.0, high=48.0, low=44.0,
-            close=47.5, volume=1e5, provider="t",
+            ticker="PENNY",
+            date=date(2026, 8, 2),
+            open=45.0,
+            high=48.0,
+            low=44.0,
+            close=47.5,
+            volume=1e5,
+            provider="t",
         )
     ]
     rec_sub = lbl_engine.compute_label_for_bar(b_sub_entry, b_sub_fwd)
@@ -599,6 +649,7 @@ def test_label_engine_and_repository_mode_support(tmp_path: Path):
 # ==============================================================================
 # 9. Outcomes Dataset Mode Segmentation
 # ==============================================================================
+
 
 def test_outcomes_dataset_mode_segmentation(tmp_path: Path):
     db_path = f"sqlite:///{tmp_path}/test_outcomes.db"
@@ -684,6 +735,7 @@ def test_outcomes_dataset_mode_segmentation(tmp_path: Path):
 # 10. Registry Demotion Mode Isolation
 # ==============================================================================
 
+
 def test_registry_unsegmented_champion_does_not_demote_segmented(tmp_path: Path):
     reg = ModelRegistry(registry_dir=tmp_path / "reg")
     clf = LogisticRegressionBaseline()
@@ -733,4 +785,3 @@ def test_registry_unsegmented_champion_does_not_demote_segmented(tmp_path: Path)
     champ_high = reg.get_champion(task="classification", mode="HIGHER_PRICE")
     assert champ_low is not None and champ_low[1].model_version == "low_champ"
     assert champ_high is not None and champ_high[1].model_version == "high_champ"
-

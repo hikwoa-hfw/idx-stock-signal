@@ -78,15 +78,11 @@ class LabelRepository:
                     """
                 )
                 cols = [
-                    row[1]
-                    for row in conn.execute("PRAGMA table_info(labels_daily);").fetchall()
+                    row[1] for row in conn.execute("PRAGMA table_info(labels_daily);").fetchall()
                 ]
                 if "mode" not in cols:
                     conn.execute("ALTER TABLE labels_daily ADD COLUMN mode TEXT;")
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_labels_mode "
-                    "ON labels_daily(mode);"
-                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_labels_mode ON labels_daily(mode);")
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_labels_ticker_date "
                     "ON labels_daily(ticker, date);"

@@ -841,5 +841,3 @@ def test_comparison_report_validation():
             challenger_metrics=chall,
             recommendation="INVALID_DECISION",
         )
-
-

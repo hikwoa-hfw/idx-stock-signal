@@ -467,8 +467,7 @@ def compute_daily_cross_sectional_top_k_precision(
         "min_candidates_threshold": min_candidates,
         "k_pct": k_pct,
         "selection_rule": (
-            f"Top {int(round(k_pct * 100))}% of candidates per date "
-            f"(min {min_candidates} required)"
+            f"Top {int(round(k_pct * 100))}% of candidates per date (min {min_candidates} required)"
         ),
         "tie_breaker_rule": "Deterministic stable sort: -prob descending, ticker ascending",
         "selection_mask": selection_mask,
@@ -818,9 +817,7 @@ class FeatureAblationRunner:
                 daily_top10 = compute_daily_cross_sectional_top_k_precision(
                     fold_df, k_pct=0.10, min_candidates=10
                 )
-                daily_top5 = compute_daily_top_n_precision(
-                    fold_df, top_n=5, min_candidates=5
-                )
+                daily_top5 = compute_daily_top_n_precision(fold_df, top_n=5, min_candidates=5)
 
                 metrics["daily_top_10pct_precision"] = daily_top10["daily_precision_macro"]
                 metrics["daily_top_10pct_precision_std"] = daily_top10["daily_precision_std"]
@@ -974,9 +971,7 @@ class FeatureAblationRunner:
                 "delta_macro_brier_score": round(
                     m["brier_score"]["mean"] - ref_m["brier_score"]["mean"], 4
                 ),
-                "delta_macro_log_loss": round(
-                    m["log_loss"]["mean"] - ref_m["log_loss"]["mean"], 4
-                ),
+                "delta_macro_log_loss": round(m["log_loss"]["mean"] - ref_m["log_loss"]["mean"], 4),
                 "delta_roc_auc": round(m["roc_auc"]["mean"] - ref_m["roc_auc"]["mean"], 4),
                 "delta_pr_auc": round(m["pr_auc"]["mean"] - ref_m["pr_auc"]["mean"], 4),
                 "delta_log_loss": round(m["log_loss"]["mean"] - ref_m["log_loss"]["mean"], 4),

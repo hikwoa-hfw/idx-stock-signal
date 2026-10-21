@@ -156,11 +156,7 @@ class RetrainingDatasetAssembler:
                 hist_df = pd.DataFrame()
 
         # 2. Matured outcomes from repository
-        s_date = (
-            date.fromisoformat(since_date)
-            if isinstance(since_date, str)
-            else since_date
-        )
+        s_date = date.fromisoformat(since_date) if isinstance(since_date, str) else since_date
         outcomes_df = build_matured_outcomes_dataset(
             outcome_repo=self.outcome_repo,
             signal_repo=self.signal_repo,
@@ -181,10 +177,12 @@ class RetrainingDatasetAssembler:
         """Chronologically split dataset with purge window to prevent label lookahead leakage."""
         p_days = purge_days if purge_days is not None else self.purge_days
         if len(dataset.dates) > 0:
-            unique_dates = np.unique([
-                d if isinstance(d, date) else date.fromisoformat(str(d).strip())
-                for d in dataset.dates
-            ])
+            unique_dates = np.unique(
+                [
+                    d if isinstance(d, date) else date.fromisoformat(str(d).strip())
+                    for d in dataset.dates
+                ]
+            )
             n_unique = len(unique_dates)
             if n_unique >= 2:
                 n_train = max(1, int(round(n_unique * train_ratio)))

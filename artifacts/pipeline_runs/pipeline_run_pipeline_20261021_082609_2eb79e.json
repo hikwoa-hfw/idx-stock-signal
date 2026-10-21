@@ -1,0 +1,108 @@
+{
+  "run_id": "pipeline_20261021_082609_2eb79e",
+  "started_at": "2026-10-21T08:26:09.845506+00:00",
+  "finished_at": "2026-10-21T08:26:35.703917+00:00",
+  "duration_seconds": 25.858,
+  "git_commit_sha": "b6aad833d8b00d71f40eaffac6a052716d3fb422",
+  "configured_provider": "yfinance",
+  "overall_status": "SKIPPED_PRE_APPROVAL_SESSION",
+  "stages": {
+    "stage_a_ingestion": {
+      "stage_name": "Stage A: Ingestion",
+      "status": "SKIPPED",
+      "duration_seconds": 0.0,
+      "details": {
+        "reason": "User requested --skip-ingest"
+      },
+      "error": null
+    },
+    "stage_b_data_validation": {
+      "stage_name": "Stage B: Data Validation",
+      "status": "SUCCESS",
+      "duration_seconds": 0.041,
+      "details": {
+        "latest_completed_session": "2026-10-16",
+        "session_weekday": "Friday",
+        "active_universe_count": 210,
+        "distinct_tickers_count": 194,
+        "coverage_pct": 0.9238,
+        "bars_validated": 194,
+        "has_benchmark_or_composite": true
+      },
+      "error": null
+    },
+    "stage_c_feature_generation": {
+      "stage_name": "Stage C: Feature Generation",
+      "status": "SUCCESS",
+      "duration_seconds": 25.178,
+      "details": {
+        "session_date": "2026-10-16",
+        "features_generated_count": 194,
+        "features_persisted_count": 194,
+        "db_verified_count": 194,
+        "feature_version": "v1.0.0"
+      },
+      "error": null
+    },
+    "stage_d_feature_readiness": {
+      "stage_name": "Stage D: Feature Readiness",
+      "status": "SUCCESS",
+      "duration_seconds": 0.206,
+      "details": {
+        "session_date": "2026-10-16",
+        "total_feature_rows": 194,
+        "complete_history_candidates": 4,
+        "schema_columns_count": 30,
+        "has_infinite_values": false
+      },
+      "error": null
+    },
+    "stage_e_paper_trading": {
+      "stage_name": "Stage E: Paper Trading",
+      "status": "SKIPPED_PRE_APPROVAL_SESSION",
+      "duration_seconds": 0.225,
+      "details": {
+        "decision_date": "2026-10-16",
+        "effective_observation_cutoff": "2026-10-21",
+        "operational_status": "APPROVED_PENDING_FIRST_OBSERVATION",
+        "action": "SKIPPED_PRE_APPROVAL_SESSION",
+        "reason": "Session 2026-10-16 is at or before effective observation cutoff 2026-10-21. System remains APPROVED_PENDING_FIRST_OBSERVATION awaiting the first completed session strictly after cutoff."
+      },
+      "error": null
+    }
+  },
+  "errors": [],
+  "ingestion_summary": {
+    "reason": "User requested --skip-ingest"
+  },
+  "validation_summary": {
+    "latest_completed_session": "2026-10-16",
+    "session_weekday": "Friday",
+    "active_universe_count": 210,
+    "distinct_tickers_count": 194,
+    "coverage_pct": 0.9238,
+    "bars_validated": 194,
+    "has_benchmark_or_composite": true
+  },
+  "feature_summary": {
+    "session_date": "2026-10-16",
+    "features_generated_count": 194,
+    "features_persisted_count": 194,
+    "db_verified_count": 194,
+    "feature_version": "v1.0.0"
+  },
+  "feature_readiness_summary": {
+    "session_date": "2026-10-16",
+    "total_feature_rows": 194,
+    "complete_history_candidates": 4,
+    "schema_columns_count": 30,
+    "has_infinite_values": false
+  },
+  "paper_trading_summary": {
+    "decision_date": "2026-10-16",
+    "effective_observation_cutoff": "2026-10-21",
+    "operational_status": "APPROVED_PENDING_FIRST_OBSERVATION",
+    "action": "SKIPPED_PRE_APPROVAL_SESSION",
+    "reason": "Session 2026-10-16 is at or before effective observation cutoff 2026-10-21. System remains APPROVED_PENDING_FIRST_OBSERVATION awaiting the first completed session strictly after cutoff."
+  }
+}

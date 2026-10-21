@@ -642,14 +642,10 @@ class PolicyEvaluationEngine:
         )
         total_gross_outlay = sum(t.shares * t.entry_price for t in completed_trades)
         port_turnover = (
-            round(total_gross_outlay / self.initial_capital, 2)
-            if self.initial_capital > 0
-            else 0.0
+            round(total_gross_outlay / self.initial_capital, 2) if self.initial_capital > 0 else 0.0
         )
         daily_turn = round(n_trades / len(dates_sorted), 4) if dates_sorted else 0.0
-        time_in_mkt = (
-            round(days_with_open / len(dates_sorted) * 100.0, 2) if dates_sorted else 0.0
-        )
+        time_in_mkt = round(days_with_open / len(dates_sorted) * 100.0, 2) if dates_sorted else 0.0
         eligible_cands = sum(candidate_counts_on_eval_dates)
 
         return {
@@ -1142,9 +1138,7 @@ def run_all_phase11d_experiments(
         # =====================================================================
         # 5. EXPERIMENT D: DYNAMIC TP/SL
         # =====================================================================
-        def make_d4_atr_barrier_rule(
-            tp_multiplier: float = 1.5, sl_multiplier: float = 0.75
-        ):
+        def make_d4_atr_barrier_rule(tp_multiplier: float = 1.5, sl_multiplier: float = 0.75):
             def rule(row: pd.Series) -> tuple[float, float]:
                 atr_val = row.get("atr_pct", 0.03)
                 tp = float(np.clip(tp_multiplier * atr_val, 0.03, 0.08))

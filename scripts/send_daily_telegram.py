@@ -142,11 +142,7 @@ def main() -> None:
             if distinct_dates:
                 target_date = distinct_dates[-1]
 
-        signals = (
-            sig_repo.get_signals(signal_date=target_date)
-            if target_date is not None
-            else []
-        )
+        signals = sig_repo.get_signals(signal_date=target_date) if target_date is not None else []
 
     message = format_daily_signals(
         signals=signals,

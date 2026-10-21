@@ -237,9 +237,7 @@ class EvaluationEngine:
             else np.array([])
         )
         y_prob = (
-            data[prob_col].to_numpy(dtype=np.float64)
-            if prob_col in data.columns
-            else np.array([])
+            data[prob_col].to_numpy(dtype=np.float64) if prob_col in data.columns else np.array([])
         )
         returns = (
             data[return_col].to_numpy(dtype=np.float64)
@@ -348,9 +346,7 @@ class EvaluationEngine:
             for out in outcomes
             if out.outcome_status not in ("OPEN", "UNFILLED_EXPIRED", "INVALIDATED_GAP")
         ]
-        returns = [
-            out.realized_return for out in filled_trades if out.realized_return is not None
-        ]
+        returns = [out.realized_return for out in filled_trades if out.realized_return is not None]
         statuses = [out.outcome_status for out in filled_trades]
         trade_metrics = compute_trading_metrics(returns, outcome_statuses=statuses)
 

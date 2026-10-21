@@ -8,6 +8,7 @@ from typing import Any, Optional, Union
 try:
     from pydantic import BaseModel, Field, field_validator, model_validator
 except ImportError:
+
     class _FieldInfo:
         def __init__(self, default=None, default_factory=None):
             self.default = default
@@ -37,7 +38,6 @@ except ImportError:
 
         def dict(self, **kwargs):
             return self.model_dump(**kwargs)
-
 
     def field_validator(*args, **kwargs):  # type: ignore[no-redef]
         def dec(fn):
@@ -258,7 +258,6 @@ def round_to_nearest_tick(price: float, tick: Optional[int] = None) -> float:
     if cand % cand_tick != 0:
         cand = float(round(cand / cand_tick) * cand_tick)
     return cand
-
 
 
 class SignalAction(str, Enum):
@@ -1337,9 +1336,7 @@ class SignalOutcomeRecord(BaseModel):
             raise ValueError(f"holding_days cannot be negative, got {v}")
         return v
 
-    @field_validator(
-        "time_to_peak", "time_to_tp", "time_to_sl", "full_horizon_time_to_peak"
-    )
+    @field_validator("time_to_peak", "time_to_tp", "time_to_sl", "full_horizon_time_to_peak")
     @classmethod
     def validate_time_to_metrics(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
@@ -1442,9 +1439,7 @@ class SignalOutcomeRecord(BaseModel):
                     f"Resolved outcome ({self.outcome_status}) must specify exit_price"
                 )
             if self.exit_date is None:
-                raise ValueError(
-                    f"Resolved outcome ({self.outcome_status}) must specify exit_date"
-                )
+                raise ValueError(f"Resolved outcome ({self.outcome_status}) must specify exit_date")
             if self.exit_date < self.entry_date:
                 raise ValueError(
                     f"exit_date ({self.exit_date}) cannot precede entry_date ({self.entry_date})"
@@ -1599,5 +1594,3 @@ class ComparisonReport(BaseModel):
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
-
-

@@ -16,9 +16,7 @@ if sys.platform == "win32":
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Retraining Pipeline CLI Orchestrator (Phase 11)."
-    )
+    parser = argparse.ArgumentParser(description="Retraining Pipeline CLI Orchestrator (Phase 11).")
     parser.add_argument(
         "--check-trigger-only",
         action="store_true",
@@ -242,6 +240,7 @@ def main() -> None:
             if champ is not None and champ[1].training_end:
                 try:
                     from datetime import date, timedelta
+
                     anchor_date = (
                         date.fromisoformat(champ[1].training_end.strip()) + timedelta(days=1)
                     ).isoformat()

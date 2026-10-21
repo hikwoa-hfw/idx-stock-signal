@@ -278,6 +278,7 @@ def main() -> None:
         eff_cutoff = state.get("effective_observation_cutoff")
         if eff_cutoff is None:
             from datetime import timedelta, timezone
+
             wib_tz = timezone(timedelta(hours=7))
             eff_cutoff = str(datetime.now(timezone.utc).astimezone(wib_tz).date())
 

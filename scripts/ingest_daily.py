@@ -29,6 +29,7 @@ def run_ingest(
     lookback_days: int = 30,
     batch_size: int = 25,
     universe_file: Optional[str] = None,
+    allow_mock_fallback: bool = True,
 ) -> int:
     resolved_db = db_url or settings.database_url
     repo = DailyBarRepository(database_url=resolved_db)
@@ -44,6 +45,11 @@ def run_ingest(
     if selected_provider in ("local_csv", "csv"):
         has_csv = raw_dir.is_dir() and any(raw_dir.glob("*.csv"))
         if not has_csv:
+            if not allow_mock_fallback:
+                raise RuntimeError(
+                    f"[ingest_daily] No CSV files found in {raw_dir} and mock fallback disabled. "
+                    "Fail-closed in operational mode."
+                )
             sys.stderr.write(
                 f"[ingest_daily] No CSV files found in {raw_dir}. Falling back to mock provider.\n"
             )
@@ -52,6 +58,11 @@ def run_ingest(
         else:
             provider = CSVMarketDataProvider(data_dir=raw_dir)
     elif selected_provider in ("mock", "synthetic"):
+        if not allow_mock_fallback:
+            raise ValueError(
+                "[ingest_daily] Mock/synthetic provider forbidden when mock fallback is disabled. "
+                "Fail-closed in operational mode."
+            )
         provider = MockMarketDataProvider(days=days, universe=cleaned_tickers)
     elif selected_provider in ("yfinance", "yf"):
         provider = YFinanceMarketDataProvider(

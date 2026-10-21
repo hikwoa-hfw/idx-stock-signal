@@ -1,0 +1,167 @@
+{
+  "run_id": "pipeline_20261021_084146_b14c25",
+  "started_at": "2026-10-21T08:41:46.837288+00:00",
+  "finished_at": "2026-10-21T08:42:07.628885+00:00",
+  "duration_seconds": 20.792,
+  "git_commit_sha": "b6aad833d8b00d71f40eaffac6a052716d3fb422",
+  "configured_provider": "yfinance",
+  "overall_status": "SKIPPED_PRE_APPROVAL_SESSION",
+  "stages": {
+    "stage_a_ingestion": {
+      "stage_name": "Stage A: Ingestion",
+      "status": "SKIPPED",
+      "duration_seconds": 0.0,
+      "details": {
+        "reason": "User requested --skip-ingest"
+      },
+      "error": null
+    },
+    "stage_b_data_validation": {
+      "stage_name": "Stage B: Data Validation",
+      "status": "SUCCESS",
+      "duration_seconds": 0.051,
+      "details": {
+        "latest_completed_session": "2026-10-21",
+        "session_weekday": "Wednesday",
+        "active_universe_count": 210,
+        "distinct_tickers_count": 192,
+        "coverage_pct": 0.9143,
+        "bars_validated": 192,
+        "has_benchmark_ticker": false,
+        "has_composite_proxy": true,
+        "has_benchmark_or_composite": true
+      },
+      "error": null
+    },
+    "stage_c_feature_generation": {
+      "stage_name": "Stage C: Feature Generation",
+      "status": "SUCCESS",
+      "duration_seconds": 20.387,
+      "details": {
+        "session_date": "2026-10-21",
+        "features_generated_count": 192,
+        "features_persisted_count": 192,
+        "db_verified_count": 192,
+        "feature_version": "v1.0.0"
+      },
+      "error": null
+    },
+    "stage_d_feature_readiness": {
+      "stage_name": "Stage D: Feature Readiness",
+      "status": "SUCCESS",
+      "duration_seconds": 0.109,
+      "details": {
+        "session_date": "2026-10-21",
+        "total_feature_rows": 192,
+        "complete_history_candidates": 4,
+        "schema_columns_count": 30,
+        "matched_bar_tickers_count": 192,
+        "has_infinite_values": false
+      },
+      "error": null
+    },
+    "stage_e_paper_trading": {
+      "stage_name": "Stage E: Paper Trading",
+      "status": "SKIPPED_PRE_APPROVAL_SESSION",
+      "duration_seconds": 0.116,
+      "details": {
+        "decision_date": "2026-10-21",
+        "effective_observation_cutoff": "2026-10-21",
+        "operational_status": "APPROVED_PENDING_FIRST_OBSERVATION",
+        "action": "SKIPPED_PRE_APPROVAL_SESSION",
+        "reason": "Session 2026-10-21 is at or before effective observation cutoff 2026-10-21. System remains APPROVED_PENDING_FIRST_OBSERVATION awaiting the first completed session strictly after cutoff.",
+        "model_hashes": {
+          "LOW_PRICE": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+          "HIGHER_PRICE": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc"
+        },
+        "policy_bundle_hash": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
+        "feature_schema_hash": "4d4667e10c3b362815f99823dfbc12aa0baf97030f5283bd4e48e4774739f3b3",
+        "cash": 100000000.0,
+        "total_equity": 100000000.0,
+        "open_positions_count": 0,
+        "pending_orders_count": 0,
+        "max_drawdown_pct": 0.0,
+        "realized_net_pnl_idr": 0,
+        "unrealized_pnl_idr": 0.0,
+        "candidates_count": 0,
+        "decisions_count": 0,
+        "new_fills_count": 0,
+        "exits_count": 0
+      },
+      "error": null
+    }
+  },
+  "errors": [],
+  "ingestion_summary": {
+    "reason": "User requested --skip-ingest"
+  },
+  "validation_summary": {
+    "latest_completed_session": "2026-10-21",
+    "session_weekday": "Wednesday",
+    "active_universe_count": 210,
+    "distinct_tickers_count": 192,
+    "coverage_pct": 0.9143,
+    "bars_validated": 192,
+    "has_benchmark_ticker": false,
+    "has_composite_proxy": true,
+    "has_benchmark_or_composite": true
+  },
+  "feature_summary": {
+    "session_date": "2026-10-21",
+    "features_generated_count": 192,
+    "features_persisted_count": 192,
+    "db_verified_count": 192,
+    "feature_version": "v1.0.0"
+  },
+  "feature_readiness_summary": {
+    "session_date": "2026-10-21",
+    "total_feature_rows": 192,
+    "complete_history_candidates": 4,
+    "schema_columns_count": 30,
+    "matched_bar_tickers_count": 192,
+    "has_infinite_values": false
+  },
+  "paper_trading_summary": {
+    "decision_date": "2026-10-21",
+    "effective_observation_cutoff": "2026-10-21",
+    "operational_status": "APPROVED_PENDING_FIRST_OBSERVATION",
+    "action": "SKIPPED_PRE_APPROVAL_SESSION",
+    "reason": "Session 2026-10-21 is at or before effective observation cutoff 2026-10-21. System remains APPROVED_PENDING_FIRST_OBSERVATION awaiting the first completed session strictly after cutoff.",
+    "model_hashes": {
+      "LOW_PRICE": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+      "HIGHER_PRICE": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc"
+    },
+    "policy_bundle_hash": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
+    "feature_schema_hash": "4d4667e10c3b362815f99823dfbc12aa0baf97030f5283bd4e48e4774739f3b3",
+    "cash": 100000000.0,
+    "total_equity": 100000000.0,
+    "open_positions_count": 0,
+    "pending_orders_count": 0,
+    "max_drawdown_pct": 0.0,
+    "realized_net_pnl_idr": 0,
+    "unrealized_pnl_idr": 0.0,
+    "candidates_count": 0,
+    "decisions_count": 0,
+    "new_fills_count": 0,
+    "exits_count": 0
+  },
+  "feature_schema_hash": "4d4667e10c3b362815f99823dfbc12aa0baf97030f5283bd4e48e4774739f3b3",
+  "feature_version": "v1.0.0",
+  "model_hashes": {
+    "LOW_PRICE": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+    "HIGHER_PRICE": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc"
+  },
+  "policy_bundle_hash": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
+  "decision_date": "2026-10-21",
+  "candidates_count": 0,
+  "decisions_count": 0,
+  "pending_orders_count": 0,
+  "new_fills_count": 0,
+  "exits_count": 0,
+  "open_positions_count": 0,
+  "cash_balance_idr": 100000000.0,
+  "realized_net_pnl_idr": 0,
+  "unrealized_pnl_idr": 0.0,
+  "current_equity_idr": 100000000.0,
+  "max_drawdown_pct": 0.0
+}

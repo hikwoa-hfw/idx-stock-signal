@@ -488,4 +488,3 @@ def test_unfilled_expired_excluded_from_compute_trading_metrics_and_dataset():
     assert report.trading_metrics.total_trades == 2
     assert report.trading_metrics.win_rate == pytest.approx(0.50)
     assert report.trading_metrics.expectancy == pytest.approx(0.025)
-

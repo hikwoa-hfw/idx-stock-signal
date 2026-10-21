@@ -459,9 +459,8 @@ class BacktestEngine:
                                 sig.action == SignalAction.BUY
                                 and sig.probability >= self.config.probability_threshold
                             ):
-                                sig_mode = (
-                                    getattr(sig, "mode_id", None)
-                                    or getattr(sig, "mode", None)
+                                sig_mode = getattr(sig, "mode_id", None) or getattr(
+                                    sig, "mode", None
                                 )
                                 if sig_mode is None:
                                     has_bar = sig.ticker in day_bars

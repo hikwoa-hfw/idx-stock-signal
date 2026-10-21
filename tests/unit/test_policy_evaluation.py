@@ -583,4 +583,3 @@ def test_policy_modular_summaries_contain_controls(tmp_path):
     assert p_b.policy_id == "exp_b_none"
     assert p_c.policy_id == "exp_c_fixed_h15"
     assert p_d.policy_id == "exp_d_control"
-

@@ -127,9 +127,7 @@ def test_multi_horizon_incomplete_data():
     entry_b = make_bar("TEST", date(2026, 1, 1), 100.0, 102.0, 99.0, 100.0)
 
     # Only 4 forward flat bars (no TP, no SL)
-    fwd_short = [
-        make_bar("TEST", date(2026, 1, k), 100.0, 101.0, 99.5, 100.0) for k in range(2, 6)
-    ]
+    fwd_short = [make_bar("TEST", date(2026, 1, k), 100.0, 101.0, 99.5, 100.0) for k in range(2, 6)]
 
     outcomes = evaluate_variant_b_multi_horizon(entry_b, fwd_short, horizons=[3, 5, 10, 15])
     # Horizon 3 has enough bars (4 >= 3) -> EXPIRY
@@ -318,4 +316,3 @@ def test_multi_horizon_export_artifacts_structure(tmp_path):
     assert "ev_diagnostic_summary_csv" in exported
     assert (tmp_path / "multi_horizon_trading_by_fold.csv").exists()
     assert (tmp_path / "multi_horizon_regression_binned_diagnostics.csv").exists()
-

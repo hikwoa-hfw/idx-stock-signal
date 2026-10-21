@@ -259,4 +259,3 @@ def test_retrain_cli_options(populated_env):
     res_dry = subprocess.run(cmd_dry, capture_output=True, text=True, check=False)
     assert res_dry.returncode == 0
     assert "Retraining Pipeline (Phase 11)" in res_dry.stdout
-

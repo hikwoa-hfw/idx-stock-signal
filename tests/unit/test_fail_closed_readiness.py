@@ -131,16 +131,22 @@ def add_session_to_test_db(
 ) -> None:
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT OR REPLACE INTO daily_bars VALUES (?, ?, ?, ?, ?, ?, ?);
-    """, (session_date, ticker, price, price * 1.02, price * 0.98, price, 1000000.0))
+    """,
+        (session_date, ticker, price, price * 1.02, price * 0.98, price, 1000000.0),
+    )
     feat_vals = [0.05] * len(FEATURE_SCHEMA_30)
     # Set ihsg_vs_ema20 positive for bull regime
     feat_vals[FEATURE_SCHEMA_30.index("ihsg_vs_ema20")] = 0.02
     placeholders = ", ".join("?" for _ in feat_vals)
-    cur.execute(f"""
+    cur.execute(
+        f"""
         INSERT OR REPLACE INTO features_daily VALUES (?, ?, {placeholders});
-    """, [session_date, ticker] + feat_vals)
+    """,
+        [session_date, ticker] + feat_vals,
+    )
     conn.commit()
     conn.close()
 
@@ -899,8 +905,7 @@ def test_corrupt_state_cannot_produce_misleading_first_prospective_date(tmp_path
     status = engine.generate_operational_status(base_dir=tmp_path)
     assert status["operational_status"] == STATUS_BLOCKED_ON_STATE_CORRUPTION
     assert (
-        status["cutoff_metadata"]["first_allowed_prospective_date"]
-        == "BLOCKED_ON_STATE_CORRUPTION"
+        status["cutoff_metadata"]["first_allowed_prospective_date"] == "BLOCKED_ON_STATE_CORRUPTION"
     )
 
 
@@ -919,8 +924,4 @@ def test_unapproved_state_first_prospective_date_is_none_and_status_pending(
 
     status = engine.generate_operational_status(base_dir=tmp_path)
     assert status["operational_status"] == STATUS_READY_FOR_OBSERVATION_PENDING_USER_APPROVAL
-    assert (
-        status["cutoff_metadata"]["first_allowed_prospective_date"]
-        == "PENDING_USER_APPROVAL"
-    )
-
+    assert status["cutoff_metadata"]["first_allowed_prospective_date"] == "PENDING_USER_APPROVAL"

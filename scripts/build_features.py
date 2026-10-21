@@ -95,6 +95,7 @@ def run_build_features(
     feature_version: str = FEATURE_VERSION,
     out_format: str = "table",
     limit: int = 15,
+    allow_mock_fallback: bool = True,
 ) -> dict[str, list[FeatureRecord]]:
     resolved_db = db_url or settings.database_url
     selected_provider = (provider_name or "sqlite").lower()
@@ -105,6 +106,11 @@ def run_build_features(
         bar_repo = DailyBarRepository(database_url=resolved_db)
         all_universe = bar_repo.get_universe()
         if not all_universe:
+            if not allow_mock_fallback:
+                raise RuntimeError(
+                    "[build_features] Database empty and mock fallback is disabled. "
+                    "Fail-closed in operational mode."
+                )
             print(
                 "[build_features] Database empty, falling back to mock provider.",
                 file=sys.stderr,
@@ -118,6 +124,11 @@ def run_build_features(
                 if bars:
                     universe_bars[t] = bars
     elif selected_provider in ("mock", "synthetic"):
+        if not allow_mock_fallback:
+            raise ValueError(
+                "[build_features] Mock provider forbidden when mock fallback disabled. "
+                "Fail-closed in operational mode."
+            )
         mock_universe = list(dict.fromkeys(DEFAULT_UNIVERSE + (tickers or [])))
         mock = MockMarketDataProvider(days=60, universe=mock_universe)
         for t in mock.get_universe():

@@ -1,0 +1,26 @@
+{
+  "run_id": "pipeline_20261021_083043_9141db",
+  "started_at": "2026-10-21T08:30:43.397759+00:00",
+  "finished_at": "2026-10-21T08:31:18.569978+00:00",
+  "duration_seconds": 35.172,
+  "git_commit_sha": "b6aad833d8b00d71f40eaffac6a052716d3fb422",
+  "configured_provider": "yfinance",
+  "overall_status": "FAILED",
+  "stages": {
+    "stage_a_ingestion": {
+      "stage_name": "Stage A: Ingestion",
+      "status": "FAILED",
+      "duration_seconds": 35.14,
+      "details": {},
+      "error": "'DailyBarRepository' object has no attribute 'get_ingestion_runs'"
+    }
+  },
+  "errors": [
+    "Stage A unhandled exception: 'DailyBarRepository' object has no attribute 'get_ingestion_runs'"
+  ],
+  "ingestion_summary": {},
+  "validation_summary": {},
+  "feature_summary": {},
+  "feature_readiness_summary": {},
+  "paper_trading_summary": {}
+}

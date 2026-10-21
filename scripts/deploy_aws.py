@@ -156,10 +156,14 @@ def seed_s3_data(
         else:
             try:
                 s3_client.head_object(Bucket=bucket_name, Key=db_key)
-                sys.stdout.write(f"[deploy_aws] Remote DB already exists at s3://{bucket_name}/{db_key}\n")
+                sys.stdout.write(
+                    f"[deploy_aws] Remote DB already exists at s3://{bucket_name}/{db_key}\n"
+                )
             except ClientError:
                 s3_client.upload_file(str(local_db), bucket_name, db_key)
-                sys.stdout.write(f"[deploy_aws] Initial DB uploaded to s3://{bucket_name}/{db_key}\n")
+                sys.stdout.write(
+                    f"[deploy_aws] Initial DB uploaded to s3://{bucket_name}/{db_key}\n"
+                )
                 uploaded.append(db_key)
 
     # Model registry artifacts if exist locally
@@ -170,7 +174,9 @@ def seed_s3_data(
                 rel_k = f.relative_to(models_dir).as_posix()
                 model_k = f"models/{rel_k}"
                 if dry_run:
-                    sys.stdout.write(f"[DRY-RUN] Upload model {f.name} -> s3://{bucket_name}/{model_k}\n")
+                    sys.stdout.write(
+                        f"[DRY-RUN] Upload model {f.name} -> s3://{bucket_name}/{model_k}\n"
+                    )
                     uploaded.append(model_k)
                 else:
                     s3_client.upload_file(str(f), bucket_name, model_k)
@@ -370,7 +376,6 @@ def setup_eventbridge_schedule(
             f"'{schedule_cron}' target {lambda_arn}\n"
         )
         return
-
 
     sys.stdout.write(f"[deploy_aws] Configuring EventBridge schedule: {rule_name}...\n")
     rule_resp = events_client.put_rule(
@@ -659,9 +664,7 @@ def register_telegram_webhook(
     """Register Lambda Function URL with Telegram Bot API setWebhook."""
     clean_url = str(webhook_url)
     if dry_run:
-        sys.stdout.write(
-            f"[DRY-RUN] Telegram setWebhook -> url: {clean_url}\n"
-        )
+        sys.stdout.write(f"[DRY-RUN] Telegram setWebhook -> url: {clean_url}\n")
         return {"ok": True, "result": True, "description": "Webhook set (dry-run)"}
 
     sys.stdout.write(f"[deploy_aws] Registering Telegram webhook: {clean_url}...\n")
@@ -820,16 +823,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             zip_bytes = build_lambda_zip()
             sys.stdout.write(f"[deploy_aws] Zip package built: {len(zip_bytes) / 1024:.1f} KB\n")
 
-            tg_tok = (
-                os.getenv("TELEGRAM_BOT_TOKEN")
-                or settings.telegram_bot_token
-                or ""
-            )
-            tg_chat = (
-                os.getenv("TELEGRAM_CHAT_ID")
-                or settings.telegram_chat_id
-                or ""
-            )
+            tg_tok = os.getenv("TELEGRAM_BOT_TOKEN") or settings.telegram_bot_token or ""
+            tg_chat = os.getenv("TELEGRAM_CHAT_ID") or settings.telegram_chat_id or ""
             env_vars = {
                 "APP_ENV": stage_name,
                 "S3_BUCKET": bucket,
@@ -921,13 +916,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             # AWS Billing metrics only live in us-east-1
             try:
                 cw_us = session.client("cloudwatch", region_name="us-east-1")
-                ensure_billing_alarm(
-                    cw_us, billing_alarm_name, threshold=1.0, dry_run=args.dry_run
-                )
+                ensure_billing_alarm(cw_us, billing_alarm_name, threshold=1.0, dry_run=args.dry_run)
             except Exception as cw_err:
-                sys.stderr.write(
-                    f"[deploy_aws] Note: CloudWatch us-east-1 unavailable: {cw_err}\n"
-                )
+                sys.stderr.write(f"[deploy_aws] Note: CloudWatch us-east-1 unavailable: {cw_err}\n")
 
             if region != "us-east-1":
                 try:
@@ -942,11 +933,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         # 4. Standalone set-webhook or webhook-status
         if args.set_webhook and not args.deploy_lambda:
-            tg_tok = (
-                os.getenv("TELEGRAM_BOT_TOKEN")
-                or settings.telegram_bot_token
-                or ""
-            )
+            tg_tok = os.getenv("TELEGRAM_BOT_TOKEN") or settings.telegram_bot_token or ""
             webhook_url = ""
             if args.webhook_type in ("apigw", "both"):
                 if args.dry_run:
@@ -980,11 +967,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 )
 
         if args.webhook_status:
-            tg_tok = (
-                os.getenv("TELEGRAM_BOT_TOKEN")
-                or settings.telegram_bot_token
-                or ""
-            )
+            tg_tok = os.getenv("TELEGRAM_BOT_TOKEN") or settings.telegram_bot_token or ""
             if tg_tok:
                 info = get_telegram_webhook_status(tg_tok, dry_run=args.dry_run)
                 formatted_info = json.dumps(info, indent=2)

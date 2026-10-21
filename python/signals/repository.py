@@ -88,8 +88,7 @@ class SignalRepository:
                     """
                 )
                 cols = [
-                    row[1]
-                    for row in conn.execute("PRAGMA table_info(signals_daily);").fetchall()
+                    row[1] for row in conn.execute("PRAGMA table_info(signals_daily);").fetchall()
                 ]
                 new_columns = [
                     ("mode", "TEXT"),
@@ -102,13 +101,8 @@ class SignalRepository:
                 ]
                 for col_name, col_type in new_columns:
                     if col_name not in cols:
-                        conn.execute(
-                            f"ALTER TABLE signals_daily ADD COLUMN {col_name} {col_type};"
-                        )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_signals_mode "
-                    "ON signals_daily(mode);"
-                )
+                        conn.execute(f"ALTER TABLE signals_daily ADD COLUMN {col_name} {col_type};")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_mode ON signals_daily(mode);")
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_signals_date_score "
                     "ON signals_daily(signal_date, score DESC);"
@@ -253,16 +247,8 @@ class SignalRepository:
             if "reference_price" in keys and r["reference_price"] is not None
             else None
         )
-        policy = (
-            r["entry_policy"]
-            if "entry_policy" in keys and r["entry_policy"]
-            else "IMMEDIATE"
-        )
-        stat = (
-            r["status"]
-            if "status" in keys and r["status"]
-            else r["signal"]
-        )
+        policy = r["entry_policy"] if "entry_policy" in keys and r["entry_policy"] else "IMMEDIATE"
+        stat = r["status"] if "status" in keys and r["status"] else r["signal"]
         return SignalRecord(
             signal_id=r["signal_id"],
             ticker=r["ticker"],

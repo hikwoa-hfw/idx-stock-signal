@@ -110,11 +110,18 @@ def test_daily_cross_sectional_top_k_precision() -> None:
     # Date 2: top 10% (1 pick) will be TICK00 (prob 0.90), target 0 -> precision 0.0
     targets = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0] + [0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
     probs = [0.95, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05] + [
-        0.90, 0.85, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05
+        0.90,
+        0.85,
+        0.7,
+        0.6,
+        0.5,
+        0.4,
+        0.3,
+        0.2,
+        0.1,
+        0.05,
     ]
-    df = pd.DataFrame(
-        {"date": dates, "ticker": tickers, "binary_target": targets, "y_prob": probs}
-    )
+    df = pd.DataFrame({"date": dates, "ticker": tickers, "binary_target": targets, "y_prob": probs})
 
     res = compute_daily_cross_sectional_top_k_precision(df, k_pct=0.10, min_candidates=10)
     assert res["total_dates"] == 2
@@ -211,9 +218,7 @@ def test_daily_top_k_selection_mask() -> None:
     targets = [0] * 20
     # On date 1, T00 has highest prob; on date 2, T09 has highest prob
     probs = [0.9] + [0.1] * 9 + [0.1] * 9 + [0.9]
-    df = pd.DataFrame(
-        {"date": dates, "ticker": tickers, "binary_target": targets, "y_prob": probs}
-    )
+    df = pd.DataFrame({"date": dates, "ticker": tickers, "binary_target": targets, "y_prob": probs})
     res = compute_daily_cross_sectional_top_k_precision(df, k_pct=0.10, min_candidates=10)
     mask = res["selection_mask"]
     assert len(mask) == 20

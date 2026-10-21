@@ -44,19 +44,23 @@ def run_evaluation() -> dict[str, Any]:
 
     # Candidates (latest challenger in registry)
     low_challengers = [
-        m for m in registry.list_models(task="classification", mode="LOW_PRICE")
+        m
+        for m in registry.list_models(task="classification", mode="LOW_PRICE")
         if m.status.lower() == "challenger"
     ]
     high_challengers = [
-        m for m in registry.list_models(task="classification", mode="HIGHER_PRICE")
+        m
+        for m in registry.list_models(task="classification", mode="HIGHER_PRICE")
         if m.status.lower() == "challenger"
     ]
     low_regs = [
-        m for m in registry.list_models(task="regression", mode="LOW_PRICE")
+        m
+        for m in registry.list_models(task="regression", mode="LOW_PRICE")
         if m.status.lower() == "challenger"
     ]
     high_regs = [
-        m for m in registry.list_models(task="regression", mode="HIGHER_PRICE")
+        m
+        for m in registry.list_models(task="regression", mode="HIGHER_PRICE")
         if m.status.lower() == "challenger"
     ]
 
@@ -88,7 +92,7 @@ def run_evaluation() -> dict[str, Any]:
             all_bars_map[t] = bars
 
     for mode in ["LOW_PRICE", "HIGHER_PRICE"]:
-        print(f"\n{'='*35} MODE: {mode} {'='*35}")
+        print(f"\n{'=' * 35} MODE: {mode} {'=' * 35}")
         builder = DatasetBuilder(mode=mode)
         ds = builder.build_from_db(feat_repo, lbl_repo, mode=mode)
         train_idx, val_idx, test_idx = split_chronological(
@@ -169,16 +173,16 @@ def run_evaluation() -> dict[str, Any]:
 
         print(f"\n--- Regression Metrics ({mode} Test Set: {len(test_ds)} rows) ---")
         print(f"{'Model':<20} {'MSE':<10} {'RMSE':<10} {'MAE':<10} {'R2':<8}")
-        z_mse, z_rmse, z_mae, z_r2 = m_zero['mse'], m_zero['rmse'], m_zero['mae'], m_zero['r2']
+        z_mse, z_rmse, z_mae, z_r2 = m_zero["mse"], m_zero["rmse"], m_zero["mae"], m_zero["r2"]
         print(f"{'Zero Baseline':<20} {z_mse:.6f}   {z_rmse:.6f}   {z_mae:.6f}   {z_r2:.4f}")
-        mn_mse, mn_rmse = m_mean['mse'], m_mean['rmse']
-        mn_mae, mn_r2 = m_mean['mae'], m_mean['r2']
+        mn_mse, mn_rmse = m_mean["mse"], m_mean["rmse"]
+        mn_mae, mn_r2 = m_mean["mae"], m_mean["r2"]
         print(f"{'Mean Baseline':<20} {mn_mse:.6f}   {mn_rmse:.6f}   {mn_mae:.6f}   {mn_r2:.4f}")
-        rg_mse, rg_rmse = m_ridge['mse'], m_ridge['rmse']
-        rg_mae, rg_r2 = m_ridge['mae'], m_ridge['r2']
+        rg_mse, rg_rmse = m_ridge["mse"], m_ridge["rmse"]
+        rg_mae, rg_r2 = m_ridge["mae"], m_ridge["r2"]
         print(f"{'Ridge Baseline':<20} {rg_mse:.6f}   {rg_rmse:.6f}   {rg_mae:.6f}   {rg_r2:.4f}")
-        lg_mse, lg_rmse = m_cand_reg['mse'], m_cand_reg['rmse']
-        lg_mae, lg_r2 = m_cand_reg['mae'], m_cand_reg['r2']
+        lg_mse, lg_rmse = m_cand_reg["mse"], m_cand_reg["rmse"]
+        lg_mae, lg_r2 = m_cand_reg["mae"], m_cand_reg["r2"]
         print(f"{'LightGBM Reg':<20} {lg_mse:.6f}   {lg_rmse:.6f}   {lg_mae:.6f}   {lg_r2:.4f}")
 
         # -------------------------------------------------------------
@@ -194,6 +198,7 @@ def run_evaluation() -> dict[str, Any]:
             end_date=max(test_dates_set),
         )
         from collections import defaultdict
+
         feats_by_ticker: dict[str, list[FeatureRecord]] = defaultdict(list)
         for f in all_test_features:
             clean_t = f.ticker.strip().upper().removesuffix(".JK")
@@ -259,6 +264,7 @@ def run_evaluation() -> dict[str, Any]:
                     config=sig_cfg_ev,
                 )
                 from python.common.types import Signal, SignalAction
+
                 for s in sigs:
                     ev_signals.append(
                         Signal(
@@ -287,60 +293,78 @@ def run_evaluation() -> dict[str, Any]:
         row_fmt = "{:<20} {:<24} {:<24} {:<24}"
         print(row_fmt.format("Metric", "Champion(0.25)", "Cand-Unhurdled", "Cand-EV-Gate"))
         print("-" * 92)
-        print(row_fmt.format(
-            "Trades",
-            rep_champ.total_trades,
-            rep_cand_unhurdled.total_trades,
-            rep_cand_ev.total_trades,
-        ))
-        print(row_fmt.format(
-            "Win Rate",
-            f"{rep_champ.win_rate*100:.2f}%",
-            f"{rep_cand_unhurdled.win_rate*100:.2f}%",
-            f"{rep_cand_ev.win_rate*100:.2f}%",
-        ))
-        print(row_fmt.format(
-            "Profit Factor",
-            f"{rep_champ.profit_factor:.2f}",
-            f"{rep_cand_unhurdled.profit_factor:.2f}",
-            f"{rep_cand_ev.profit_factor:.2f}",
-        ))
-        print(row_fmt.format(
-            "Net Return",
-            f"{rep_champ.total_return_pct*100:+.2f}%",
-            f"{rep_cand_unhurdled.total_return_pct*100:+.2f}%",
-            f"{rep_cand_ev.total_return_pct*100:+.2f}%",
-        ))
-        print(row_fmt.format(
-            "Max Drawdown",
-            f"{rep_champ.max_drawdown_pct*100:.2f}%",
-            f"{rep_cand_unhurdled.max_drawdown_pct*100:.2f}%",
-            f"{rep_cand_ev.max_drawdown_pct*100:.2f}%",
-        ))
-        print(row_fmt.format(
-            "Expectancy",
-            f"{rep_champ.expectancy_pct*100:+.2f}%",
-            f"{rep_cand_unhurdled.expectancy_pct*100:+.2f}%",
-            f"{rep_cand_ev.expectancy_pct*100:+.2f}%",
-        ))
-        print(row_fmt.format(
-            "TP Rate",
-            f"{rep_champ.tp_rate*100:.1f}%",
-            f"{rep_cand_unhurdled.tp_rate*100:.1f}%",
-            f"{rep_cand_ev.tp_rate*100:.1f}%",
-        ))
-        print(row_fmt.format(
-            "SL Rate",
-            f"{rep_champ.sl_rate*100:.1f}%",
-            f"{rep_cand_unhurdled.sl_rate*100:.1f}%",
-            f"{rep_cand_ev.sl_rate*100:.1f}%",
-        ))
-        print(row_fmt.format(
-            "Expiry Rate",
-            f"{rep_champ.expiry_rate*100:.1f}%",
-            f"{rep_cand_unhurdled.expiry_rate*100:.1f}%",
-            f"{rep_cand_ev.expiry_rate*100:.1f}%",
-        ))
+        print(
+            row_fmt.format(
+                "Trades",
+                rep_champ.total_trades,
+                rep_cand_unhurdled.total_trades,
+                rep_cand_ev.total_trades,
+            )
+        )
+        print(
+            row_fmt.format(
+                "Win Rate",
+                f"{rep_champ.win_rate * 100:.2f}%",
+                f"{rep_cand_unhurdled.win_rate * 100:.2f}%",
+                f"{rep_cand_ev.win_rate * 100:.2f}%",
+            )
+        )
+        print(
+            row_fmt.format(
+                "Profit Factor",
+                f"{rep_champ.profit_factor:.2f}",
+                f"{rep_cand_unhurdled.profit_factor:.2f}",
+                f"{rep_cand_ev.profit_factor:.2f}",
+            )
+        )
+        print(
+            row_fmt.format(
+                "Net Return",
+                f"{rep_champ.total_return_pct * 100:+.2f}%",
+                f"{rep_cand_unhurdled.total_return_pct * 100:+.2f}%",
+                f"{rep_cand_ev.total_return_pct * 100:+.2f}%",
+            )
+        )
+        print(
+            row_fmt.format(
+                "Max Drawdown",
+                f"{rep_champ.max_drawdown_pct * 100:.2f}%",
+                f"{rep_cand_unhurdled.max_drawdown_pct * 100:.2f}%",
+                f"{rep_cand_ev.max_drawdown_pct * 100:.2f}%",
+            )
+        )
+        print(
+            row_fmt.format(
+                "Expectancy",
+                f"{rep_champ.expectancy_pct * 100:+.2f}%",
+                f"{rep_cand_unhurdled.expectancy_pct * 100:+.2f}%",
+                f"{rep_cand_ev.expectancy_pct * 100:+.2f}%",
+            )
+        )
+        print(
+            row_fmt.format(
+                "TP Rate",
+                f"{rep_champ.tp_rate * 100:.1f}%",
+                f"{rep_cand_unhurdled.tp_rate * 100:.1f}%",
+                f"{rep_cand_ev.tp_rate * 100:.1f}%",
+            )
+        )
+        print(
+            row_fmt.format(
+                "SL Rate",
+                f"{rep_champ.sl_rate * 100:.1f}%",
+                f"{rep_cand_unhurdled.sl_rate * 100:.1f}%",
+                f"{rep_cand_ev.sl_rate * 100:.1f}%",
+            )
+        )
+        print(
+            row_fmt.format(
+                "Expiry Rate",
+                f"{rep_champ.expiry_rate * 100:.1f}%",
+                f"{rep_cand_unhurdled.expiry_rate * 100:.1f}%",
+                f"{rep_cand_ev.expiry_rate * 100:.1f}%",
+            )
+        )
 
         # Store mode summary
         results["modes"][mode] = {
@@ -361,9 +385,7 @@ def run_evaluation() -> dict[str, Any]:
                 "backtest_unhurdled": rep_cand_unhurdled.model_dump(
                     exclude={"trades", "equity_curve"}
                 ),
-                "backtest_ev_hurdle": rep_cand_ev.model_dump(
-                    exclude={"trades", "equity_curve"}
-                ),
+                "backtest_ev_hurdle": rep_cand_ev.model_dump(exclude={"trades", "equity_curve"}),
             },
             "candidate_regressor": {
                 "version": cand_reg_ver,

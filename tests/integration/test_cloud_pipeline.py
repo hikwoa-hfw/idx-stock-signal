@@ -68,7 +68,6 @@ def test_end_to_end_cloud_pipeline_cycle(tmp_path: Path):
     assert sig_count >= 0
     conn.close()
 
-
     # Second invocation: simulate next day / warm start with DB already on S3
     second_work_db = tmp_path / "second_work" / "stock_signals.db"
     event_run_2 = {

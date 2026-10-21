@@ -90,14 +90,10 @@ def dispatch_failure_alert(
         return False
 
     token = (
-        evt.get("telegram_token")
-        or os.getenv("TELEGRAM_BOT_TOKEN")
-        or settings.telegram_bot_token
+        evt.get("telegram_token") or os.getenv("TELEGRAM_BOT_TOKEN") or settings.telegram_bot_token
     )
     chat_id = (
-        evt.get("telegram_chat_id")
-        or os.getenv("TELEGRAM_CHAT_ID")
-        or settings.telegram_chat_id
+        evt.get("telegram_chat_id") or os.getenv("TELEGRAM_CHAT_ID") or settings.telegram_chat_id
     )
     if not token or not chat_id:
         logger.warning("Cannot dispatch failure alert: Telegram token or chat_id missing")
@@ -143,12 +139,9 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
         skip_s3_upload = bool(event.get("skip_s3_upload", False))
         top_n = int(event.get("top_n", 5))
         provider_name = (
-            event.get("market_provider")
-            or os.getenv("MARKET_DATA_PROVIDER")
-            or "yfinance"
+            event.get("market_provider") or os.getenv("MARKET_DATA_PROVIDER") or "yfinance"
         )
         s3_client = event.get("_s3_client")
-
 
         target_date: Optional[date] = None
         if event.get("date"):
@@ -386,8 +379,8 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                         config=sig_cfg,
                         use_champion=use_champ,
                     )
-                    generated_signals = (
-                        dual_res.get("LOW_PRICE", []) + dual_res.get("HIGHER_PRICE", [])
+                    generated_signals = dual_res.get("LOW_PRICE", []) + dual_res.get(
+                        "HIGHER_PRICE", []
                     )
                     signals_payload = dual_res
                 else:
@@ -424,9 +417,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                 )
 
         effective_date = (
-            generated_signals[0].signal_date
-            if generated_signals
-            else (target_date or date.today())
+            generated_signals[0].signal_date if generated_signals else (target_date or date.today())
         )
 
         # Step 5: Format and broadcast report to Telegram
@@ -644,9 +635,7 @@ def lambda_retraining_handler(event: dict[str, Any], context: Any = None) -> dic
         }
 
 
-def lambda_telegram_webhook_handler(
-    event: dict[str, Any], context: Any = None
-) -> dict[str, Any]:
+def lambda_telegram_webhook_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     """AWS Lambda handler for incoming Telegram Bot webhook updates.
 
     Processes Telegram updates via Function URL or API Gateway proxy,
@@ -692,15 +681,9 @@ def lambda_telegram_webhook_handler(
             else (msg.get("chat_id") if isinstance(msg, dict) else None)
         )
         cb_from = (
-            payload.get("callback_query", {}).get("from")
-            if isinstance(payload, dict)
-            else None
+            payload.get("callback_query", {}).get("from") if isinstance(payload, dict) else None
         )
-        from_user = (
-            (msg.get("from") if isinstance(msg, dict) else None)
-            or cb_from
-            or {}
-        )
+        from_user = (msg.get("from") if isinstance(msg, dict) else None) or cb_from or {}
         from_user_id = (
             str(from_user.get("id"))
             if isinstance(from_user, dict) and from_user.get("id") is not None
@@ -726,9 +709,8 @@ def lambda_telegram_webhook_handler(
         webhook_secret = os.getenv("TELEGRAM_WEBHOOK_SECRET")
         if webhook_secret:
             headers = event.get("headers") or {}
-            token_header = (
-                headers.get("x-telegram-bot-api-secret-token")
-                or headers.get("X-Telegram-Bot-Api-Secret-Token")
+            token_header = headers.get("x-telegram-bot-api-secret-token") or headers.get(
+                "X-Telegram-Bot-Api-Secret-Token"
             )
             if token_header != webhook_secret:
                 logger.warning("Telegram webhook secret mismatch")
@@ -856,20 +838,20 @@ def lambda_telegram_webhook_handler(
 
         if not skip_tg and not sent_via_client and sender_chat_id:
             target_chat_val: Any = (
-                int(sender_chat_id)
-                if sender_chat_id.lstrip("-").isdigit()
-                else sender_chat_id
+                int(sender_chat_id) if sender_chat_id.lstrip("-").isdigit() else sender_chat_id
             )
             print(f"[WEBHOOK_METHOD_REPLY] Returning sendMessage for chat {target_chat_val}")
             return {
                 "statusCode": 200,
                 "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({
-                    "method": "sendMessage",
-                    "chat_id": target_chat_val,
-                    "text": reply_text[:4096],
-                    "disable_web_page_preview": True,
-                }),
+                "body": json.dumps(
+                    {
+                        "method": "sendMessage",
+                        "chat_id": target_chat_val,
+                        "text": reply_text[:4096],
+                        "disable_web_page_preview": True,
+                    }
+                ),
             }
 
         return {
@@ -886,4 +868,3 @@ def lambda_telegram_webhook_handler(
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"status": "error", "error": str(exc)}),
         }
-

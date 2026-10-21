@@ -530,27 +530,31 @@ def test_dataset_assembly_feature_preservation_combine_first():
         feature_cols=["return_1d", "rsi14", "macd"],
         exclude_ambiguous=True,
     )
-    h_df = pd.DataFrame([
-        {
-            "ticker": "BBCA",
-            "date": "2025-01-01",
-            "return_1d": 0.01,
-            "rsi14": 55.0,
-            "macd": 0.5,
-            "binary_target": 0,
-            "realized_return": -0.01,
-        }
-    ])
-    o_df = pd.DataFrame([
-        {
-            "ticker": "BBCA",
-            "date": "2025-01-01",
-            "return_1d": 0.02,
-            "binary_target": 1,
-            "realized_return": 0.04,
-            "outcome_status": "TP",
-        }
-    ])
+    h_df = pd.DataFrame(
+        [
+            {
+                "ticker": "BBCA",
+                "date": "2025-01-01",
+                "return_1d": 0.01,
+                "rsi14": 55.0,
+                "macd": 0.5,
+                "binary_target": 0,
+                "realized_return": -0.01,
+            }
+        ]
+    )
+    o_df = pd.DataFrame(
+        [
+            {
+                "ticker": "BBCA",
+                "date": "2025-01-01",
+                "return_1d": 0.02,
+                "binary_target": 1,
+                "realized_return": 0.04,
+                "outcome_status": "TP",
+            }
+        ]
+    )
     ds = assembler.assemble_from_dfs(h_df, o_df)
     assert len(ds) == 1
     assert ds.y[0] == 1  # Outcome target takes precedence
@@ -558,7 +562,7 @@ def test_dataset_assembly_feature_preservation_combine_first():
     # Features preserved from historical data rather than imputed median/0
     assert ds.X[0][0] == 0.02  # return_1d from outcome
     assert ds.X[0][1] == 55.0  # rsi14 preserved from historical
-    assert ds.X[0][2] == 0.5   # macd preserved from historical
+    assert ds.X[0][2] == 0.5  # macd preserved from historical
 
 
 def test_rollback_task_mismatch_raises(tmp_path):
@@ -610,14 +614,16 @@ def test_walk_forward_split_small_dataset_clamping():
         date(2025, 1, 4),
         date(2025, 1, 5),
     ]
-    df = pd.DataFrame({
-        "ticker": ["BBCA"] * 5,
-        "date": dates,
-        "return_1d": [0.01] * 5,
-        "rsi14": [50.0] * 5,
-        "binary_target": [1, 0, 1, 0, 1],
-        "realized_return": [0.02, -0.01, 0.03, -0.02, 0.01],
-    })
+    df = pd.DataFrame(
+        {
+            "ticker": ["BBCA"] * 5,
+            "date": dates,
+            "return_1d": [0.01] * 5,
+            "rsi14": [50.0] * 5,
+            "binary_target": [1, 0, 1, 0, 1],
+            "realized_return": [0.02, -0.01, 0.03, -0.02, 0.01],
+        }
+    )
     ds = assembler.assemble_from_dfs(df, pd.DataFrame())
     # Should not raise ValueError even though 5 dates < purge_days (10)
     train_ds, val_ds, test_ds = assembler.split_walk_forward(ds, purge_days=10)

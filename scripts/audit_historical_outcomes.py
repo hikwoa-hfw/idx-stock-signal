@@ -118,21 +118,13 @@ def run_audit() -> None:
                 violations.append(f"{out.signal_id}: Filled trade missing excursion bounds")
             else:
                 if out.mfe_min > (out.mfe or 0.0) + 1e-9:
-                    violations.append(
-                        f"{out.signal_id}: mfe_min {out.mfe_min} > mfe {out.mfe}"
-                    )
+                    violations.append(f"{out.signal_id}: mfe_min {out.mfe_min} > mfe {out.mfe}")
                 if (out.mfe or 0.0) > out.mfe_max + 1e-9:
-                    violations.append(
-                        f"{out.signal_id}: mfe {out.mfe} > mfe_max {out.mfe_max}"
-                    )
+                    violations.append(f"{out.signal_id}: mfe {out.mfe} > mfe_max {out.mfe_max}")
                 if out.mae_min > (out.mae or 0.0) + 1e-9:
-                    violations.append(
-                        f"{out.signal_id}: mae_min {out.mae_min} > mae {out.mae}"
-                    )
+                    violations.append(f"{out.signal_id}: mae_min {out.mae_min} > mae {out.mae}")
                 if (out.mae or 0.0) > out.mae_max + 1e-9:
-                    violations.append(
-                        f"{out.signal_id}: mae {out.mae} > mae_max {out.mae_max}"
-                    )
+                    violations.append(f"{out.signal_id}: mae {out.mae} > mae_max {out.mae_max}")
 
             if out.entry_deviation_pct is None:
                 violations.append(f"{out.signal_id}: Filled trade missing entry_deviation_pct")
@@ -238,9 +230,7 @@ def run_audit() -> None:
                                 )
                 elif out.outcome_status == "TP":
                     # In-trade MFE should be bounded by exit_price
-                    max_allowed_mfe = max(
-                        0.0, (out.exit_price - out.entry_price) / out.entry_price
-                    )
+                    max_allowed_mfe = max(0.0, (out.exit_price - out.entry_price) / out.entry_price)
                     if out.mfe is not None and out.mfe > max_allowed_mfe + 1e-4:
                         violations.append(
                             f"{out.signal_id}: TP trade MFE {out.mfe} exceeds exit bound "

@@ -117,7 +117,13 @@ def run_resolve_outcomes(
 
     print("[SUMMARY] Resolved Outcomes Distribution:")
     for status in (
-        "TP", "SL", "EXPIRY", "UNFILLED_EXPIRED", "INVALIDATED_GAP", "AMBIGUOUS", "OPEN"
+        "TP",
+        "SL",
+        "EXPIRY",
+        "UNFILLED_EXPIRED",
+        "INVALIDATED_GAP",
+        "AMBIGUOUS",
+        "OPEN",
     ):
         if status in counts:
             print(f"  {status:<18}: {counts[status]}")

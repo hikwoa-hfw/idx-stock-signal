@@ -1003,3 +1003,11 @@ Log Perubahan Tambahan (15 Oktober 2026)
    5. Melatih dan mem-persistensi 6 artefak biner riset (.joblib) beserta hash SHA-256 dan metadata lengkap pada `artifacts/offline_challengers/run_20261021_retraining/` tanpa mengubah model champion atau Phase 11F.
    6. Menambahkan 6 unit test komprehensif pada `tests/unit/test_challenger_retraining.py`. Total test suite meningkat menjadi 597 passed (565 unit, 32 integration, 0 failure; ruff clean 0 error).
    7. Menyusun laporan formal `docs/21_offline_challenger_retraining_report.md` berbasis universal template, memperbarui `audit_report.md` (entri 13), dan memperbarui `walkthrough.md`. Keputusan final: `DO_NOT_PROMOTE`.
+
+68. Phase 11F — Otorisasi Resmi Pengguna untuk Observasi Paper Trading Prospektif (21 Oktober 2026)
+   Masalah / Konteks:
+   1. Observasi paper trading forward Phase 11F sebelumnya berada dalam status `READY_FOR_OBSERVATION_PENDING_USER_APPROVAL`, menunggu persetujuan eksplisit dari operator sebelum sesi bursa forward dapat diproses.
+   Solusi / Hasil:
+   1. Menjalankan perintah otorisasi operator resmi: `python -m scripts.run_forward_paper_trading --approve-observation`.
+   2. Status persisten `artifacts/phase_11f/paper_trading_state.json` berhasil diperbarui: `user_approved: True`, `approval_timestamp: '2026-10-21T07:19:05.601655+00:00'`, `approval_data_cutoff: '2026-10-16'`, dan `effective_observation_cutoff: '2026-10-21'`.
+   3. Status operasional bertransisi menjadi `APPROVED_PENDING_FIRST_OBSERVATION`. Belum ada transaksi yang dieksekusi (0 trades, 0 open positions, saldo kas utuh 100jt IDR). Observasi akan aktif saat sesi data bursa setelah 2026-10-21 di-ingest dan diproses.

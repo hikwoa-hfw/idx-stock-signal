@@ -764,3 +764,15 @@ def test_get_ingestion_runs_repository_method(tmp_path: Path) -> None:
     runs = repo.get_ingestion_runs(limit=5)
     assert isinstance(runs, list)
     assert len(runs) == 0
+
+
+def test_default_ticker_coverage_threshold_and_cli_default() -> None:
+    """Default minimum ticker coverage threshold is 0.80 in both pipeline and CLI."""
+    from scripts.run_daily_pipeline import parse_args
+
+    pipeline = DailyPipeline()
+    assert pipeline.min_ticker_coverage == 0.80
+
+    args = parse_args([])
+    assert args.min_coverage == 0.80
+

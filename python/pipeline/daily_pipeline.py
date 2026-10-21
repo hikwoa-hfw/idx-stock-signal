@@ -105,7 +105,7 @@ class DailyPipeline:
         artifacts_dir: Optional[Path | str] = None,
         reports_dir: Optional[Path | str] = None,
         provider_name: Optional[str] = None,
-        min_ticker_coverage: float = 0.70,
+        min_ticker_coverage: float = 0.80,
         allow_mock_fallback: bool = False,
         dry_run: bool = False,
     ) -> None:

@@ -71,8 +71,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--min-coverage",
         type=float,
-        default=0.70,
-        help="Minimum required ticker coverage fraction on session (default: 0.70).",
+        default=0.80,
+        help="Minimum required ticker coverage fraction on session (default: 0.80).",
     )
     parser.add_argument(
         "--db-url",

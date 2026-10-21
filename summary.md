@@ -1056,3 +1056,18 @@ Log Perubahan Tambahan (15 Oktober 2026)
    7. Menambahkan validasi silang ticker fitur terhadap bar harga di `daily_bars`, validasi kelengkapan kolom benchmark, dan verifikasi `complete_history_candidates > 0` di Stage D.
    8. Menambahkan 6 unit test baru pada `tests/unit/test_daily_pipeline.py` (total 19 unit test). Total test suite repositori menjadi 616 passed (100%), ruff clean 0 error.
 
+71. Phase 11G — Final Repository and Runtime Reconciliation (21 Oktober 2026)
+   Masalah:
+   1. Target `daily-pipeline` pada Makefile diklaim telah ditambahkan dan diuji pada laporan validasi, namun lingkungan host Windows belum memiliki binary `make.exe` dalam sistem PATH, sehingga eksekusi langsung via `make` memicu error CommandNotFoundException.
+   2. Terdapat inkonsistensi ambang batas cakupan ticker minimum (minimum ticker coverage threshold) antara laporan yang menyebut 80% (0.80) dengan default parameter pada kode pipeline dan CLI yang sebelumnya masih 70% (0.70).
+   3. Terdapat diskrepansi hitungan test di laporan validasi (tabel Ringkasan Implementasi masih mencatat 13 unit test, sementara realisasi adalah 19 unit test dan belum ada unit test untuk mengunci ambang batas 80%).
+   4. Status operasional pada header `audit_report.md` masih mendeskripsikan Phase 11F.4 dan belum ditautkan secara langsung ke laporan rinci Phase 11G.
+   5. Registrasi task scheduler Windows `\IDX_Stock_Signal_Daily_Pipeline` dan riwayat eksekusinya memerlukan verifikasi runtime nyata pada mesin target.
+   6. Database lokal terbaru (194MB dengan data bar hingga 21 Oktober 2026) dan kode aplikasi perlu disinkronkan ke AWS S3 dan AWS Lambda.
+   Solusi:
+   1. Merekonsiliasi klaim Makefile: memastikan target `daily-pipeline` terdefinisi bersih pada `Makefile` (`$(VENV_PYTHON) -m scripts.run_daily_pipeline`) dan memvalidasi sintaks serta resep eksekusi via Python (`.venv\Scripts\python.exe -m scripts.run_daily_pipeline --help`), serta mendokumentasikan bahwa pada Windows native eksekusi dilakukan langsung via PowerShell/Python.
+   2. Menyelaraskan ambang batas cakupan ticker minimum menjadi 80% (0.80) secara konsisten di `python/pipeline/daily_pipeline.py` (`min_ticker_coverage: float = 0.80`), `scripts/run_daily_pipeline.py` (`default=0.80`), dan menambahkan unit test pengunci ambang batas pada `tests/unit/test_daily_pipeline.py`.
+   3. Mengoreksi dan merekonsiliasi seluruh hitungan unit test pada `docs/22_daily_pipeline_automation_validation_report.md` berdasarkan output aktual pytest: 20 passed pada modul daily pipeline, 585 unit tests, 32 integration tests, dengan total 617/617 passed (100% pass rate).
+   4. Memperbarui `audit_report.md` pada bagian "Current Operational State" ke Phase 11G, menambahkan link ke `docs/22_daily_pipeline_automation_validation_report.md`, dan merangkum hasil operasional terkini.
+   5. Memverifikasi status runtime nyata Windows Task Scheduler `\IDX_Stock_Signal_Daily_Pipeline` via PowerShell: State `Ready`, Enabled `True`, StartWhenAvailable `True`, NextRunTime `10/22/2026 4:30:00 PM`, LastRunTime `10/21/2026 4:30:00 PM`, LastTaskResult `0` (Success).
+   6. Melakukan sinkronisasi ke AWS: mengunggah database SQLite `datasets/stock_signals.db` (194,031,616 bytes, SHA256 terverifikasi) ke bucket S3 `idx-stock-signal-436095651956-data/database/stock_signals.db` dengan backup otomatis (`database/backups/stock_signals_20261021_110909.db`), serta memperbarui kode fungsi AWS Lambda (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) via `scripts/deploy_aws.py` di region `ap-southeast-3`.

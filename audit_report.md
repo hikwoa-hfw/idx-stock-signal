@@ -2,25 +2,25 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11G — Daily Pipeline Automation & Operational Validation`
-- **Audit Date:** `2026-10-21 16:00 WIB`
+- **Current Phase:** `Phase 11G — Final Repository & Runtime Reconciliation`
+- **Audit Date:** `2026-10-21 18:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** Working tree with Phase 11G Daily Market-Data-to-Paper-Trading Pipeline Automation (6-stage orchestrator, Windows Task Scheduler automation with StartWhenAvailable, fail-closed provider guards, 616 repository tests passed 100%)
-- **Overall Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL / APPROVED_PENDING_FIRST_OBSERVATION)`
+- **Latest Commit SHA:** `29e6a490c692fc2ccf197b7b9406c19b59f6df33` (Phase 11G Final Reconciliation: 617 tests passed 100%, 80% coverage threshold locked, Windows Task Scheduler verified in Ready state, S3 & Lambda cloud synchronization verified)
+- **Overall Status:** `PASS (OPERATIONAL_AUTOMATED_PIPELINE / APPROVED_PENDING_FIRST_OBSERVATION)`
+- **Detailed Validation Report:** [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
 - **Primary Empirical Finding & Decision:**
-  - Completed Phase 11F.4 fail-closed readiness corrections and approval-time cutoff patch:
-    1. **Approval-Time Cutoff & Dynamic Prospective Start:** Recorded approval timestamp and explicit `effective_observation_cutoff` (`max(data_cutoff, approval_date)` in WIB). Decision sessions occurring before approval cannot be accepted even if bars are ingested later. Eliminated hardcoded/recommended past dates; unapproved state fails closed with `first_allowed_prospective_date=None` and `PENDING_USER_APPROVAL`. When approved, dynamic date resolves to next trading date after cutoff.
-    2. **Exception Propagation in Dynamic Date Resolution:** Replaced silent `except Exception: pass` in `get_first_prospective_date()` with explicit propagation of `StateIntegrityError`, correctly setting status to `BLOCKED_ON_STATE_CORRUPTION`.
-    3. **Decoupled User Approval from Observation Activation:** Persistent approval fields (`user_approved`, `approval_timestamp`, `approval_data_cutoff`, `effective_observation_cutoff`), dedicated CLI `--approve-observation`, distinct `STATUS_APPROVED_PENDING_FIRST_OBSERVATION`. Calling `--status --user-approved` cannot activate observation; observation transitions to `OBSERVATION_ACTIVE` only after an approved run succeeds and is persisted.
-    4. **Dynamic Cutoff & Monotonicity Guards:** Dynamic `approval_data_cutoff` and `effective_observation_cutoff` prevent backdated or historical prospective runs (`InvalidProspectiveDateError`). Non-monotonic date execution blocked. Gaps between sessions and stale pending orders fail closed with `MissedSessionError`.
-    5. **Strict Data Quality Guards:** Missing bars, missing features, date mismatches, missing required columns, zero-join ticker coverage, and infinite feature values fail closed independently with `DataQualityError`.
-    6. **Fail-Closed State Integrity:** Root dictionary validation, required fields check, policy bundle hash verification; corrupted state raises `StateIntegrityError` without silent overwriting. `migrate_state(backup=True)` creates timestamped backup copy.
-    7. **Decision:** Production champions protected and active. Candidate models remain research-only. Zero prospective observation started.
-- **Next Permitted Action:** Await explicit human operator execution of `--approve-observation`. When the next trading session strictly after approval is ingested, execute prospective scoring with `--date <date> --user-approved`. Do not execute prospective scoring without approval.
+  - **Completed Phase 11G Daily Market-Data-to-Paper-Trading Automation and Reconciliation:**
+    1. **6-Stage Operational Orchestrator:** Implemented `DailyPipeline` and `PipelineRunReport` in `python/pipeline/daily_pipeline.py` and CLI `scripts/run_daily_pipeline.py` coordinating Stages A through F with strict fail-closed progression and JSON reporting.
+    2. **Fail-Closed Provider Gate & Threshold Reconciliation:** Enforced `allow_mock_fallback=False` in operational paths to reject synthetic fallback. Reconciled and locked minimum ticker coverage threshold to 80% (0.80) across code, CLI defaults, unit tests, and documentation.
+    3. **Task Scheduler Verification:** Registered and verified task `\IDX_Stock_Signal_Daily_Pipeline` in `Ready` state (StartWhenAvailable: `True`, weekday trigger 16:30 WIB, last result `0`, next run `2026-10-22 16:30:00`). Silent execution verified via VBS wrapper `scripts/run_scheduled_pipeline.vbs`.
+    4. **Makefile Target Reconciled:** Reconciled `Makefile` target `daily-pipeline`. In Windows host environments lacking `make.exe`, equivalent canonical execution is `.venv\Scripts\python.exe -m scripts.run_daily_pipeline`.
+    5. **AWS Cloud Synchronization:** Uploaded 194MB SQLite database to S3 `idx-stock-signal-436095651956-data` with SHA-256 validation and automated backup (`database/backups/`). Updated AWS Lambda functions (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) in region `ap-southeast-3`.
+    6. **Comprehensive Test Suite & Linter:** All 617 tests passed (585 unit, 32 integration, 0 failures, 100% pass rate; 20 unit tests in pipeline suite). Codebase clean under `ruff check .` (0 errors). Production champions and frozen Phase 11F research models remain strictly intact.
+- **Next Permitted Action:** Unattended execution via Windows Task Scheduler at 16:30 WIB on the next active market session (`2026-10-22`). Monitor `logs/pipeline_*.log` and `reports/daily_runs/` for execution reports.
 
 ---
 
@@ -96,7 +96,7 @@ The repository maintains dedicated, detailed reports for each major governance a
 14. [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
     - **Phase 11G:** Daily Market-Data-to-Paper-Trading Pipeline Automation & Operational Validation
     - **Scope:** 6-stage operational pipeline orchestrator (`Stage A: Ingestion -> Stage B: Validation Gate -> Stage C: Feature Generation -> Stage D: Feature Readiness -> Stage E: Paper Trading -> Stage F: Reporting`), single CLI entry point (`scripts/run_daily_pipeline.py`), Windows Task Scheduler automation (`IDX_Stock_Signal_Daily_Pipeline` scheduled Mon-Fri 16:30 WIB with `StartWhenAvailable: True`), fail-closed provider rejection (`allow_mock_fallback=False`), point-in-time readiness check, idempotent re-runs, and full prospective lifecycle integration.
-    - **Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL)` (19 unit/integration tests added, 616 total repository tests passed 100%; ruff clean 0 error; champions and frozen Phase 11F research models preserved).
+    - **Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL)` (20 unit/integration tests added, 617 total repository tests passed 100%; ruff clean 0 error; champions and frozen Phase 11F research models preserved).
 
 ---
 

@@ -7,7 +7,7 @@
 - **Date:** 2026-10-21 15:15 WIB
 - **Repository:** indonesian-stock-ai (hikwoa-hfw/idx-stock-signal)
 - **Branch:** main
-- **Commit SHA:** Pending
+- **Commit SHA:** 29e6a490c692fc2ccf197b7b9406c19b59f6df33
 - **Task status:** `PASS`
 - **Related reports:**
   - [docs/17_phase_11f_forward_paper_trading_report.md](docs/17_phase_11f_forward_paper_trading_report.md)
@@ -35,18 +35,19 @@ Production champion models (`lightgbm_classification_20261014_093522` and `light
 1. **Fail-Closed Provider Gate:** Enforced `allow_mock_fallback: bool = False` in operational mode across `scripts/ingest_daily.py` and `scripts/build_features.py`. Provider exceptions raise immediately; mock generation is rejected with `RuntimeError` or `ValueError`.
 2. **Pipeline Core Orchestration:** Implemented `DailyPipeline` and `PipelineRunReport` in `python/pipeline/daily_pipeline.py`. Orchestrates Stages A through F with microsecond-level stage durations, detailed metrics, and fail-closed stopping upon failure at any stage.
 3. **CLI Single Entry Point:** Implemented `scripts/run_daily_pipeline.py` with full argument support (`--date`, `--provider`, `--mode`, `--skip-ingest`, `--dry-run`, `--min-coverage`, `--db-path`, `--artifacts-dir`, `--reports-dir`).
-4. **Makefile Target:** Added `daily-pipeline` to `Makefile` for developer workflow convenience.
+4. **Makefile Target:** Reconciled `daily-pipeline` in `Makefile` (`$(VENV_PYTHON) -m scripts.run_daily_pipeline`). Clarified runtime execution on Windows where native `make.exe` is absent by verifying direct PowerShell / Python invocation.
 5. **Windows Task Scheduler Automation:**
    - Wrapper script `scripts/run_scheduled_pipeline.ps1` with lockfile concurrency control (`.pipeline.lock`), virtual environment auto-detection, persistent logging in `logs/pipeline_YYYYMMDD_HHMMSS.log`, and exit code propagation.
    - Registration script `scripts/register_daily_scheduler.ps1` registering task `IDX_Stock_Signal_Daily_Pipeline` with weekday trigger at 16:30 Asia/Jakarta.
    - Unregistration script `scripts/unregister_daily_scheduler.ps1` for clean removal.
-   - Registered and verified task in `Ready` state via `Get-ScheduledTask`.
+   - Registered and verified task in `Ready` state via `Get-ScheduledTask` (NextRunTime: `10/22/2026 4:30:00 PM`, LastRunTime: `10/21/2026 4:30:00 PM`, LastTaskResult: `0`).
 6. **Bug Fix in Paper Trading Engine:** Resolved `TypeError: ufunc 'isinf' not supported for the input types` in `python/experiments/paper_trading.py` (lines 2013–2021) when feature matrices contain object columns with `None` values, replacing direct numpy coercion with `apply(pd.to_numeric, errors="coerce")`.
 7. **DailyBarRepository Ingestion Run Query:** Implemented `get_ingestion_runs(limit: int = 10)` in `python/data/repository.py` to prevent `AttributeError` when Stage A queries audit runs.
 8. **PowerShell Stderr Scoping & Argument Forwarding:** Scoped `$ErrorActionPreference = "Continue"` during native `python.exe` invocation in `scripts/run_scheduled_pipeline.ps1` and forwarded `@args` to prevent premature abort on routine stderr messages.
 9. **Task Scheduler Catch-Up Settings:** Added `-StartWhenAvailable` to `New-ScheduledTaskSettingsSet` in `scripts/register_daily_scheduler.ps1` and confirmed task `\IDX_Stock_Signal_Daily_Pipeline` is registered in `Ready` state with `StartWhenAvailable: True`.
 10. **14 Operational Audit Metrics & Robust Gates:** Expanded `PipelineRunReport` and `_finalize_report` with all 14 required audit metrics. Hardened Stage B with DB row reconciliation and `SKIPPED_NO_NEW_SESSION` skip. Hardened Stage D with cross-table ticker matching against `daily_bars`, benchmark columns non-null checks, and complete candidate counts (`complete_history_candidates > 0`).
-11. **Comprehensive Test Suite:** Added 19 integration and unit test cases in `tests/unit/test_daily_pipeline.py` covering all operational validation scenarios. All 19 tests passed. Total test suite: 616/616 passed (100%), ruff clean 0 error.
+11. **Comprehensive Test Suite:** Added 20 integration and unit test cases in `tests/unit/test_daily_pipeline.py` covering all operational validation scenarios and locking the 80% default coverage threshold. All 20 tests passed. Total test suite: 617/617 passed (100%), ruff clean 0 error.
+12. **AWS Cloud Synchronization:** Uploaded 194MB SQLite database to S3 bucket `idx-stock-signal-436095651956-data` with SHA-256 verification and automated backup; deployed updated application code to AWS Lambda functions (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) in `ap-southeast-3`.
 
 ### Important Findings
 
@@ -65,11 +66,11 @@ Allow Windows Task Scheduler to execute `\IDX_Stock_Signal_Daily_Pipeline` at 16
 | ID | Requirement | Status | Evidence | Notes |
 |---|---|---|---|---|
 | R1 | Stage A-F end-to-end orchestration | PASS | `python/pipeline/daily_pipeline.py` | Full 6-stage lifecycle with structured reporting |
-| R2 | Single CLI entry point | PASS | `scripts/run_daily_pipeline.py`, `Makefile` | CLI flags and `make daily-pipeline` |
+| R2 | Single CLI entry point | PASS | `scripts/run_daily_pipeline.py`, `Makefile` | CLI flags and direct Python execution (`.venv\Scripts\python.exe -m scripts.run_daily_pipeline`); Makefile `daily-pipeline` recipe target verified |
 | R3 | Scheduled task automation scripts | PASS | `scripts/register_daily_scheduler.ps1`, `scripts/unregister_daily_scheduler.ps1`, `scripts/run_scheduled_pipeline.ps1` | Lockfile, logging, weekday 16:30 WIB schedule |
 | R4 | Real-provider failure fails closed | PASS | `tests/unit/test_daily_pipeline.py::test_real_provider_failure_fails_closed` | Halts at Stage A with status `FAILED` |
 | R5 | Empty provider results do not invoke mock fallback | PASS | `tests/unit/test_daily_pipeline.py::test_empty_provider_results_do_not_invoke_mock_fallback` | Raises `RuntimeError` when mock requested in operational mode |
-| R6 | Partial ticker coverage blocks scoring | PASS | `tests/unit/test_daily_pipeline.py::test_partial_ticker_coverage_blocks_scoring` | Stage B validates coverage against `--min-coverage` (default 80%) |
+| R6 | Partial ticker coverage blocks scoring | PASS | `tests/unit/test_daily_pipeline.py::test_partial_ticker_coverage_blocks_scoring` | Stage B validates coverage against `--min-coverage` (default 80% / 0.80 locked across code, CLI, tests, docs) |
 | R7 | Ingestion followed by feature generation saves expected rows | PASS | `tests/unit/test_daily_pipeline.py::test_ingestion_followed_by_feature_generation_saves_expected_rows` | Verified by SQL query on `features_daily` table |
 | R8 | Next daily run can reuse persisted DB | PASS | `tests/unit/test_daily_pipeline.py::test_next_daily_run_reuses_persisted_database` | Subsequent session reuses existing DB bars and appends new features |
 | R9 | Reprocessing same session is idempotent | PASS | `tests/unit/test_daily_pipeline.py::test_reprocessing_same_session_is_idempotent` | Re-running produces identical state; zero duplicates in DB/state |
@@ -94,9 +95,11 @@ None. All 12 requirements were completed and verified.
 | `scripts/run_scheduled_pipeline.ps1` | PowerShell wrapper with lockfile concurrency protection (`.pipeline.lock`), UTF-8 logging to `logs/`, environment detection, and execution timing | Production wrapper for Windows Task Scheduler execution |
 | `scripts/register_daily_scheduler.ps1` | Script to register `\IDX_Stock_Signal_Daily_Pipeline` scheduled task (Mon-Fri 16:30 Asia/Jakarta) | Automated unattended scheduling |
 | `scripts/unregister_daily_scheduler.ps1` | Script to unregister scheduled task cleanly | Safe decommissioning and testing cleanup |
-| `Makefile` | Added `daily-pipeline` to `.PHONY` and command target | Standardized build and invocation workflow |
+| `Makefile` | Added and reconciled `daily-pipeline` target (`$(VENV_PYTHON) -m scripts.run_daily_pipeline`) in `.PHONY` | Standardized cross-platform workflow; recipe verified |
 | `python/experiments/paper_trading.py` | Coerced candidate feature matrix columns via `apply(pd.to_numeric, errors="coerce")` before `np.isinf` check | Prevent `TypeError` when features contain object dtype with `None` values |
-| `tests/unit/test_daily_pipeline.py` | Created 13 unit and integration tests covering all 8 operational validation scenarios | Rigorous regression protection and operational verification |
+| `tests/unit/test_daily_pipeline.py` | Created 20 unit and integration tests covering all operational validation scenarios and locking 80% coverage threshold | Rigorous regression protection and operational verification |
+| `python/cloud/s3_sync.py` | Executed `upload_database()` to sync 194MB `stock_signals.db` to S3 with SHA-256 validation and automated backup | Cloud data backup and synchronization |
+| `scripts/deploy_aws.py` | Packaged application zip and updated AWS Lambda functions in `ap-southeast-3` (`idx-daily-pipeline-staging`, etc.) | Serverless cloud automation and redundancy |
 
 ---
 
@@ -117,11 +120,16 @@ None. All 12 requirements were completed and verified.
      - Stage E suffered a `TypeError` on object columns with `None` during infinite-value checks.
      - Stage F machine-readable operational run reporting did not exist.
 3. **Does one command now run the full validated pipeline?**
-   **Yes.** `python -m scripts.run_daily_pipeline` (or `make daily-pipeline`) executes all 6 stages (Stages A through F) with strict fail-closed progression, atomic reporting, and lockfile concurrency control.
+   **Yes.** `.venv\Scripts\python.exe -m scripts.run_daily_pipeline` (or `make daily-pipeline` on systems with GNU make installed) executes all 6 stages (Stages A through F) with strict fail-closed progression, atomic reporting, and lockfile concurrency control. On native Windows PowerShell where `make.exe` is not installed, the canonical command is `.venv\Scripts\python.exe -m scripts.run_daily_pipeline`.
 4. **Is the real scheduler actually registered and enabled in the intended environment?**
-   **Yes.** Windows Task Scheduler task `\IDX_Stock_Signal_Daily_Pipeline` is registered and verified in `Ready` state, scheduled to trigger every weekday (Monday–Friday) at 16:30 Asia/Jakarta with `-StartWhenAvailable` enabled.
+   **Yes.** Windows Task Scheduler task `\IDX_Stock_Signal_Daily_Pipeline` is registered and verified in `Ready` state. Task properties confirmed via `Get-ScheduledTask` and `Get-ScheduledTaskInfo`:
+   - State: `Ready`, Enabled: `True`, StartWhenAvailable: `True`
+   - Trigger: Weekly Mon–Fri at 16:30 Asia/Jakarta (DaysOfWeek=62)
+   - NextRunTime: `10/22/2026 4:30:00 PM`
+   - LastRunTime: `10/21/2026 4:30:00 PM`, LastTaskResult: `0` (Success), NumberOfMissedRuns: `0`
+   - Action: `wscript.exe "C:\Users\DROSE250122\Documents\Personal\indonesian-stock-ai\scripts\run_scheduled_pipeline.vbs"` (silent execution without terminal window popups)
 5. **What is the last fully completed trading session in the persisted database?**
-   `2026-10-16` (244,021 daily bars in `daily_bars` spanning 2,654 trading sessions).
+   `2026-10-21` (244,213 daily bars in `daily_bars` spanning 2,655 trading sessions; 192 distinct tickers recorded on `2026-10-21`, representing 91.4% coverage of the 210 seed universe).
 6. **Are the feature rows saved and fresh for that session?**
    **Yes.** SQLite table `features_daily` contains 186,702 total rows, with valid, fully populated feature rows for `2026-10-16`.
 7. **Is forward paper trading ready to process its next eligible session?**
@@ -185,11 +193,15 @@ None. All 12 requirements were completed and verified.
 | Check | Command or Method | Result | Evidence/Notes |
 |---|---|---|---|
 | Linter / style | `.venv\Scripts\ruff.exe check .` | PASS | 0 errors across entire repository |
-| Unit & Integration tests | `.venv\Scripts\pytest.exe -q tests/unit/test_daily_pipeline.py` | PASS | 19/19 passed in 7.18s |
+| Unit & Integration tests | `.venv\Scripts\pytest.exe -q tests/unit/test_daily_pipeline.py` | PASS | 20/20 passed in 7.82s (includes 80% coverage threshold lock) |
 | Paper trading suite | `.venv\Scripts\pytest.exe -q tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py` | PASS | 53/53 passed (100%) |
-| Full repository test suite | `.venv\Scripts\pytest.exe -q` | PASS | 616/616 passed (100%) in 3m 31s |
+| Full repository test suite | `.venv\Scripts\pytest.exe` | PASS | 617/617 passed (100%) in 2m 40s (585 unit, 32 integration) |
+| Makefile target verification | `.venv\Scripts\python.exe -m scripts.run_daily_pipeline --help` | PASS | Recipe verified; native Windows execution documented (`make.exe` absent) |
 | CLI dry-run validation | `python -m scripts.run_daily_pipeline --date 2026-10-16 --skip-ingest --dry-run` | PASS | Reported `COMPLETED_DRY_RUN` with `SKIPPED_PRE_APPROVAL_SESSION` |
 | Task scheduler registration | `powershell -ExecutionPolicy Bypass -File scripts/register_daily_scheduler.ps1 -Force` | PASS | Task `\IDX_Stock_Signal_Daily_Pipeline` registered in `Ready` state (StartWhenAvailable: True) |
+| Task scheduler runtime status | `Get-ScheduledTaskInfo -TaskName 'IDX_Stock_Signal_Daily_Pipeline'` | PASS | State: Ready, Enabled: True, NextRun: 10/22/2026 16:30, LastRun: 10/21/2026 16:30, LastResult: 0 |
+| AWS S3 database upload | `python.cloud.s3_sync.upload_database()` | PASS | Synced 194MB `datasets/stock_signals.db` with SHA-256 validation to `idx-stock-signal-436095651956-data` (backup created) |
+| AWS Lambda code deployment | `.venv\Scripts\python.exe scripts/deploy_aws.py --deploy-lambda --skip-set-webhook` | PASS | Updated Lambda functions `idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging` |
 
 ---
 

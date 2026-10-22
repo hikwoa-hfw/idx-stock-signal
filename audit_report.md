@@ -6,7 +6,7 @@
 - **Audit Date:** `2026-10-22 13:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** `153c829e62604958634fcce65ffc290daedacb94` (AWS Runtime Verification: Verified ap-southeast-3 resources; identified missing Lambda ML dependencies and fail-open signal replay in handlers.py; local Windows Task Scheduler confirmed as sole active operational pipeline)
+- **Latest Commit SHA:** `8e6a33bb58be03c3917454f0a2ba1a3f1246ff62` (AWS Runtime Verification: Verified ap-southeast-3 resources; identified missing Lambda ML dependencies and fail-open signal replay in handlers.py; local Windows Task Scheduler confirmed as sole active operational pipeline)
 - **Overall Status:** `PASS (LOCAL_OPERATIONAL_AUTOMATED_PIPELINE) / AWS_AUTOMATION_FAILED`
 - **Detailed Validation Reports:**
   - Local Operational Pipeline: [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)

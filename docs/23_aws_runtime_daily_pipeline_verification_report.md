@@ -7,7 +7,7 @@
 - **Date:** 2026-10-22 13:30 WIB
 - **Repository:** indonesian-stock-ai (hikwoa-hfw/idx-stock-signal)
 - **Branch:** main
-- **Commit SHA:** 153c829e62604958634fcce65ffc290daedacb94
+- **Commit SHA:** `8e6a33bb58be03c3917454f0a2ba1a3f1246ff62`
 - **Task status:** `PASS_WITH_ISSUES`
 - **Related reports:**
   - [docs/17_phase_11f_forward_paper_trading_report.md](docs/17_phase_11f_forward_paper_trading_report.md)

@@ -46,7 +46,7 @@ class TelegramBotDispatcher:
         command = parts[0].lower().split("@")[0]  # strip bot handle e.g. /daily@stockbot
         args = parts[1:]
 
-        if command in ("/start", "/help"):
+        if command in ("/start", "/help", "/menu", "/"):
             return self.handle_help()
         elif command == "/daily":
             return self.handle_daily(args)
@@ -77,6 +77,7 @@ class TelegramBotDispatcher:
         return (
             "🤖 *BEI Daily Stock Signal Bot*\n\n"
             "Available commands:\n"
+            "• `/menu` or `/help` — Display command menu and instructions\n"
             "• `/daily` — Latest ranked daily buy signals\n"
             "• `/signals [N]` — Recent trading signal IDs and summary\n"
             "• `/status` — Pipeline & paper trading observation status\n"

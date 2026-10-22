@@ -1094,3 +1094,12 @@ Log Perubahan Tambahan (22 Oktober 2026)
       - Mengintegrasikan registrasi otomatis perintah bot pada skrip deployment AWS `scripts/deploy_aws.py`.
       - Menambahkan 5 unit tests komprehensif pada `tests/unit/test_telegram.py` (total 33 unit tests telegram passed).
    4. Merekonsiliasi hitungan test: 616 (state pada entri 70), 617 (setelah penambahan test pengunci threshold pada entri 71), dan 625 (setelah penambahan 3 regression tests pipeline dan 5 bot command tests: 593 unit tests, 32 integration tests, 100% kelulusan, ruff 0 error).
+73. Phase 11G — Perbaikan Direct Execution CLI set_telegram_commands, Penyelarasan Default Threshold pada Test Suite, dan Penambahan Routing '/' & '/menu'
+   Masalah:
+   1. Script `scripts/set_telegram_commands.py` mengalami `ModuleNotFoundError: No module named 'python'` ketika dieksekusi secara langsung (`python scripts/set_telegram_commands.py`) karena belum menyisipkan project root ke `sys.path`.
+   2. Unit test `test_partial_ticker_coverage_blocks_scoring` pada `tests/unit/test_daily_pipeline.py` masih secara manual menggunakan parameter `min_ticker_coverage=0.50` alih-alih menguji default locked threshold `0.80`.
+   3. Dispatcher bot Telegram (`TelegramBotDispatcher.dispatch`) merespons dengan pesan `Unknown command /` jika pengguna mengirimkan karakter `/` atau `/menu` langsung dalam pesan obrolan.
+   Solusi:
+   1. Menambahkan `sys.path.insert(0, str(Path(__file__).resolve().parent.parent))` pada `scripts/set_telegram_commands.py` sehingga dapat dieksekusi langsung tanpa error import (terverifikasi dengan `--dry-run` dan `--botfather`).
+   2. Menghapus hardcode `0.50` pada `test_partial_ticker_coverage_blocks_scoring` dan meng-assert bahwa default threshold adalah `0.80` secara konsisten di seluruh pipeline dan test suite.
+   3. Menambahkan routing `/` dan `/menu` ke `handle_help()` pada `TelegramBotDispatcher.dispatch`, menambahkan perintah `menu` ke `DEFAULT_BOT_COMMANDS`, serta menambahkan unit test pendukung pada `tests/unit/test_telegram.py`. Seluruh 625 test passed (100%), ruff clean 0 error.

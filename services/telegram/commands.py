@@ -18,6 +18,10 @@ DEFAULT_BOT_COMMANDS: list[dict[str, str]] = [
         "description": "Start the bot & display welcome instructions",
     },
     {
+        "command": "menu",
+        "description": "Display command menu and options",
+    },
+    {
         "command": "help",
         "description": "Display command list and usage guide",
     },

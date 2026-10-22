@@ -138,8 +138,8 @@ def test_partial_ticker_coverage_blocks_scoring(tmp_path: Path) -> None:
         db_url=f"sqlite:///{db_path.as_posix()}",
         artifacts_dir=artifacts_dir,
         reports_dir=reports_dir,
-        min_ticker_coverage=0.50,
     )
+    assert pipeline.min_ticker_coverage == 0.80
 
     report = pipeline.run(skip_ingest=True, target_date=sess_date)
     assert report.overall_status == "FAILED"

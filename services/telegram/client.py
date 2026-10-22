@@ -9,7 +9,10 @@ from typing import Any, Optional, Sequence
 
 from python.common.types import SignalRecord
 from python.config.settings import settings
-from services.telegram.commands import DEFAULT_BOT_COMMANDS, validate_bot_commands
+from services.telegram.commands import (
+    get_bot_commands,
+    validate_bot_commands,
+)
 from services.telegram.formatter import format_daily_signals
 
 logger = logging.getLogger(__name__)
@@ -356,7 +359,7 @@ class TelegramClient:
         valid_commands = (
             validate_bot_commands(commands)
             if commands is not None
-            else list(DEFAULT_BOT_COMMANDS)
+            else get_bot_commands()
         )
 
         endpoint = f"{self.base_url}/bot{self.bot_token}/setMyCommands"

@@ -548,6 +548,7 @@ def test_telegram_commands_definition_and_validation():
     cmd_names = [c["command"] for c in cmds]
     assert "start" in cmd_names
     assert "help" in cmd_names
+    assert "menu" in cmd_names
     assert "daily" in cmd_names
     assert "signals" in cmd_names
     assert "status" in cmd_names
@@ -635,4 +636,15 @@ def test_bot_dispatcher_handles_status_pipeline_portfolio(tmp_path):
     # Portfolio delegates to positions
     port_out = dispatcher.dispatch("/portfolio")
     assert "positions" in port_out.lower() or "journal" in port_out.lower()
+
+    # Typing '/' directly renders interactive command menu
+    slash_out = dispatcher.dispatch("/")
+    assert "Available commands:" in slash_out
+    assert "/daily" in slash_out
+    assert "/status" in slash_out
+
+    # Typing '/menu' displays available options
+    menu_out = dispatcher.dispatch("/menu")
+    assert "Available commands:" in menu_out
+    assert "/pipeline" in menu_out
 

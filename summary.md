@@ -1136,3 +1136,42 @@ Log Perubahan Tambahan (22 Oktober 2026)
    1. Mengeksekusi verifikasi akun via `sts.get_caller_identity` (terkonfirmasi Akun `436095651956`).
    2. Memanggil `events.disable_rule(Name='idx-daily-pipeline-schedule-staging')` pada region `ap-southeast-3`.
    3. Memverifikasi status akhir jadwal via `events.describe_rule`: terkonfirmasi `State: DISABLED`. Jadwal otomatis di AWS telah dinonaktifkan sepenuhnya.
+
+76. AWS Daily Signal Pipeline — Remediasi Fail-Open dan Deployment ML Layer Staging (22 Oktober 2026)
+   Masalah:
+   1. Handler `python/cloud/handlers.py` memiliki perilaku fail-open di mana ketiadaan dependensi data/ML menyetel import menjadi `None`, melewati ingestion (`bars_ingested = 0`) dan scoring, lalu fallback membaca sinyal usang dari SQLite (`distinct_dates[-1]`, `2026-10-16`) dan menyiarkannya ke Telegram dengan status buatan `SUCCESS`.
+   2. Fungsi AWS Lambda staging (`idx-daily-pipeline-staging`) kekurangan layer dependensi data/ML (`pandas`, `numpy`, `scipy`, `scikit-learn`, `lightgbm`, `joblib`, `yfinance`) karena paket zip hanya berisi kode aplikasi 322 KB.
+   3. LightGBM pada runtime AWS Lambda Python 3.12 (Amazon Linux 2023) membutuhkan OpenMP runtime library `libgomp.so.1` yang tidak terinstal secara default pada image minimal Lambda.
+   4. Skrip deploy `scripts/deploy_aws.py` belum mendukung pemasangan Lambda Layer dan secara default mengaktifkan EventBridge rule (`State: ENABLED`), yang berisiko mengaktifkan kembali jadwal staging sebelum validasi tuntas.
+   5. Perlunya membuktikan secara runtime bahwa sinyal usang mustahil disiarkan jika ada kegagalan pada tahap upstream, dan bahwa seluruh pipeline (ingestion, feature, model scoring) berhasil dieksekusi dengan dependensi ML terpasang.
+   6. Bug upload log kegagalan S3: resolusi `s3_bucket` di dalam blok `try` dan pembacaan `event.get("s3_bucket")` pada blok `except` menyebabkan kegagalan log S3 jika bucket dikonfigurasi melalui environment variable (`S3_BUCKET`).
+   7. Flag pelaporan status: `telegram_delivery` dan `database_upload` bernilai `True` saat diskip (`SKIPPED`), berpotensi menyesatkan audit operasional.
+   Solusi:
+   1. Memperbaiki logika fail-closed pada `python/cloud/handlers.py`:
+      - Menambahkan dependency guard di awal handler (`run_ingest`, `FeatureEngine`, `SignalEngine`); memicu `RuntimeError` jika dependensi gagal dimuat.
+      - Menambahkan ingestion & coverage gate: wajib menghasilkan bar segar dan memenuhi batas minimum cakupan ticker 80% (`min_ticker_coverage`).
+      - Menghapus secara permanen logika fallback sinyal historis (`lookup_date = distinct_dates[-1]`).
+      - Memisahkan pelaporan status tahapan (`ingestion_success`, `feature_success`, `scoring_success`, `telegram_delivery`, `database_upload`, serta dict `stages`).
+      - Memperbaiki akuntansi boolean: saat diskip, `telegram_delivery = False` dan `database_upload = False`.
+      - Memperbaiki upload log kegagalan ke S3 berstatus `FAILED` dengan mengangkat resolusi `s3_bucket` ke luar `try` dan menggunakan variabel `s3_bucket` di blok `except`.
+      - Menambahkan pesan log sukses ke CloudWatch log stream.
+      - Menambahkan 7 unit regression tests pada `tests/unit/test_fail_closed_pipeline.py` (seluruh 7 test passed 100%).
+   2. Membangun dan mempublikasikan Lambda Layer mandiri `scripts/build_lambda_layer.py`:
+      - Mengunduh wheel manylinux cp312 untuk `pandas`, `numpy`, `scipy`, `scikit-learn`, `lightgbm`, `joblib`, `yfinance<1.0.0`, dan `pydantic`.
+      - Melakukan pruning direktori test, cache, Cython sources, dan dokumentasi, dengan tetap mempertahankan modul fungsional `numpy/testing`.
+      - Membundel pustaka OpenMP `libgomp.so.1` (dari `scikit_learn.libs`) ke dalam folder `/opt/lib` layer sehingga dikenali oleh dynamic linker `ld.so`.
+      - Ukuran uncompressed layer: 246.6 MB (di bawah batas absolut AWS 250 MB); ukuran zip: 79.5 MB.
+      - Mempublikasikan layer version ke AWS: `arn:aws:lambda:ap-southeast-3:436095651956:layer:idx-ml-dependencies-staging:3`.
+   3. Memperbarui infrastruktur dan deployment script:
+      - `infra/aws/template.yaml`: Menambahkan resource `MlDependenciesLayer`, menyematkannya pada `DailyPipelineFunction` dan `RetrainingPipelineFunction`, serta menambahkan parameter `ScheduleEnabled: false`.
+      - `scripts/deploy_aws.py`: Menambahkan parameter `--layer-arn` dengan resolusi otomatis, opsi `--schedule-state` (default `PRESERVE` untuk menjaga status `DISABLED`), serta mengonfigurasi `PYTHONPATH` dan `LD_LIBRARY_PATH`.
+   4. Melakukan deploy dan Controlled Runtime Verification pada `idx-daily-pipeline-staging`:
+      - Uji Negatif (Coverage < 80%): Mock ingestion 5/208 ticker (cakupan 2.4%) menghasilkan HTTP 500 `FAILED` dengan pesan `Insufficient ticker coverage for 2026-10-22: 2.4% < 80.0%`. Terbukti fail-closed dan log kegagalan terverifikasi diunggah ke S3 (`logs/daily_pipeline_2026-10-22_...`).
+      - Uji Positif End-to-End (Coverage 100%): Ingestion 5 universe tickers menghasilkan HTTP 200 `SUCCESS` dengan 50 bar segar, 4,520 fitur, 5 sinyal baru berbasis model LightGBM hari ini (`2026-10-22`), durasi eksekusi 4.43 detik, dan memory 613-1031 MB.
+   5. Menjaga Invarian Sistem:
+      - Rule EventBridge `idx-daily-pipeline-schedule-staging` terverifikasi tetap `DISABLED`.
+      - Task Scheduler lokal Windows `\IDX_Stock_Signal_Daily_Pipeline` terverifikasi `Ready` dan tidak disentuh.
+      - Seluruh model champion produksi dan model riset Phase 11F serta `paper_trading_state.json` tetap utuh tanpa perubahan.
+      - Seluruh 632 test di repositori passed (100%), ruff clean 0 error.
+
+

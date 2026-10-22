@@ -68,6 +68,7 @@ logs/
 *.log
 tmp/
 temp/
+artifacts/layers/
 
 # OS & Editor
 .DS_Store

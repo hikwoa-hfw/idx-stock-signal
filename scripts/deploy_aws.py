@@ -268,13 +268,16 @@ def deploy_lambda_function(
     role_arn: str,
     zip_bytes: bytes,
     env_vars: dict[str, str],
+    layers: Optional[list[str]] = None,
     timeout: int = 300,
     memory_size: int = 1536,
     dry_run: bool = False,
 ) -> str:
     if dry_run:
+        layer_str = f" with {len(layers)} layer(s)" if layers else ""
         sys.stdout.write(
-            f"[DRY-RUN] Deploy Lambda '{function_name}' ({handler}, {memory_size}MB, {timeout}s)\n"
+            f"[DRY-RUN] Deploy Lambda '{function_name}' "
+            f"({handler}, {memory_size}MB, {timeout}s){layer_str}\n"
         )
         return f"arn:aws:lambda:ap-southeast-3:436095651956:function:{function_name}"
 
@@ -305,17 +308,20 @@ def deploy_lambda_function(
             pass
 
         sys.stdout.write(f"[deploy_aws] Updating configuration for {function_name}...\n")
+        config_kwargs: dict[str, Any] = {
+            "FunctionName": function_name,
+            "Handler": handler,
+            "Role": role_arn,
+            "Timeout": timeout,
+            "MemorySize": memory_size,
+            "Environment": {"Variables": env_vars},
+        }
+        if layers is not None:
+            config_kwargs["Layers"] = layers
         resp = None
         for attempt in range(6):
             try:
-                resp = lambda_client.update_function_configuration(
-                    FunctionName=function_name,
-                    Handler=handler,
-                    Role=role_arn,
-                    Timeout=timeout,
-                    MemorySize=memory_size,
-                    Environment={"Variables": env_vars},
-                )
+                resp = lambda_client.update_function_configuration(**config_kwargs)
                 break
             except ClientError as exc:
                 code = exc.response.get("Error", {}).get("Code")
@@ -328,20 +334,23 @@ def deploy_lambda_function(
         sys.stdout.write(f"[deploy_aws] Creating new Lambda function: {function_name}...\n")
         func_arn = None
         max_retries = 6
+        create_kwargs: dict[str, Any] = {
+            "FunctionName": function_name,
+            "Runtime": "python3.12",
+            "Role": role_arn,
+            "Handler": handler,
+            "Code": {"ZipFile": zip_bytes},
+            "Timeout": timeout,
+            "MemorySize": memory_size,
+            "Environment": {"Variables": env_vars},
+            "EphemeralStorage": {"Size": 1024},
+            "Description": "Serverless pipeline function for BEI Stock Signal AI",
+        }
+        if layers is not None:
+            create_kwargs["Layers"] = layers
         for attempt in range(max_retries):
             try:
-                resp = lambda_client.create_function(
-                    FunctionName=function_name,
-                    Runtime="python3.12",
-                    Role=role_arn,
-                    Handler=handler,
-                    Code={"ZipFile": zip_bytes},
-                    Timeout=timeout,
-                    MemorySize=memory_size,
-                    Environment={"Variables": env_vars},
-                    EphemeralStorage={"Size": 1024},
-                    Description="Serverless pipeline function for BEI Stock Signal AI",
-                )
+                resp = lambda_client.create_function(**create_kwargs)
                 func_arn = resp["FunctionArn"]
                 break
             except ClientError as exc:
@@ -368,20 +377,36 @@ def setup_eventbridge_schedule(
     schedule_cron: str,
     lambda_arn: str,
     function_name: str,
+    state: Optional[str] = None,
     dry_run: bool = False,
 ) -> None:
+    target_state = (state or "PRESERVE").strip().upper()
+    if target_state == "PRESERVE":
+        try:
+            rule_info = events_client.describe_rule(Name=rule_name)
+            target_state = rule_info.get("State", "DISABLED")
+            sys.stdout.write(f"[deploy_aws] Preserving existing schedule state: {target_state}\n")
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in ("ResourceNotFoundException", "404"):
+                target_state = "DISABLED"
+            else:
+                raise
+
     if dry_run:
         sys.stdout.write(
-            f"[DRY-RUN] Setup EventBridge rule '{rule_name}' -> "
+            f"[DRY-RUN] Setup EventBridge rule '{rule_name}' ({target_state}) -> "
             f"'{schedule_cron}' target {lambda_arn}\n"
         )
         return
 
-    sys.stdout.write(f"[deploy_aws] Configuring EventBridge schedule: {rule_name}...\n")
+    sys.stdout.write(
+        f"[deploy_aws] Configuring EventBridge schedule: {rule_name} (State: {target_state})...\n"
+    )
     rule_resp = events_client.put_rule(
         Name=rule_name,
         ScheduleExpression=schedule_cron,
-        State="ENABLED",
+        State=target_state,
         Description="Trigger daily stock signal pipeline Mon-Fri at 16:30 WIB",
     )
     rule_arn = rule_resp["RuleArn"]
@@ -455,9 +480,11 @@ def ensure_billing_alarm(
 def invoke_lambda_dry_run(
     lambda_client: Any,
     function_name: str,
+    payload_dict: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     sys.stdout.write(f"[deploy_aws] Invoking Lambda '{function_name}' in test dry-run mode...\n")
-    payload = json.dumps({"dry_run": True, "skip_telegram": True, "skip_s3_upload": True})
+    data = payload_dict or {"dry_run": True, "skip_telegram": True, "skip_s3_upload": True}
+    payload = json.dumps(data)
     resp = lambda_client.invoke(
         FunctionName=function_name,
         InvocationType="RequestResponse",
@@ -761,6 +788,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         default=DEFAULT_ROLE_NAME,
         help="IAM role name for Lambda functions.",
     )
+    parser.add_argument(
+        "--layer-arn",
+        default=None,
+        help=(
+            "Lambda Layer ARN containing ML dependencies. "
+            "If not specified, resolves idx-ml-dependencies-{stage}."
+        ),
+    )
+    parser.add_argument(
+        "--schedule-state",
+        choices=["ENABLED", "DISABLED", "PRESERVE"],
+        default="PRESERVE",
+        help="EventBridge schedule state (default: PRESERVE).",
+    )
 
     args = parser.parse_args(argv)
 
@@ -828,6 +869,31 @@ def main(argv: Optional[list[str]] = None) -> int:
             zip_bytes = build_lambda_zip()
             sys.stdout.write(f"[deploy_aws] Zip package built: {len(zip_bytes) / 1024:.1f} KB\n")
 
+            # Resolve ML dependencies layer
+            ml_layer_arn = args.layer_arn
+            if not ml_layer_arn:
+                target_layer_name = f"idx-ml-dependencies-{stage_name}"
+                try:
+                    layer_resp = lambda_client.list_layer_versions(
+                        LayerName=target_layer_name,
+                        MaxItems=1,
+                    )
+                    versions = layer_resp.get("LayerVersions", [])
+                    if versions:
+                        ml_layer_arn = versions[0]["LayerVersionArn"]
+                except Exception as l_err:
+                    sys.stdout.write(
+                        f"[deploy_aws] Note resolving layer {target_layer_name}: {l_err}\n"
+                    )
+
+            pipeline_layers = [ml_layer_arn] if ml_layer_arn else None
+            if pipeline_layers:
+                sys.stdout.write(f"[deploy_aws] Attaching ML dependencies layer: {ml_layer_arn}\n")
+            else:
+                sys.stdout.write(
+                    f"[deploy_aws] Notice: No ML layer found for stage {stage_name}.\n"
+                )
+
             tg_tok = os.getenv("TELEGRAM_BOT_TOKEN") or settings.telegram_bot_token or ""
             tg_chat = os.getenv("TELEGRAM_CHAT_ID") or settings.telegram_chat_id or ""
             env_vars = {
@@ -838,7 +904,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "MARKET_DATA_PROVIDER": "yfinance",
                 "DATABASE_URL": "sqlite:////tmp/stock_signals.db",
                 "MODEL_REGISTRY_PATH": "/tmp/models",
-                "PYTHONPATH": ".",
+                "PYTHONPATH": "/var/task:/opt/python:/opt/python/lib/python3.12/site-packages:.",
+                "LD_LIBRARY_PATH": "/opt/lib:/var/task",
             }
 
             daily_arn = deploy_lambda_function(
@@ -848,6 +915,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 role_arn=role_arn,
                 zip_bytes=zip_bytes,
                 env_vars=env_vars,
+                layers=pipeline_layers,
                 timeout=300,
                 memory_size=1536,
                 dry_run=args.dry_run,
@@ -860,6 +928,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 role_arn=role_arn,
                 zip_bytes=zip_bytes,
                 env_vars=env_vars,
+                layers=pipeline_layers,
                 timeout=600,
                 memory_size=2048,
                 dry_run=args.dry_run,
@@ -872,6 +941,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 schedule_cron=SCHEDULE_CRON,
                 lambda_arn=daily_arn,
                 function_name=daily_func,
+                state=args.schedule_state,
                 dry_run=args.dry_run,
             )
 

@@ -41,6 +41,9 @@ def run_ingest(
         [t.strip().upper().removesuffix(".JK") for t in tickers if t.strip()] if tickers else None
     )
 
+    today = date.today()
+    mock_base_date = end_date or today
+
     # Provider instantiation
     if selected_provider in ("local_csv", "csv"):
         has_csv = raw_dir.is_dir() and any(raw_dir.glob("*.csv"))
@@ -53,7 +56,9 @@ def run_ingest(
             sys.stderr.write(
                 f"[ingest_daily] No CSV files found in {raw_dir}. Falling back to mock provider.\n"
             )
-            provider = MockMarketDataProvider(days=days, universe=cleaned_tickers)
+            provider = MockMarketDataProvider(
+                days=days, universe=cleaned_tickers, base_date=mock_base_date
+            )
             selected_provider = "mock"
         else:
             provider = CSVMarketDataProvider(data_dir=raw_dir)
@@ -63,7 +68,9 @@ def run_ingest(
                 "[ingest_daily] Mock/synthetic provider forbidden when mock fallback is disabled. "
                 "Fail-closed in operational mode."
             )
-        provider = MockMarketDataProvider(days=days, universe=cleaned_tickers)
+        provider = MockMarketDataProvider(
+            days=days, universe=cleaned_tickers, base_date=mock_base_date
+        )
     elif selected_provider in ("yfinance", "yf"):
         provider = YFinanceMarketDataProvider(
             universe=cleaned_tickers,

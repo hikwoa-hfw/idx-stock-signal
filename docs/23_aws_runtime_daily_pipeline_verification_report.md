@@ -308,3 +308,46 @@ To reproduce these findings using read-only boto3 queries:
 - **Known limitations:** Operational paper trading is currently supported **only** locally via Windows Task Scheduler.
 - **Next action:** Disable EventBridge rule `idx-daily-pipeline-schedule-staging` to prevent redundant daily re-broadcasting of stale 2026-10-16 signals to Telegram, until a containerized Lambda image (using `infra/aws/Dockerfile`) or a Lambda Layer with ML dependencies is deployed.
 - **Approval required before proceeding:** Yes, operator decision required on whether to disable the staging EventBridge rule or build a containerized Lambda image.
+
+---
+
+## 12. Fail-Open Remediation & Layer Deployment Verification (22 Oktober 2026)
+
+### 12.1 Priority 1 — Containment Verification
+- **EventBridge Schedule:** Verified `idx-daily-pipeline-schedule-staging` is `DISABLED` in `ap-southeast-3` (`arn:aws:events:ap-southeast-3:436095651956:rule/idx-daily-pipeline-schedule-staging`).
+- **Windows Task Scheduler:** Verified `\IDX_Stock_Signal_Daily_Pipeline` remains intact, `Ready`, and scheduled for 16:30 WIB on the host. Local Phase 11F paper-trading automation was untouched.
+
+### 12.2 Priority 2 — Fail-Closed Correction in `handlers.py`
+- **Dependency Guard:** Added explicit check verifying `run_ingest`, `FeatureEngine`, and `SignalEngine` are loaded; raises `RuntimeError` on missing dependencies.
+- **Ingestion & Coverage Gates:** Enforced non-zero bars and locked 80% minimum ticker coverage (`min_ticker_coverage`). Coverage $<80\%$ terminates with explicit failure.
+- **Feature & Scoring Gates:** Enforced feature non-zero counts and current-date signals check.
+- **Stale Fallback Removal:** Completely excised the historical fallback query (`lookup_date = distinct_dates[-1]`). Downstream Telegram signal broadcast is impossible on upstream failure.
+- **Status Accounting & S3 Failure Logging:** Separated stage records: `ingestion_success`, `feature_success`, `scoring_success`, `telegram_delivery`, `database_upload`, and detailed `stages` dict. Fixed accounting flags so `telegram_delivery = False` and `database_upload = False` when skipped. Lifted `s3_bucket` definition to outer scope so failure logs are reliably uploaded to S3 even when invoked with empty event payload (`S3_BUCKET` from environment).
+- **Regression Tests:** Added 7 comprehensive unit tests in `tests/unit/test_fail_closed_pipeline.py` covering missing dependencies, provider failures, 0 bars, low coverage, feature errors, scoring errors, stale signal suppression, and env-var S3 bucket failure logging. All 7 passed.
+
+### 12.3 Priority 3 — Deployment Packaging & Lambda Layer
+- **Layer Construction (`scripts/build_lambda_layer.py`):**
+  - Downloaded Python 3.12 manylinux wheels for `pandas`, `numpy`, `scipy`, `scikit-learn`, `lightgbm`, `joblib`, `yfinance<1.0.0`, `pydantic`.
+  - Pruned test suites (`tests/`, `test/`), cache (`__pycache__/`), Cython source (`.h`, `.pyx`, `.c`), and docs (`.md`, `.rst`, `.ipynb`), while strictly preserving `numpy/testing`.
+  - Bundled OpenMP runtime `libgomp.so.1` (from `scikit_learn.libs`) into `/opt/lib` for LightGBM compatibility in Amazon Linux 2023.
+  - Layer metrics: Uncompressed size 246.6 MB (under strict 250 MB limit); compressed zip 79.5 MB.
+  - Published AWS Layer Version: `arn:aws:lambda:ap-southeast-3:436095651956:layer:idx-ml-dependencies-staging:3`.
+- **Infrastructure & Deploy Scripts:**
+  - `infra/aws/template.yaml`: Added `MlDependenciesLayer` and attached to `DailyPipelineFunction` and `RetrainingPipelineFunction`. Added `ScheduleEnabled: false` parameter.
+  - `scripts/deploy_aws.py`: Added `--layer-arn` support with automatic resolution, `schedule-state` preservation (`PRESERVE`), and configured `PYTHONPATH` (`/var/task:/opt/python:...`) and `LD_LIBRARY_PATH` (`/opt/lib:/var/task`).
+
+### 12.4 Priority 4 — Runtime Verification on Staging Lambda
+- **Deployment:** Deployed updated application code and attached layer version 3 to `idx-daily-pipeline-staging` and `idx-retraining-pipeline-staging`. EventBridge rule remained `DISABLED`.
+- **Controlled Test Invocations:**
+  1. *Negative Test (Low Coverage Fail-Closed):* Mock run with 5/208 tickers (2.4% coverage $< 80\%$) returned HTTP 500 `FAILED` with `RuntimeError: Insufficient ticker coverage for 2026-10-22: 2.4% < 80.0%`. Stale signals were NOT broadcasted. S3 failure log `logs/daily_pipeline_2026-10-22_20261022_090324.json` was verified uploaded to S3 bucket `idx-stock-signal-436095651956-data`.
+  2. *Positive End-to-End Test (Full Universe Coverage):* Mock run with 5 universe tickers (100% coverage) returned HTTP 200 `SUCCESS`:
+     - `ingestion_success`: `True` (50 fresh bars ingested for 2026-10-22).
+     - `feature_success`: `True` (4,520 features computed).
+     - `scoring_success`: `True` (5 fresh signals generated via LightGBM model).
+     - `telegram_delivery`: `False` (status `SKIPPED` in dry-run).
+     - `database_upload`: `False` (status `SKIPPED` in dry-run).
+     - CloudWatch execution duration: 4.43 - 5.09 seconds, Memory: 613 - 1031 MB.
+- **Repository Test Suite:** All 632 tests passed (100% pass rate), `ruff check .` clean (0 errors).
+- **Integrity Invariant:** Phase 11F frozen research models and paper trading state (`paper_trading_state.json`) remained completely untouched. EventBridge rule remains `DISABLED` pending operator decision.
+
+

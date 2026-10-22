@@ -30,6 +30,12 @@ Parameters:
     Default: cron(30 9 ? * MON-FRI *)
     Description: Schedule for daily pipeline (16:30 WIB = 09:30 UTC Mon-Fri).
 
+  ScheduleEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable or disable daily pipeline schedule rule (defaults to false for safety).
+
 Globals:
   Function:
     CodeUri: ../..
@@ -136,6 +142,18 @@ Resources:
       LogGroupName: /aws/lambda/idx-telegram-webhook
       RetentionInDays: 30
 
+  MlDependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub idx-ml-dependencies-${Environment}
+      Description: ML and Data dependencies for BEI Stock Signal AI (pandas, numpy, scipy, sklearn, lightgbm, yfinance)
+      ContentUri: ../../artifacts/layers/ml_dependencies_layer.zip
+      CompatibleRuntimes:
+        - python3.12
+      CompatibleArchitectures:
+        - x86_64
+      RetentionPolicy: Retain
+
   DailyPipelineFunction:
     Type: AWS::Serverless::Function
     DependsOn: [DailyPipelineLogGroup, LambdaExecutionRole]
@@ -143,6 +161,8 @@ Resources:
       FunctionName: idx-daily-pipeline
       Handler: python.cloud.handlers.lambda_daily_pipeline_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref MlDependenciesLayer
       EphemeralStorage:
         Size: 1024
       Events:
@@ -152,6 +172,7 @@ Resources:
             Schedule: !Ref ScheduleCron
             Name: idx-daily-pipeline-schedule
             Description: Trigger daily pipeline at 16:30 WIB (09:30 UTC) Mon-Fri
+            Enabled: !Ref ScheduleEnabled
 
   RetrainingPipelineFunction:
     Type: AWS::Serverless::Function
@@ -160,6 +181,8 @@ Resources:
       FunctionName: idx-retraining-pipeline
       Handler: python.cloud.handlers.lambda_retraining_handler
       Role: !GetAtt LambdaExecutionRole.Arn
+      Layers:
+        - !Ref MlDependenciesLayer
       Timeout: 600
       MemorySize: 2048
       EphemeralStorage:
@@ -242,4 +265,8 @@ Outputs:
   TelegramWebhookApiEndpoint:
     Description: Telegram Webhook API Gateway HTTP API Endpoint
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/webhook"
+
+  MlDependenciesLayerArn:
+    Description: ML Dependencies Lambda Layer ARN
+    Value: !Ref MlDependenciesLayer
 

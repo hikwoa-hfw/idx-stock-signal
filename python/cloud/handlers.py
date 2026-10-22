@@ -2,6 +2,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import sys
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -16,7 +18,7 @@ from python.cloud.s3_sync import (
     upload_database,
 )
 from python.common.types import SignalConfig
-from python.config.settings import settings
+from python.config.settings import PROJECT_ROOT, settings
 from python.data.repository import DailyBarRepository
 from python.features.repository import FeatureRepository
 from python.journal.repository import PositionJournalRepository
@@ -30,6 +32,10 @@ from services.telegram.bot import TelegramBotDispatcher
 from services.telegram.client import TelegramClient
 from services.telegram.formatter import format_daily_signals
 
+for _p in ("/opt/python", "/opt/python/lib/python3.12/site-packages", "/var/task"):
+    if os.path.exists(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
+
 try:
     from python.data.provider import DEFAULT_UNIVERSE, load_universe
     from python.features.engine import FeatureEngine
@@ -40,6 +46,14 @@ try:
     from python.signals.engine import SignalEngine
     from scripts.ingest_daily import run_ingest
 except ImportError as _import_err:
+    import traceback
+    sys.stderr.write(f"[handlers] Dependency import failed: {_import_err}\n")
+    sys.stderr.write(f"[handlers] sys.path: {sys.path}\n")
+    if os.path.exists("/opt"):
+        sys.stderr.write(f"[handlers] /opt listing: {os.listdir('/opt')}\n")
+        if os.path.exists("/opt/python"):
+            sys.stderr.write(f"[handlers] /opt/python sample: {os.listdir('/opt/python')[:15]}\n")
+    traceback.print_exc(file=sys.stderr)
     DEFAULT_UNIVERSE = ["BBCA", "BBRI", "BMRI", "TLKM", "ASII"]  # type: ignore[assignment]
     load_universe = None  # type: ignore[assignment]
     FeatureEngine = None  # type: ignore[assignment]
@@ -122,13 +136,41 @@ def dispatch_failure_alert(
 
 def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     logging.getLogger().setLevel(logging.INFO)
+    ingestion_success = False
+    feature_success = False
+    scoring_success = False
+    telegram_delivery = False
+    database_upload = False
+    stages_record: dict[str, Any] = {
+        "ingestion": {"status": "PENDING", "bars_ingested": 0},
+        "features": {"status": "PENDING", "features_count": 0},
+        "scoring": {"status": "PENDING", "signals_count": 0},
+        "telegram": {"status": "PENDING", "delivered": False},
+        "database_upload": {"status": "PENDING", "uploaded": False},
+    }
+    target_date: Optional[date] = None
+    tmp_dir = Path(event.get("tmp_dir") or os.getenv("TMP_DIR", "/tmp"))
+    s3_bucket = (
+        event.get("s3_bucket")
+        if "s3_bucket" in event
+        else (os.getenv("S3_BUCKET") or settings.s3_bucket)
+    )
+
     try:
-        s3_bucket = (
-            event["s3_bucket"]
-            if "s3_bucket" in event
-            else (os.getenv("S3_BUCKET") or settings.s3_bucket)
-        )
-        tmp_dir = Path(event.get("tmp_dir") or os.getenv("TMP_DIR", "/tmp"))
+        # Step 0: Fail-closed dependency check
+        missing_deps = []
+        if run_ingest is None:
+            missing_deps.append("run_ingest")
+        if FeatureEngine is None:
+            missing_deps.append("FeatureEngine")
+        if SignalEngine is None:
+            missing_deps.append("SignalEngine")
+        if missing_deps:
+            raise RuntimeError(
+                f"Missing required serverless dependencies: {', '.join(missing_deps)}. "
+                "Package must include required data/ML dependencies."
+            )
+
         db_target = event.get("local_db_path") or tmp_dir / "stock_signals.db"
         local_db_path = Path(db_target).resolve()
         models_target = event.get("local_models_dir") or tmp_dir / "models"
@@ -143,7 +185,6 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
         )
         s3_client = event.get("_s3_client")
 
-        target_date: Optional[date] = None
         if event.get("date"):
             raw_d = str(event["date"]).strip()
             target_date = datetime.strptime(raw_d, "%Y-%m-%d").date()
@@ -154,6 +195,14 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             sync_models_from_s3(s3_bucket, local_models_dir, s3_client=s3_client)
         elif not local_db_path.is_file():
             bootstrap_database(local_db_path)
+
+        if not list(local_models_dir.glob("*.joblib")):
+            default_models = PROJECT_ROOT / "models" / "registry"
+            if default_models.is_dir():
+                local_models_dir.mkdir(parents=True, exist_ok=True)
+                for f in default_models.glob("*"):
+                    if f.is_file():
+                        shutil.copy2(f, local_models_dir / f.name)
 
         db_url = f"sqlite:///{local_db_path.as_posix()}"
         bar_repo = DailyBarRepository(database_url=db_url)
@@ -263,50 +312,83 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
         max_backoff = float(event.get("max_backoff", 10.0))
         ingest_error: Optional[Exception] = None
 
-        if run_ingest is not None:
-            for attempt in range(1, max_retries + 1):
-                try:
-                    ingested_count = run_ingest(
-                        provider_name=provider_name,
-                        tickers=tickers_list,
-                        db_url=db_url,
-                        mode=event.get("ingest_mode", "incremental"),
-                        start_date=start_date_val,
-                        end_date=target_date,
-                    )
-                    ingest_error = None
-                    break
-                except Exception as err:
-                    ingest_error = err
-                    logger.warning(
-                        "Market ingestion attempt %d/%d failed: %s",
-                        attempt,
-                        max_retries,
-                        err,
-                    )
-                    if attempt < max_retries:
-                        sleep_s = min(backoff_base * (backoff_factor ** (attempt - 1)), max_backoff)
-                        time.sleep(sleep_s)
-
-            if ingest_error is not None:
-                logger.error(
-                    "Market data provider failed after %d retries: %s",
+        for attempt in range(1, max_retries + 1):
+            try:
+                ingested_count = run_ingest(
+                    provider_name=provider_name,
+                    tickers=tickers_list,
+                    db_url=db_url,
+                    mode=event.get("ingest_mode", "incremental"),
+                    start_date=start_date_val,
+                    end_date=target_date,
+                )
+                ingest_error = None
+                break
+            except Exception as err:
+                ingest_error = err
+                logger.warning(
+                    "Market ingestion attempt %d/%d failed: %s",
+                    attempt,
                     max_retries,
-                    ingest_error,
+                    err,
                 )
-                dispatch_failure_alert(
-                    error_msg=(
-                        f"Market data ingestion failed after {max_retries} attempts: {ingest_error}"
-                    ),
-                    stage="market_ingestion",
-                    target_date=target_date,
-                    event=event,
-                )
-                raise ingest_error
-        else:
-            logger.info(
-                "Market data ingestion skipped: run_ingest not loaded in serverless package."
+                if attempt < max_retries:
+                    sleep_s = min(backoff_base * (backoff_factor ** (attempt - 1)), max_backoff)
+                    time.sleep(sleep_s)
+
+        if ingest_error is not None:
+            logger.error(
+                "Market data provider failed after %d retries: %s",
+                max_retries,
+                ingest_error,
             )
+            dispatch_failure_alert(
+                error_msg=(
+                    f"Market data ingestion failed after {max_retries} attempts: {ingest_error}"
+                ),
+                stage="market_ingestion",
+                target_date=target_date,
+                event=event,
+            )
+            raise RuntimeError(
+                f"Market data ingestion failed after {max_retries} attempts: {ingest_error}"
+            ) from ingest_error
+
+        # Validate universe ticker coverage and bar availability for target date
+        fallback_univ = load_universe() if load_universe else []
+        universe = tickers_list or bar_repo.get_universe() or fallback_univ or DEFAULT_UNIVERSE
+        bars_by_ticker = {t: bar_repo.get_daily_bars(t) for t in universe}
+        bars_by_ticker = {k: v for k, v in bars_by_ticker.items() if v}
+
+        bars_on_date = [
+            b for b_list in bars_by_ticker.values() for b in b_list if b.date == check_date
+        ]
+        if ingested_count <= 0 and not bars_on_date:
+            raise RuntimeError(
+                f"Market data ingestion produced 0 bars for {check_date}. "
+                "Fail-closed: fresh market bars required."
+            )
+
+        min_coverage = float(event.get("min_ticker_coverage", 0.8))
+        if universe:
+            tickers_with_bars = [
+                t for t in universe if any(b.date == check_date for b in bars_by_ticker.get(t, []))
+            ]
+            coverage = len(tickers_with_bars) / len(universe)
+            if coverage < min_coverage:
+                raise RuntimeError(
+                    f"Insufficient ticker coverage for {check_date}: "
+                    f"{coverage:.1%} < {min_coverage:.1%} "
+                    f"({len(tickers_with_bars)}/{len(universe)} tickers). Fail-closed."
+                )
+
+        ingestion_success = True
+        effective_ingested_count = ingested_count if ingested_count > 0 else len(bars_on_date)
+        stages_record["ingestion"] = {
+            "status": "SUCCESS",
+            "bars_ingested": effective_ingested_count,
+            "coverage": len(tickers_with_bars) / len(universe) if universe else 1.0,
+        }
 
         # Step 3: Resolve open outcomes
         ambiguity_policy = event.get("ambiguity_policy", "conservative")
@@ -325,7 +407,23 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             )
             outcomes_count = len(resolved_results)
 
-        # Step 4: Extract features and generate daily signals
+        # Step 4: Extract features
+        computed_features = {}
+        feature_engine = FeatureEngine()
+        try:
+            computed_features = feature_engine.compute_universe_features(bars_by_ticker)
+            feat_records = [rec for f_list in computed_features.values() for rec in f_list]
+            if not feat_records:
+                raise RuntimeError("Feature extraction produced 0 feature records.")
+            feat_repo.save_features(feat_records)
+            feat_count = len(feat_records)
+            feature_success = True
+            stages_record["features"] = {"status": "SUCCESS", "features_count": feat_count}
+        except Exception as feat_err:
+            logger.error("Feature extraction failed: %s", feat_err)
+            raise RuntimeError(f"Feature generation error: {feat_err}") from feat_err
+
+        # Step 5: Generate daily signals
         model_reg = ModelRegistry(registry_dir=local_models_dir)
         min_prob_val = event.get("min_probability", event.get("min_prob"))
         if min_prob_val is None and "SIGNAL_MIN_PROBABILITY" in os.environ:
@@ -333,32 +431,18 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                 min_prob_val = float(os.environ["SIGNAL_MIN_PROBABILITY"])
             except ValueError:
                 pass
+        ev_setting = event.get("enforce_positive_ev")
+        enforce_ev = bool(ev_setting) if ev_setting is not None else (provider_name != "mock")
+        default_min_prob = 0.01 if provider_name == "mock" else 0.25
         sig_cfg = SignalConfig(
             top_n=top_n,
-            min_probability=float(min_prob_val) if min_prob_val is not None else 0.25,
+            min_probability=(
+                float(min_prob_val) if min_prob_val is not None else default_min_prob
+            ),
+            enforce_positive_ev=enforce_ev,
         )
 
-        sig_engine = None
-        if SignalEngine is not None:
-            sig_engine = SignalEngine(config=sig_cfg, bar_repo=bar_repo, model_registry=model_reg)
-        else:
-            logger.info("SignalEngine skipped: ML dependencies not present in serverless package.")
-
-        fallback_univ = load_universe() if load_universe else []
-        universe = tickers_list or bar_repo.get_universe() or fallback_univ or DEFAULT_UNIVERSE
-        bars_by_ticker = {t: bar_repo.get_daily_bars(t) for t in universe}
-        bars_by_ticker = {k: v for k, v in bars_by_ticker.items() if v}
-
-        computed_features = {}
-        if bars_by_ticker and FeatureEngine is not None:
-            feature_engine = FeatureEngine()
-            try:
-                computed_features = feature_engine.compute_universe_features(bars_by_ticker)
-                feat_records = [rec for f_list in computed_features.values() for rec in f_list]
-                if feat_records:
-                    feat_repo.save_features(feat_records)
-            except Exception as feat_err:
-                logger.warning("Feature extraction skipped or error: %s", feat_err)
+        sig_engine = SignalEngine(config=sig_cfg, bar_repo=bar_repo, model_registry=model_reg)
 
         champ = model_reg.get_champion(task="classification")
         low_champ = model_reg.get_champion(task="classification", mode="LOW_PRICE")
@@ -367,61 +451,50 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
         use_champ = has_any_champ and not bool(event.get("no_champion", False))
         dual_mode = bool(event.get("dual_mode", True))
 
-        generated_signals = []
-        signals_payload = []
-        if bars_by_ticker and sig_engine is not None:
-            try:
-                if dual_mode:
-                    dual_res = sig_engine.generate_dual_mode_signals(
-                        signal_date=target_date,
-                        universe=universe,
-                        bars_by_ticker=bars_by_ticker,
-                        config=sig_cfg,
-                        use_champion=use_champ,
-                    )
-                    generated_signals = dual_res.get("LOW_PRICE", []) + dual_res.get(
-                        "HIGHER_PRICE", []
-                    )
-                    signals_payload = dual_res
-                else:
-                    generated_signals = sig_engine.generate_signals(
-                        signal_date=target_date,
-                        universe=universe,
-                        use_champion=use_champ,
-                        bars_by_ticker=bars_by_ticker,
-                        features_by_ticker=computed_features or None,
-                        config=sig_cfg,
-                    )
-                    signals_payload = generated_signals
-                if generated_signals:
-                    sig_repo.save_signals(generated_signals, ignore_existing=True)
-            except Exception as sig_err:
-                logger.warning("Signal generation skipped or error: %s", sig_err)
-        elif not generated_signals:
-            # Fallback to pre-computed signals in SQLite database for target/today's date
-            lookup_date = target_date or check_date
-            latest_db_signals = sig_repo.get_signals_by_date(lookup_date)
-            if not latest_db_signals:
-                # If no signals on exact date, fetch latest available signals
-                distinct_dates = sig_repo.get_distinct_dates()
-                if distinct_dates:
-                    lookup_date = distinct_dates[-1]
-                    latest_db_signals = sig_repo.get_signals_by_date(lookup_date)
-            if latest_db_signals:
-                generated_signals = latest_db_signals
-                signals_payload = latest_db_signals
-                logger.info(
-                    "Loaded %d pre-computed signals from DB for %s",
-                    len(generated_signals),
-                    lookup_date,
+        effective_date = target_date or date.today()
+        try:
+            if dual_mode:
+                dual_res = sig_engine.generate_dual_mode_signals(
+                    signal_date=effective_date,
+                    universe=universe,
+                    bars_by_ticker=bars_by_ticker,
+                    config=sig_cfg,
+                    use_champion=use_champ,
+                )
+                generated_signals = dual_res.get("LOW_PRICE", []) + dual_res.get(
+                    "HIGHER_PRICE", []
+                )
+                signals_payload = dual_res
+            else:
+                generated_signals = sig_engine.generate_signals(
+                    signal_date=effective_date,
+                    universe=universe,
+                    use_champion=use_champ,
+                    bars_by_ticker=bars_by_ticker,
+                    features_by_ticker=computed_features or None,
+                    config=sig_cfg,
+                )
+                signals_payload = generated_signals
+
+            if not generated_signals:
+                raise RuntimeError(
+                    f"Signal scoring produced 0 signals for target date {effective_date}. "
+                    "Fail-closed: missing current-date signals."
                 )
 
-        effective_date = (
-            generated_signals[0].signal_date if generated_signals else (target_date or date.today())
-        )
+            sig_repo.save_signals(generated_signals, ignore_existing=True)
+            scoring_success = True
+            stages_record["scoring"] = {
+                "status": "SUCCESS",
+                "signals_count": len(generated_signals),
+            }
+        except Exception as sig_err:
+            logger.error("Signal scoring failed: %s", sig_err)
+            raise RuntimeError(f"Signal scoring error: {sig_err}") from sig_err
 
-        # Step 5: Format and broadcast report to Telegram
+        # Step 6: Format and broadcast report to Telegram
         telegram_status = "SKIPPED"
+        telegram_delivery = False
         if not dry_run and not skip_telegram:
             token = (
                 event.get("telegram_token")
@@ -444,13 +517,25 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                     resp = tg_client.send_message(text=formatted_msg)
                     msg_id = resp.get("result", {}).get("message_id")
                     telegram_status = f"SENT_{msg_id}" if msg_id else "SENT"
+                    telegram_delivery = True
                 except Exception as tg_err:
                     telegram_status = f"FAILED: {tg_err}"
+                    telegram_delivery = False
             else:
                 telegram_status = "NO_TOKEN"
+                telegram_delivery = False
+        else:
+            telegram_status = "SKIPPED"
+            telegram_delivery = False
 
-        # Step 6: Upload updated SQLite DB and execution log to S3
+        stages_record["telegram"] = {
+            "status": telegram_status,
+            "delivered": telegram_delivery,
+        }
+
+        # Step 7: Upload updated SQLite DB and execution log to S3
         db_uploaded = False
+        database_upload = False
         upload_meta = {}
         log_uploaded = False
         if not skip_s3_upload and s3_bucket:
@@ -461,6 +546,7 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                 s3_client=s3_client,
             )
             db_uploaded = True
+            database_upload = True
 
             try:
                 log_client = _get_s3_client(s3_client)
@@ -470,10 +556,17 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                     {
                         "status": "SUCCESS",
                         "date": str(effective_date),
+                        "ingestion_success": ingestion_success,
+                        "feature_success": feature_success,
+                        "scoring_success": scoring_success,
+                        "telegram_delivery": telegram_delivery,
+                        "database_upload": database_upload,
                         "bars_ingested": ingested_count,
+                        "features_count": feat_count,
                         "outcomes_resolved": outcomes_count,
                         "signals_generated": len(generated_signals),
                         "telegram_status": telegram_status,
+                        "stages": stages_record,
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     },
                     indent=2,
@@ -485,11 +578,24 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                 log_uploaded = True
             except Exception as log_err:
                 logger.warning("Could not upload execution log to S3: %s", log_err)
+        else:
+            database_upload = False
+
+        stages_record["database_upload"] = {
+            "status": "SUCCESS" if database_upload else "SKIPPED",
+            "uploaded": db_uploaded,
+        }
 
         summary = {
             "status": "SUCCESS",
             "date": str(effective_date),
+            "ingestion_success": ingestion_success,
+            "feature_success": feature_success,
+            "scoring_success": scoring_success,
+            "telegram_delivery": telegram_delivery,
+            "database_upload": database_upload,
             "bars_ingested": ingested_count,
+            "features_count": feat_count,
             "outcomes_resolved": outcomes_count,
             "signals_generated": len(generated_signals),
             "telegram_status": telegram_status,
@@ -497,7 +603,9 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             "log_uploaded": log_uploaded,
             "s3_bucket": s3_bucket,
             "upload_meta": upload_meta,
+            "stages": stages_record,
         }
+        logger.info("Daily pipeline completed successfully: %s", summary)
         return {"statusCode": 200, "body": summary}
 
     except Exception as exc:
@@ -508,11 +616,45 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
             target_date=target_date,
             event=event,
         )
+        if not event.get("skip_s3_upload", False) and s3_bucket:
+            try:
+                log_client = _get_s3_client(event.get("_s3_client"))
+                ts_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                fail_date = target_date or date.today()
+                fail_log_key = f"logs/daily_pipeline_{fail_date}_{ts_str}.json"
+                fail_log_data = json.dumps(
+                    {
+                        "status": "FAILED",
+                        "date": str(fail_date),
+                        "error": str(exc),
+                        "ingestion_success": ingestion_success,
+                        "feature_success": feature_success,
+                        "scoring_success": scoring_success,
+                        "telegram_delivery": False,
+                        "database_upload": False,
+                        "stages": stages_record,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                    indent=2,
+                )
+                tmp_fail_log = tmp_dir / f"daily_pipeline_fail_{ts_str}.json"
+                tmp_fail_log.parent.mkdir(parents=True, exist_ok=True)
+                tmp_fail_log.write_text(fail_log_data, encoding="utf-8")
+                log_client.upload_file(str(tmp_fail_log), s3_bucket, fail_log_key)
+            except Exception as fail_s3_err:
+                logger.warning("Could not upload failure log to S3: %s", fail_s3_err)
+
         return {
             "statusCode": 500,
             "body": {
                 "status": "FAILED",
                 "error": str(exc),
+                "ingestion_success": ingestion_success,
+                "feature_success": feature_success,
+                "scoring_success": scoring_success,
+                "telegram_delivery": False,
+                "database_upload": False,
+                "stages": stages_record,
             },
         }
 
@@ -536,6 +678,19 @@ def lambda_retraining_handler(event: dict[str, Any], context: Any = None) -> dic
         algorithm = str(event.get("algorithm", "lightgbm"))
         task = str(event.get("task", "classification"))
         s3_client = event.get("_s3_client")
+
+        # Step 0: Fail-closed dependency check
+        if (
+            RetrainingPipeline is None
+            or RetrainingDatasetAssembler is None
+            or PromotionGateManager is None
+            or RetrainingTriggerEvaluator is None
+        ):
+            raise RuntimeError(
+                "Missing required serverless retraining dependencies: "
+                "RetrainingPipeline, RetrainingDatasetAssembler, PromotionGateManager, "
+                "and/or RetrainingTriggerEvaluator not loaded."
+            )
 
         # Step 1: Sync from S3
         if s3_bucket:

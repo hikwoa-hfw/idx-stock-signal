@@ -2,12 +2,12 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11G / AWS Runtime Verification`
-- **Audit Date:** `2026-10-22 13:30 WIB`
+- **Current Phase:** `Phase 11G / AWS Staging Pipeline Remediation`
+- **Audit Date:** `2026-10-22 15:45 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** `8e6a33bb58be03c3917454f0a2ba1a3f1246ff62` (AWS Runtime Verification: Verified ap-southeast-3 resources; identified missing Lambda ML dependencies and fail-open signal replay in handlers.py; local Windows Task Scheduler confirmed as sole active operational pipeline)
-- **Overall Status:** `PASS (LOCAL_OPERATIONAL_AUTOMATED_PIPELINE) / AWS_AUTOMATION_FAILED`
+- **Latest Commit SHA:** HEAD (AWS Staging Fail-Open Remediation: Implemented fail-closed handlers.py, excised stale replay fallback, built & published idx-ml-dependencies-staging:3 layer with OpenMP libgomp, verified runtime in ap-southeast-3, EventBridge rule preserved DISABLED)
+- **Overall Status:** `PASS (LOCAL_OPERATIONAL_AUTOMATED_PIPELINE) / AWS_STAGING_REMEDIATED_VERIFIED (SCHEDULE_DISABLED)`
 - **Detailed Validation Reports:**
   - Local Operational Pipeline: [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
   - AWS Cloud Runtime Verification: [docs/23_aws_runtime_daily_pipeline_verification_report.md](docs/23_aws_runtime_daily_pipeline_verification_report.md)
@@ -102,9 +102,9 @@ The repository maintains dedicated, detailed reports for each major governance a
     - **Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL)` (23 unit tests in pipeline suite, 33 tests in telegram suite, 625 total repository tests passed 100%: 593 unit, 32 integration; ruff clean 0 error; champions and frozen Phase 11F research models preserved).
 
 15. [docs/23_aws_runtime_daily_pipeline_verification_report.md](docs/23_aws_runtime_daily_pipeline_verification_report.md)
-    - **AWS Runtime Verification:** Daily Ingestion and Telegram Signal Pipeline
-    - **Scope:** Empirical read-only verification of deployed AWS environment in `ap-southeast-3` (Account `436095651956`), CloudFormation stacks, Lambda runtime packages, EventBridge schedule rules, CloudWatch logs & metrics, S3 database and run logs, fail-closed behavior audit of `handlers.py`, and separation between AWS daily signals and local paper trading.
-    - **Status:** `PASS_WITH_ISSUES (AWS_AUTOMATION_FAILED)` (EventBridge rule `idx-daily-pipeline-schedule-staging` triggers daily at 16:30 WIB, but Lambda zip package lacks all data/ML dependencies (`yfinance`, `pandas`, `numpy`, `scikit-learn`, `lightgbm`). Ingestion and scoring fail open silently; handler queries historical SQLite DB and re-broadcasts stale `2026-10-16` signals to Telegram with artificial `status: SUCCESS`. Phase 11F paper trading is unaffected and operates strictly locally via Windows Task Scheduler).
+    - **AWS Runtime Verification & Staging Remediation:** Daily Ingestion and Telegram Signal Pipeline
+    - **Scope:** Empirical verification of deployed AWS environment in `ap-southeast-3` (Account `436095651956`), fail-open remediation in `handlers.py` (strict fail-closed dependency, coverage, and feature gates; removal of stale signal replay), creation and publication of ML dependencies Lambda Layer `idx-ml-dependencies-staging:3` (246.6 MB uncompressed, bundling OpenMP `libgomp.so.1` for LightGBM), deployment to staging Lambdas, controlled runtime test verification (negative coverage failure and positive end-to-end scoring verified), EventBridge schedule preserved `DISABLED`, and local Phase 11F paper trading verified intact.
+    - **Status:** `PASS (AWS_STAGING_REMEDIATED_AND_VERIFIED; SCHEDULE_DISABLED)` (47 cloud/fail-closed tests passed, 632 total repository tests passed 100%, ruff clean 0 error; champions and frozen Phase 11F models preserved).
 
 ---
 

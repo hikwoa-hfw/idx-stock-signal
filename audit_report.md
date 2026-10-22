@@ -2,13 +2,15 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11G — Final Repository & Runtime Reconciliation`
-- **Audit Date:** `2026-10-22 09:30 WIB`
+- **Current Phase:** `Phase 11G / AWS Runtime Verification`
+- **Audit Date:** `2026-10-22 13:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** `c16483d81b4df00e12d4a520ae1e57c8bfbc7811` (Phase 11G Final Reconciliation: 625 tests passed 100%, 80% coverage threshold locked with regression tests, yfinance provider verified, Telegram '/' command menu implemented, Windows Task Scheduler verified in Ready state, S3 & Lambda cloud synchronization verified)
-- **Overall Status:** `PASS (OPERATIONAL_AUTOMATED_PIPELINE / APPROVED_PENDING_FIRST_OBSERVATION)`
-- **Detailed Validation Report:** [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
+- **Latest Commit SHA:** `153c829e62604958634fcce65ffc290daedacb94` (AWS Runtime Verification: Verified ap-southeast-3 resources; identified missing Lambda ML dependencies and fail-open signal replay in handlers.py; local Windows Task Scheduler confirmed as sole active operational pipeline)
+- **Overall Status:** `PASS (LOCAL_OPERATIONAL_AUTOMATED_PIPELINE) / AWS_AUTOMATION_FAILED`
+- **Detailed Validation Reports:**
+  - Local Operational Pipeline: [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
+  - AWS Cloud Runtime Verification: [docs/23_aws_runtime_daily_pipeline_verification_report.md](docs/23_aws_runtime_daily_pipeline_verification_report.md)
 - **Active Production Champions:**
   - `LOW_PRICE` ($\le 300$): `lightgbm_classification_20261014_093522` (Active)
   - `HIGHER_PRICE` ($> 300$): `lightgbm_classification_20261014_093607` (Active)
@@ -98,6 +100,11 @@ The repository maintains dedicated, detailed reports for each major governance a
     - **Phase 11G:** Daily Market-Data-to-Paper-Trading Pipeline Automation & Operational Validation
     - **Scope:** 6-stage operational pipeline orchestrator (`Stage A: Ingestion -> Stage B: Validation Gate -> Stage C: Feature Generation -> Stage D: Feature Readiness -> Stage E: Paper Trading -> Stage F: Reporting`), single CLI entry point (`scripts/run_daily_pipeline.py`), Windows Task Scheduler automation (`IDX_Stock_Signal_Daily_Pipeline` scheduled Mon-Fri 16:30 WIB with `StartWhenAvailable: True`), fail-closed provider rejection (`allow_mock_fallback=False`), 80% coverage threshold lock with regression tests, Telegram interactive `/` command menu (`setMyCommands`), point-in-time readiness check, idempotent re-runs, and full prospective lifecycle integration.
     - **Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL)` (23 unit tests in pipeline suite, 33 tests in telegram suite, 625 total repository tests passed 100%: 593 unit, 32 integration; ruff clean 0 error; champions and frozen Phase 11F research models preserved).
+
+15. [docs/23_aws_runtime_daily_pipeline_verification_report.md](docs/23_aws_runtime_daily_pipeline_verification_report.md)
+    - **AWS Runtime Verification:** Daily Ingestion and Telegram Signal Pipeline
+    - **Scope:** Empirical read-only verification of deployed AWS environment in `ap-southeast-3` (Account `436095651956`), CloudFormation stacks, Lambda runtime packages, EventBridge schedule rules, CloudWatch logs & metrics, S3 database and run logs, fail-closed behavior audit of `handlers.py`, and separation between AWS daily signals and local paper trading.
+    - **Status:** `PASS_WITH_ISSUES (AWS_AUTOMATION_FAILED)` (EventBridge rule `idx-daily-pipeline-schedule-staging` triggers daily at 16:30 WIB, but Lambda zip package lacks all data/ML dependencies (`yfinance`, `pandas`, `numpy`, `scikit-learn`, `lightgbm`). Ingestion and scoring fail open silently; handler queries historical SQLite DB and re-broadcasts stale `2026-10-16` signals to Telegram with artificial `status: SUCCESS`. Phase 11F paper trading is unaffected and operates strictly locally via Windows Task Scheduler).
 
 ---
 

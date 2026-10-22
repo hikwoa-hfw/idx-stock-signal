@@ -1103,3 +1103,28 @@ Log Perubahan Tambahan (22 Oktober 2026)
    1. Menambahkan `sys.path.insert(0, str(Path(__file__).resolve().parent.parent))` pada `scripts/set_telegram_commands.py` sehingga dapat dieksekusi langsung tanpa error import (terverifikasi dengan `--dry-run` dan `--botfather`).
    2. Menghapus hardcode `0.50` pada `test_partial_ticker_coverage_blocks_scoring` dan meng-assert bahwa default threshold adalah `0.80` secara konsisten di seluruh pipeline dan test suite.
    3. Menambahkan routing `/` dan `/menu` ke `handle_help()` pada `TelegramBotDispatcher.dispatch`, menambahkan perintah `menu` ke `DEFAULT_BOT_COMMANDS`, serta menambahkan unit test pendukung pada `tests/unit/test_telegram.py`. Seluruh 625 test passed (100%), ruff clean 0 error.
+74. AWS Runtime Verification — Daily Ingestion dan Telegram Signal Pipeline (22 Oktober 2026)
+   Masalah:
+   1. Perlunya verifikasi empiris apakah lingkungan AWS nyata saat ini menjalankan pipeline ingestion data harian dan pembuatan sinyal Telegram secara otomatis atau tidak, mengingat template SAM `infra/aws/template.yaml` dan handler `python/cloud/handlers.py` ada di repositori namun belum tentu aktif secara operasional.
+   2. Perlunya pembuktian apakah eksekusi terjadwal Lambda di AWS benar-benar mengunduh DB, melakukan ingestion bar segar, menghitung fitur, menghasilkan sinyal baru, mengirim Telegram, dan mengunggah kembali DB ke S3.
+   3. Perlunya audit mendalam terhadap perilaku fail-closed vs fail-open pada kode Lambda handler `python/cloud/handlers.py`.
+   4. Perlunya penegasan perbedaan antara workflow pipeline harian AWS dengan forward paper trading lokal Phase 11F/11G.
+   Solusi:
+   1. Melakukan inspeksi read-only komprehensif pada AWS region `ap-southeast-3` (Account `436095651956` via `deployer`):
+      - CloudFormation Stacks: 0 stack terdaftar (`describe_stacks()` = `[]`); infrastruktur dideploy secara imperatif via `scripts/deploy_aws.py`.
+      - Lambda Functions: 3 fungsi staging terdaftar (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) dengan ukuran paket zip 321 KB dan tanpa Lambda Layer (`Layers: []`).
+      - EventBridge Rules: Rule `idx-daily-pipeline-schedule-staging` berstatus `ENABLED` dengan target `idx-daily-pipeline-staging` dan jadwal `cron(30 9 ? * MON-FRI *)` (16:30 WIB).
+      - CloudWatch Logs: Fungsi terpicu otomatis setiap hari bursa pukul 09:30 UTC (16:30 WIB) dengan durasi ~18 detik dan memory 543 MB.
+   2. Menelusuri alur eksekusi riil Lambda harian dari log CloudWatch dan artefak S3:
+      - Lambda berhasil mengunduh DB SQLite dari S3 ke `/tmp/stock_signals.db`.
+      - **Kegagalan Ingestion & ML:** Paket zip Lambda (321 KB) hanya berisi kode sumber dan tidak memuat third-party dependencies (`yfinance`, `pandas`, `numpy`, `scikit-learn`, `lightgbm`). Akibatnya, `run_ingest` dan `SignalEngine` memicu `ImportError` saat diimpor, sehingga `run_ingest` bernilai `None` dan `SignalEngine` bernilai `None`.
+      - Handler secara fail-open melewati tahap ingestion (`Market data ingestion skipped: run_ingest not loaded in serverless package`) dan tahap signal generation (`SignalEngine skipped: ML dependencies not present in serverless package`).
+      - **Critical Fail-Open Stale Replay:** Karena sinyal baru tidak terbentuk, handler mengeksekusi fallback query ke tabel `signals_daily` di SQLite, mengambil tanggal sinyal historis terakhir (`2026-10-16`, 10 sinyal), dan mengirimkan ulang sinyal usang tersebut ke Telegram setiap hari bursa (`SENT_85`, `SENT_86`, `SENT_87`), lalu mengunggah log eksekusi ke S3 dengan label `status: "SUCCESS"` dan `bars_ingested: 0`.
+   3. Mengidentifikasi temuan fail-open kritis pada `python/cloud/handlers.py`:
+      - Baris 306-309: kegagalan load `run_ingest` tidak menghentikan pipeline melainkan di-skip secara diam-diam.
+      - Baris 360-361: kegagalan ekstraksi fitur hanya di-log sebagai warning dan eksekusi tetap berlanjut.
+      - Baris 400-418: ketiadaan sinyal baru memicu fallback pengambilan sinyal usang dari database untuk disiarkan ke Telegram sebagai sinyal harian dengan status `SUCCESS`.
+   4. Membedakan kedua workflow secara tegas:
+      - Pipeline AWS Lambda (`idx-daily-pipeline-staging`) tidak menggunakan `DailyPipeline`, tidak menyentuh `artifacts/phase_11f/paper_trading_state.json`, tidak mengevaluasi model riset frozen Phase 11F, dan tidak menjalankan lifecycle paper trading.
+      - Paper trading operasional Phase 11F/11G berjalan secara independen dan strictly fail-closed di lingkungan lokal melalui Windows Task Scheduler (`\IDX_Stock_Signal_Daily_Pipeline`).
+   5. Mendokumentasikan seluruh bukti teknis pada `docs/23_aws_runtime_daily_pipeline_verification_report.md` dengan kesimpulan `AWS_AUTOMATION_FAILED`, memperbarui `audit_report.md` (Indeks Entri 15), dan merekomendasikan penonaktifan sementara EventBridge rule untuk mencegah spam siaran sinyal usang 2026-10-16.

@@ -671,6 +671,11 @@ def register_telegram_webhook(
     client = TelegramClient(bot_token=bot_token)
     resp = client.set_webhook(url=clean_url, secret_token=secret_token)
     sys.stdout.write(f"[deploy_aws] Telegram setWebhook response: {json.dumps(resp)}\n")
+    try:
+        cmd_resp = client.set_my_commands()
+        sys.stdout.write(f"[deploy_aws] Telegram setMyCommands response: {json.dumps(cmd_resp)}\n")
+    except Exception as cmd_err:
+        sys.stdout.write(f"[deploy_aws] Warning: Could not register Telegram commands: {cmd_err}\n")
     return resp
 
 

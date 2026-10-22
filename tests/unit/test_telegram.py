@@ -11,6 +11,11 @@ from python.models.registry import ModelMetadata, ModelRegistry
 from python.signals.repository import SignalRepository
 from services.telegram.bot import TelegramBotDispatcher
 from services.telegram.client import TelegramClient, TelegramError, mask_token, split_message
+from services.telegram.commands import (
+    format_commands_for_botfather,
+    get_bot_commands,
+    validate_bot_commands,
+)
 from services.telegram.formatter import (
     _derive_market_summary,
     _format_pct,
@@ -535,3 +540,99 @@ def test_telegram_client_ssl_cert_verification_fallback():
         # Verify second call passed an unverified SSL context
         _, kwargs = mock_urlopen.call_args_list[1]
         assert "context" in kwargs
+
+
+def test_telegram_commands_definition_and_validation():
+    cmds = get_bot_commands()
+    assert len(cmds) >= 10
+    cmd_names = [c["command"] for c in cmds]
+    assert "start" in cmd_names
+    assert "help" in cmd_names
+    assert "daily" in cmd_names
+    assert "signals" in cmd_names
+    assert "status" in cmd_names
+    assert "pipeline" in cmd_names
+    assert "portfolio" in cmd_names
+    assert "positions" in cmd_names
+
+    # Check validation rules
+    valid = validate_bot_commands([
+        {"command": "/test", "description": "A test command"},
+        {"command": "TEST_TWO", "description": "Another test"},
+    ])
+    assert valid[0]["command"] == "test"
+    assert valid[1]["command"] == "test_two"
+
+    with pytest.raises(ValueError):
+        validate_bot_commands([{"command": "invalid space", "description": "fail"}])
+
+
+def test_format_commands_for_botfather():
+    out = format_commands_for_botfather([
+        {"command": "start", "description": "Start bot"},
+        {"command": "help", "description": "Show help"},
+    ])
+    assert "start - Start bot" in out
+    assert "help - Show help" in out
+
+
+def test_telegram_client_set_my_commands():
+    client = TelegramClient(bot_token="test_token", chat_id="123")
+    mock_success = MagicMock()
+    mock_success.read.return_value = json.dumps({"ok": True, "result": True}).encode("utf-8")
+    mock_success.__enter__.return_value = mock_success
+
+    with patch("urllib.request.urlopen", return_value=mock_success) as mock_urlopen:
+        res = client.set_my_commands(scope={"type": "default"}, language_code="en")
+        assert res["ok"] is True
+        req = mock_urlopen.call_args[0][0]
+        assert "setMyCommands" in req.full_url
+        data = json.loads(req.data.decode("utf-8"))
+        assert "commands" in data
+        assert isinstance(data["commands"], list)
+        assert data["scope"] == {"type": "default"}
+        assert data["language_code"] == "en"
+
+
+def test_telegram_client_get_and_delete_my_commands():
+    client = TelegramClient(bot_token="test_token", chat_id="123")
+    mock_get = MagicMock()
+    mock_get.read.return_value = json.dumps(
+        {"ok": True, "result": [{"command": "start", "description": "desc"}]}
+    ).encode("utf-8")
+    mock_get.__enter__.return_value = mock_get
+
+    mock_del = MagicMock()
+    mock_del.read.return_value = json.dumps({"ok": True, "result": True}).encode("utf-8")
+    mock_del.__enter__.return_value = mock_del
+
+    with patch("urllib.request.urlopen", side_effect=[mock_get, mock_del]):
+        get_res = client.get_my_commands()
+        assert get_res["ok"] is True
+        assert len(get_res["result"]) == 1
+
+        del_res = client.delete_my_commands()
+        assert del_res["ok"] is True
+
+
+def test_bot_dispatcher_handles_status_pipeline_portfolio(tmp_path):
+    dispatcher = TelegramBotDispatcher(signal_repo=MagicMock(), model_registry=MagicMock())
+
+    # Help includes new commands
+    help_out = dispatcher.dispatch("/help")
+    assert "/status" in help_out
+    assert "/pipeline" in help_out
+    assert "/portfolio" in help_out
+
+    # Status returns string
+    status_out = dispatcher.dispatch("/status")
+    assert "Operational & Pipeline Status" in status_out
+
+    # Pipeline returns status or informative message
+    pipe_out = dispatcher.dispatch("/pipeline")
+    assert "Daily Pipeline Run Summary" in pipe_out or "No pipeline run report found" in pipe_out
+
+    # Portfolio delegates to positions
+    port_out = dispatcher.dispatch("/portfolio")
+    assert "positions" in port_out.lower() or "journal" in port_out.lower()
+

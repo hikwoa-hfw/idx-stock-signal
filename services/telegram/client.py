@@ -3,11 +3,13 @@ import logging
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Optional, Sequence
 
 from python.common.types import SignalRecord
 from python.config.settings import settings
+from services.telegram.commands import DEFAULT_BOT_COMMANDS, validate_bot_commands
 from services.telegram.formatter import format_daily_signals
 
 logger = logging.getLogger(__name__)
@@ -337,4 +339,109 @@ class TelegramClient:
                 return data_dict
         except Exception as e:
             raise TelegramError(f"Failed to delete webhook: {self._sanitize(str(e))}") from e
+
+    def set_my_commands(
+        self,
+        commands: Optional[list[dict[str, Any]]] = None,
+        scope: Optional[dict[str, Any]] = None,
+        language_code: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Register bot commands list with Telegram to populate the '/' popup menu.
+
+        https://core.telegram.org/bots/api#setmycommands
+        """
+        if not self.bot_token:
+            raise TelegramError("Cannot set commands: TELEGRAM_BOT_TOKEN is not configured.")
+
+        valid_commands = (
+            validate_bot_commands(commands)
+            if commands is not None
+            else list(DEFAULT_BOT_COMMANDS)
+        )
+
+        endpoint = f"{self.base_url}/bot{self.bot_token}/setMyCommands"
+        payload: dict[str, Any] = {"commands": valid_commands}
+        if scope:
+            payload["scope"] = scope
+        if language_code:
+            payload["language_code"] = language_code
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with self._urlopen(req) as resp:
+                data_dict: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+                if not data_dict.get("ok", False):
+                    err_desc = self._sanitize(data_dict.get("description", "Unknown error"))
+                    raise TelegramError(f"Telegram API setMyCommands error: {err_desc}")
+                return data_dict
+        except Exception as e:
+            raise TelegramError(f"Failed to set commands: {self._sanitize(str(e))}") from e
+
+    def get_my_commands(
+        self,
+        scope: Optional[dict[str, Any]] = None,
+        language_code: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Retrieve the current list of the bot's commands."""
+        if not self.bot_token:
+            raise TelegramError("Cannot get commands: TELEGRAM_BOT_TOKEN is not configured.")
+
+        params = []
+        if scope:
+            params.append(f"scope={urllib.parse.quote(json.dumps(scope))}")
+        if language_code:
+            params.append(f"language_code={urllib.parse.quote(language_code)}")
+
+        query = f"?{'&'.join(params)}" if params else ""
+        endpoint = f"{self.base_url}/bot{self.bot_token}/getMyCommands{query}"
+
+        try:
+            with self._urlopen(endpoint) as resp:
+                data_dict: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+                if not data_dict.get("ok", False):
+                    err_desc = self._sanitize(data_dict.get("description", "Unknown error"))
+                    raise TelegramError(f"Telegram API getMyCommands error: {err_desc}")
+                return data_dict
+        except Exception as e:
+            raise TelegramError(f"Failed to get commands: {self._sanitize(str(e))}") from e
+
+    def delete_my_commands(
+        self,
+        scope: Optional[dict[str, Any]] = None,
+        language_code: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Delete the list of the bot's commands for the given scope and language."""
+        if not self.bot_token:
+            raise TelegramError("Cannot delete commands: TELEGRAM_BOT_TOKEN is not configured.")
+
+        endpoint = f"{self.base_url}/bot{self.bot_token}/deleteMyCommands"
+        payload: dict[str, Any] = {}
+        if scope:
+            payload["scope"] = scope
+        if language_code:
+            payload["language_code"] = language_code
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with self._urlopen(req) as resp:
+                data_dict: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+                if not data_dict.get("ok", False):
+                    err_desc = self._sanitize(data_dict.get("description", "Unknown error"))
+                    raise TelegramError(f"Telegram API deleteMyCommands error: {err_desc}")
+                return data_dict
+        except Exception as e:
+            raise TelegramError(f"Failed to delete commands: {self._sanitize(str(e))}") from e
+
 

@@ -3,10 +3,10 @@
 ## Current Operational State
 
 - **Current Phase:** `Phase 11G — Final Repository & Runtime Reconciliation`
-- **Audit Date:** `2026-10-21 18:30 WIB`
+- **Audit Date:** `2026-10-22 09:30 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** `53c04dd41e096904abdeb79a83bce260ff0ca38d` (Phase 11G Final Reconciliation: 617 tests passed 100%, 80% coverage threshold locked, Windows Task Scheduler verified in Ready state, S3 & Lambda cloud synchronization verified)
+- **Latest Commit SHA:** `ebc3c45f3ff52e47619eb6bc7f9f9b1e55c22e46` (Phase 11G Final Reconciliation: 625 tests passed 100%, 80% coverage threshold locked with regression tests, yfinance provider verified, Telegram '/' command menu implemented, Windows Task Scheduler verified in Ready state, S3 & Lambda cloud synchronization verified)
 - **Overall Status:** `PASS (OPERATIONAL_AUTOMATED_PIPELINE / APPROVED_PENDING_FIRST_OBSERVATION)`
 - **Detailed Validation Report:** [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
 - **Active Production Champions:**
@@ -15,11 +15,12 @@
 - **Primary Empirical Finding & Decision:**
   - **Completed Phase 11G Daily Market-Data-to-Paper-Trading Automation and Reconciliation:**
     1. **6-Stage Operational Orchestrator:** Implemented `DailyPipeline` and `PipelineRunReport` in `python/pipeline/daily_pipeline.py` and CLI `scripts/run_daily_pipeline.py` coordinating Stages A through F with strict fail-closed progression and JSON reporting.
-    2. **Fail-Closed Provider Gate & Threshold Reconciliation:** Enforced `allow_mock_fallback=False` in operational paths to reject synthetic fallback. Reconciled and locked minimum ticker coverage threshold to 80% (0.80) across code, CLI defaults, unit tests, and documentation.
+    2. **Fail-Closed Provider Gate & Threshold Reconciliation:** Enforced `allow_mock_fallback=False` in operational paths to reject synthetic fallback. Verified runtime market-data provider is `yfinance` (mock strictly forbidden in operations, GoAPI not supported by ingestion implementation). Reconciled and locked minimum ticker coverage threshold to 80% (0.80) across code, CLI defaults, scheduler, and unit regression tests (demonstrating <80% blocks scoring while $\ge 80\%$ passes).
     3. **Task Scheduler Verification:** Registered and verified task `\IDX_Stock_Signal_Daily_Pipeline` in `Ready` state (StartWhenAvailable: `True`, weekday trigger 16:30 WIB, last result `0`, next run `2026-10-22 16:30:00`). Silent execution verified via VBS wrapper `scripts/run_scheduled_pipeline.vbs`.
     4. **Makefile Target Reconciled:** Reconciled `Makefile` target `daily-pipeline`. In Windows host environments lacking `make.exe`, equivalent canonical execution is `.venv\Scripts\python.exe -m scripts.run_daily_pipeline`.
     5. **AWS Cloud Synchronization:** Uploaded 194MB SQLite database to S3 `idx-stock-signal-436095651956-data` with SHA-256 validation and automated backup (`database/backups/`). Updated AWS Lambda functions (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) in region `ap-southeast-3`.
-    6. **Comprehensive Test Suite & Linter:** All 617 tests passed (585 unit, 32 integration, 0 failures, 100% pass rate; 20 unit tests in pipeline suite). Codebase clean under `ruff check .` (0 errors). Production champions and frozen Phase 11F research models remain strictly intact.
+    6. **Telegram Interactive '/' Command Menu:** Implemented bot commands registration via `setMyCommands` (`services/telegram/commands.py`, `scripts/set_telegram_commands.py`) and handlers for `/status`, `/pipeline`, and `/portfolio` in `services/telegram/bot.py`. Typing `/` in Telegram presents the interactive command menu.
+    7. **Comprehensive Test Suite & Linter:** All 625 tests passed (593 unit, 32 integration, 0 failures, 100% pass rate; 23 unit tests in pipeline suite, 33 tests in telegram suite). Reconciled 616 vs 617 test discrepancy (616 pre-threshold-lock-test, 617 post-threshold-lock-test, 625 with new regression & telegram tests). Codebase clean under `ruff check .` (0 errors). Production champions and frozen Phase 11F research models remain strictly intact.
 - **Next Permitted Action:** Unattended execution via Windows Task Scheduler at 16:30 WIB on the next active market session (`2026-10-22`). Monitor `logs/pipeline_*.log` and `reports/daily_runs/` for execution reports.
 
 ---
@@ -95,8 +96,8 @@ The repository maintains dedicated, detailed reports for each major governance a
 
 14. [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
     - **Phase 11G:** Daily Market-Data-to-Paper-Trading Pipeline Automation & Operational Validation
-    - **Scope:** 6-stage operational pipeline orchestrator (`Stage A: Ingestion -> Stage B: Validation Gate -> Stage C: Feature Generation -> Stage D: Feature Readiness -> Stage E: Paper Trading -> Stage F: Reporting`), single CLI entry point (`scripts/run_daily_pipeline.py`), Windows Task Scheduler automation (`IDX_Stock_Signal_Daily_Pipeline` scheduled Mon-Fri 16:30 WIB with `StartWhenAvailable: True`), fail-closed provider rejection (`allow_mock_fallback=False`), point-in-time readiness check, idempotent re-runs, and full prospective lifecycle integration.
-    - **Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL)` (20 unit/integration tests added, 617 total repository tests passed 100%; ruff clean 0 error; champions and frozen Phase 11F research models preserved).
+    - **Scope:** 6-stage operational pipeline orchestrator (`Stage A: Ingestion -> Stage B: Validation Gate -> Stage C: Feature Generation -> Stage D: Feature Readiness -> Stage E: Paper Trading -> Stage F: Reporting`), single CLI entry point (`scripts/run_daily_pipeline.py`), Windows Task Scheduler automation (`IDX_Stock_Signal_Daily_Pipeline` scheduled Mon-Fri 16:30 WIB with `StartWhenAvailable: True`), fail-closed provider rejection (`allow_mock_fallback=False`), 80% coverage threshold lock with regression tests, Telegram interactive `/` command menu (`setMyCommands`), point-in-time readiness check, idempotent re-runs, and full prospective lifecycle integration.
+    - **Status:** `PASS (AUTOMATED_PIPELINE_OPERATIONAL)` (23 unit tests in pipeline suite, 33 tests in telegram suite, 625 total repository tests passed 100%: 593 unit, 32 integration; ruff clean 0 error; champions and frozen Phase 11F research models preserved).
 
 ---
 

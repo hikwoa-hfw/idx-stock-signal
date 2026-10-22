@@ -1,8 +1,11 @@
+import json
 import math
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 from python.common.types import get_bei_tick_size
+from python.config.settings import PROJECT_ROOT
 from python.data.repository import DailyBarRepository
 from python.journal.service import PositionJournalService
 from python.models.registry import ModelRegistry
@@ -49,14 +52,18 @@ class TelegramBotDispatcher:
             return self.handle_daily(args)
         elif command == "/signals":
             return self.handle_signals(args)
+        elif command == "/status":
+            return self.handle_status(args)
+        elif command == "/pipeline":
+            return self.handle_pipeline(args)
+        elif command in ("/positions", "/portfolio"):
+            return self.handle_positions(args)
         elif command == "/enter":
             return self.handle_enter(args)
         elif command == "/exit":
             return self.handle_exit(args)
         elif command == "/cancel":
             return self.handle_cancel(args)
-        elif command == "/positions":
-            return self.handle_positions(args)
         elif command == "/model":
             return self.handle_model(args)
         elif command == "/compare":
@@ -72,10 +79,12 @@ class TelegramBotDispatcher:
             "Available commands:\n"
             "• `/daily` — Latest ranked daily buy signals\n"
             "• `/signals [N]` — Recent trading signal IDs and summary\n"
+            "• `/status` — Pipeline & paper trading observation status\n"
+            "• `/pipeline` — Latest daily pipeline run summary\n"
+            "• `/portfolio` or `/positions` — Open positions and unrealized PnL\n"
             "• `/enter <TICKER> <PRICE> <QTY> [SIGNAL_ID]` — Open manual position\n"
             "• `/exit <TICKER_OR_ID> <PRICE> [REASON]` — Close position (TP/SL/MANUAL)\n"
             "• `/cancel <TICKER_OR_ID> [REASON]` — Cancel open position\n"
-            "• `/positions` — Open positions and unrealized PnL\n"
             "• `/model` — Champion model version and evaluation metrics\n"
             "• `/compare` — Compare model versions in registry\n"
             "• `/performance` — Out-of-sample performance metrics\n"
@@ -362,6 +371,91 @@ class TelegramBotDispatcher:
             "ℹ️ Out-of-sample performance evaluation is scheduled for Phase 9.\n"
             "Live evaluation against realized market outcomes will be available in Phase 9."
         )
+
+    def handle_status(self, args: Optional[list[str]] = None) -> str:
+        """Show current operational pipeline and paper trading observation status."""
+        lines = ["📡 *Operational & Pipeline Status*\n"]
+        reports_dir = PROJECT_ROOT / "artifacts" / "pipeline_runs"
+        reports_file = Path(reports_dir / "latest_pipeline_run.json")
+        if reports_file.is_file():
+            try:
+                with open(reports_file, "r", encoding="utf-8") as f:
+                    rep = json.load(f)
+                run_id = rep.get("run_id", "N/A")
+                status = rep.get("overall_status", "UNKNOWN")
+                dt = rep.get("finished_at", rep.get("started_at", "N/A"))
+                lines.append(f"• *Latest Pipeline Run*: `{status}`")
+                lines.append(f"  Run ID: `{run_id}` | Time: {dt}")
+                val_dt = rep.get("validation_summary", {}).get("latest_completed_session")
+                cov = rep.get("validation_summary", {}).get("coverage_pct")
+                if val_dt:
+                    cov_str = f" ({cov:.1%})" if cov is not None else ""
+                    lines.append(f"  Session: {val_dt}{cov_str}")
+            except Exception:
+                lines.append("• *Latest Pipeline Run*: Report unavailable")
+        else:
+            lines.append("• *Latest Pipeline Run*: No execution recorded yet")
+
+        state_file = Path(PROJECT_ROOT / "artifacts" / "phase_11f" / "paper_trading_state.json")
+        if state_file.is_file():
+            try:
+                with open(state_file, "r", encoding="utf-8") as f:
+                    st = json.load(f)
+                appr = "APPROVED ✅" if st.get("user_approved") else "PENDING APPROVAL ⏳"
+                cutoff = (
+                    st.get("effective_observation_cutoff")
+                    or st.get("approval_data_cutoff")
+                    or "N/A"
+                )
+                eq = st.get("current_equity_idr", 100_000_000.0)
+                cash = st.get("cash_balance_idr", 100_000_000.0)
+                pos_cnt = len(st.get("open_positions", []))
+                lines.append(f"\n• *Paper Trading*: {appr}")
+                lines.append(f"  Effective Cutoff: {cutoff}")
+                lines.append(f"  Equity: IDR {eq:,.2f} | Cash: IDR {cash:,.2f}")
+                lines.append(f"  Open Positions: {pos_cnt}")
+            except Exception:
+                pass
+
+        return "\n".join(lines)
+
+    def handle_pipeline(self, args: Optional[list[str]] = None) -> str:
+        """Display summary of the latest daily pipeline execution."""
+        reports_dir = PROJECT_ROOT / "artifacts" / "pipeline_runs"
+        reports_file = Path(reports_dir / "latest_pipeline_run.json")
+        if not reports_file.is_file():
+            return (
+                "ℹ️ No pipeline run report found.\n"
+                "Run the daily pipeline first (`python -m scripts.run_daily_pipeline`)."
+            )
+        try:
+            with open(reports_file, "r", encoding="utf-8") as f:
+                rep = json.load(f)
+        except Exception as e:
+            return f"⚠️ Failed to read pipeline report: {e}"
+
+        status_emoji = "✅" if rep.get("overall_status") == "SUCCESS" else "ℹ️"
+        lines = [
+            f"{status_emoji} *Daily Pipeline Run Summary*\n",
+            f"• *Status*: `{rep.get('overall_status', 'UNKNOWN')}`",
+            f"• *Run ID*: `{rep.get('run_id', 'N/A')}`",
+            f"• *Provider*: `{rep.get('configured_provider', 'N/A')}`",
+            f"• *Duration*: {rep.get('duration_seconds', 0.0):.2f}s",
+            f"• *Git SHA*: `{rep.get('git_commit_sha', 'UNKNOWN')[:8]}`",
+        ]
+        val = rep.get("validation_summary", {})
+        if val:
+            sess = val.get("latest_completed_session", "N/A")
+            cov = val.get("coverage_pct")
+            cov_str = f"{cov:.1%}" if cov is not None else "N/A"
+            lines.append(f"• *Market Session*: {sess} (Coverage: {cov_str})")
+        pt = rep.get("paper_trading_summary", {})
+        if pt:
+            pt_action = pt.get("action", "N/A")
+            lines.append(f"• *Paper Trading*: `{pt_action}`")
+            if pt.get("reason"):
+                lines.append(f"  _{pt['reason']}_")
+        return "\n".join(lines)
 
     def handle_unknown(self, command: str) -> str:
         return f"Unknown command `{command}`. Use `/help` to see available commands."

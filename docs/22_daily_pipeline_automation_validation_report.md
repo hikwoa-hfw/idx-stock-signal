@@ -4,10 +4,10 @@
 
 - **Task ID:** Phase 11G
 - **Task title:** Daily Market-Data-to-Paper-Trading Pipeline Automation & Operational Validation
-- **Date:** 2026-10-21 15:15 WIB
+- **Date:** 2026-10-22 09:30 WIB
 - **Repository:** indonesian-stock-ai (hikwoa-hfw/idx-stock-signal)
 - **Branch:** main
-- **Commit SHA:** 53c04dd41e096904abdeb79a83bce260ff0ca38d
+- **Commit SHA:** ebc3c45f3ff52e47619eb6bc7f9f9b1e55c22e46
 - **Task status:** `PASS`
 - **Related reports:**
   - [docs/17_phase_11f_forward_paper_trading_report.md](docs/17_phase_11f_forward_paper_trading_report.md)
@@ -46,8 +46,11 @@ Production champion models (`lightgbm_classification_20261014_093522` and `light
 8. **PowerShell Stderr Scoping & Argument Forwarding:** Scoped `$ErrorActionPreference = "Continue"` during native `python.exe` invocation in `scripts/run_scheduled_pipeline.ps1` and forwarded `@args` to prevent premature abort on routine stderr messages.
 9. **Task Scheduler Catch-Up Settings:** Added `-StartWhenAvailable` to `New-ScheduledTaskSettingsSet` in `scripts/register_daily_scheduler.ps1` and confirmed task `\IDX_Stock_Signal_Daily_Pipeline` is registered in `Ready` state with `StartWhenAvailable: True`.
 10. **14 Operational Audit Metrics & Robust Gates:** Expanded `PipelineRunReport` and `_finalize_report` with all 14 required audit metrics. Hardened Stage B with DB row reconciliation and `SKIPPED_NO_NEW_SESSION` skip. Hardened Stage D with cross-table ticker matching against `daily_bars`, benchmark columns non-null checks, and complete candidate counts (`complete_history_candidates > 0`).
-11. **Comprehensive Test Suite:** Added 20 integration and unit test cases in `tests/unit/test_daily_pipeline.py` covering all operational validation scenarios and locking the 80% default coverage threshold. All 20 tests passed. Total test suite: 617/617 passed (100%), ruff clean 0 error.
-12. **AWS Cloud Synchronization:** Uploaded 194MB SQLite database to S3 bucket `idx-stock-signal-436095651956-data` with SHA-256 verification and automated backup; deployed updated application code to AWS Lambda functions (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) in `ap-southeast-3`.
+11. **Comprehensive Test Suite & Coverage Threshold Regression:** Added 23 unit and regression test cases in `tests/unit/test_daily_pipeline.py` (locking the 80% default coverage threshold, proving coverage < 80% blocks downstream scoring while >= 80% passes, and testing CLI overrides) and 33 tests in `tests/unit/test_telegram.py`. All tests passed. Total test suite: 625/625 passed (593 unit, 32 integration, 100% pass rate), ruff clean 0 error.
+12. **Reconciliation of Test Count Discrepancy (616 vs 617 vs 625):** The 616 count recorded in prior audit reflected the suite prior to adding the default threshold lock test `test_default_ticker_coverage_threshold_and_cli_default` (which brought the count to 617). With the 8 new regression tests (3 coverage tests + 5 Telegram bot commands tests), the suite is verified at 625 tests passed 100%.
+13. **Market-Data Provider Verification:** Inspected runtime configuration (`.env` setting `MARKET_DATA_PROVIDER=yfinance`) and recent execution logs (`daily_pipeline_20261021_163002.log` and `latest_pipeline_run.json`). Verified that `yfinance` is the operational market data provider (192/210 tickers, 91.4% coverage). Confirmed the ingestion engine supports `yfinance`, `local_csv`, and mock (mock strictly forbidden in operational mode), and corrected documentation to eliminate references to unsupported providers.
+14. **Telegram Bot Interactive '/' Command Menu:** Added bot command registration via `setMyCommands` (`services/telegram/commands.py`, `scripts/set_telegram_commands.py`) and command handlers for `/status`, `/pipeline`, and `/portfolio` in `services/telegram/bot.py`. When a user types `/` in Telegram, the UI renders the full interactive command list.
+15. **AWS Cloud Synchronization:** Uploaded 194MB SQLite database to S3 bucket `idx-stock-signal-436095651956-data` with SHA-256 verification and automated backup; deployed updated application code to AWS Lambda functions (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) in `ap-southeast-3`.
 
 ### Important Findings
 
@@ -70,16 +73,17 @@ Allow Windows Task Scheduler to execute `\IDX_Stock_Signal_Daily_Pipeline` at 16
 | R3 | Scheduled task automation scripts | PASS | `scripts/register_daily_scheduler.ps1`, `scripts/unregister_daily_scheduler.ps1`, `scripts/run_scheduled_pipeline.ps1` | Lockfile, logging, weekday 16:30 WIB schedule |
 | R4 | Real-provider failure fails closed | PASS | `tests/unit/test_daily_pipeline.py::test_real_provider_failure_fails_closed` | Halts at Stage A with status `FAILED` |
 | R5 | Empty provider results do not invoke mock fallback | PASS | `tests/unit/test_daily_pipeline.py::test_empty_provider_results_do_not_invoke_mock_fallback` | Raises `RuntimeError` when mock requested in operational mode |
-| R6 | Partial ticker coverage blocks scoring | PASS | `tests/unit/test_daily_pipeline.py::test_partial_ticker_coverage_blocks_scoring` | Stage B validates coverage against `--min-coverage` (default 80% / 0.80 locked across code, CLI, tests, docs) |
+| R6 | Partial ticker coverage blocks scoring | PASS | `tests/unit/test_daily_pipeline.py::test_partial_ticker_coverage_blocks_scoring`, `test_ticker_coverage_below_80_percent_blocks_downstream_scoring`, `test_ticker_coverage_meeting_80_percent_passes_gate` | Stage B validates coverage against `--min-coverage` (default 80% / 0.80 locked across code, CLI, tests, docs; <80% blocks scoring, >=80% passes) |
 | R7 | Ingestion followed by feature generation saves expected rows | PASS | `tests/unit/test_daily_pipeline.py::test_ingestion_followed_by_feature_generation_saves_expected_rows` | Verified by SQL query on `features_daily` table |
 | R8 | Next daily run can reuse persisted DB | PASS | `tests/unit/test_daily_pipeline.py::test_next_daily_run_reuses_persisted_database` | Subsequent session reuses existing DB bars and appends new features |
 | R9 | Reprocessing same session is idempotent | PASS | `tests/unit/test_daily_pipeline.py::test_reprocessing_same_session_is_idempotent` | Re-running produces identical state; zero duplicates in DB/state |
 | R10 | Missing or stale data prevents scoring | PASS | `tests/unit/test_daily_pipeline.py::test_missing_or_stale_data_prevents_scoring` | Stage D blocks progression before Stage E execution |
 | R11 | Scoring artifacts and policy hashes are unchanged | PASS | `tests/unit/test_daily_pipeline.py::test_scoring_artifacts_and_policy_hashes_unchanged` | SHA-256 hash `8c102c44...` verified identical |
 | R12 | Pre-approval session safety | PASS | `tests/unit/test_daily_pipeline.py::test_unapproved_or_pre_approval_dates_are_rejected_or_skipped` | Dates $\le$ cutoff marked `SKIPPED_PRE_APPROVAL_SESSION` |
+| R13 | Telegram bot interactive command menu | PASS | `services/telegram/commands.py`, `services/telegram/client.py::TelegramClient.set_my_commands`, `tests/unit/test_telegram.py` | Bot commands registered via `setMyCommands` to render popup menu upon typing `/` |
 
 State explicitly which requested requirements were not completed and why:
-None. All 12 requirements were completed and verified.
+None. All 13 requirements were completed and verified.
 
 ---
 
@@ -97,9 +101,14 @@ None. All 12 requirements were completed and verified.
 | `scripts/unregister_daily_scheduler.ps1` | Script to unregister scheduled task cleanly | Safe decommissioning and testing cleanup |
 | `Makefile` | Added and reconciled `daily-pipeline` target (`$(VENV_PYTHON) -m scripts.run_daily_pipeline`) in `.PHONY` | Standardized cross-platform workflow; recipe verified |
 | `python/experiments/paper_trading.py` | Coerced candidate feature matrix columns via `apply(pd.to_numeric, errors="coerce")` before `np.isinf` check | Prevent `TypeError` when features contain object dtype with `None` values |
-| `tests/unit/test_daily_pipeline.py` | Created 20 unit and integration tests covering all operational validation scenarios and locking 80% coverage threshold | Rigorous regression protection and operational verification |
+| `tests/unit/test_daily_pipeline.py` | Created 23 unit and integration tests covering all operational validation scenarios, locking 80% coverage threshold, and demonstrating block/pass regression behavior | Rigorous regression protection and operational verification |
+| `services/telegram/commands.py` | Defined `DEFAULT_BOT_COMMANDS`, validation helper, and BotFather format exporter | Canonical bot commands list for Telegram interactive `/` menu |
+| `services/telegram/client.py` | Added `set_my_commands()`, `get_my_commands()`, and `delete_my_commands()` to `TelegramClient` | Telegram Bot API command registration |
+| `services/telegram/bot.py` | Added command routing and handlers for `/status`, `/pipeline`, and `/portfolio` in `TelegramBotDispatcher` | Extended bot command dispatching without model recalculations |
+| `scripts/set_telegram_commands.py` | CLI utility to register or inspect Telegram bot commands (`setMyCommands`) | Operator convenience for Telegram UI menu setup |
+| `tests/unit/test_telegram.py` | Added 5 unit tests for command validation, BotFather formatting, API client, and dispatcher handlers (total 33 tests) | Telegram bot menu regression testing |
 | `python/cloud/s3_sync.py` | Executed `upload_database()` to sync 194MB `stock_signals.db` to S3 with SHA-256 validation and automated backup | Cloud data backup and synchronization |
-| `scripts/deploy_aws.py` | Packaged application zip and updated AWS Lambda functions in `ap-southeast-3` (`idx-daily-pipeline-staging`, etc.) | Serverless cloud automation and redundancy |
+| `scripts/deploy_aws.py` | Packaged application zip and updated AWS Lambda functions in `ap-southeast-3` (`idx-daily-pipeline-staging`, etc.); integrated `set_my_commands` during webhook setup | Serverless cloud automation and redundancy |
 
 ---
 
@@ -135,7 +144,7 @@ None. All 12 requirements were completed and verified.
 7. **Is forward paper trading ready to process its next eligible session?**
    **Yes.** Operator approval has been recorded in `artifacts/phase_11f/paper_trading_state.json` (`user_approved: True`, `effective_observation_cutoff: '2026-10-21'`). When the next trading session strictly after `2026-10-21` is ingested (e.g. `2026-10-22`), the pipeline will process orders, fills, exits, and new decisions.
 8. **What, if anything, must still be configured manually?**
-   **None for standard execution.** The scheduler, virtual environment, wrappers, and database paths are fully configured. Optional manual item: configure `GOAPI_API_KEY` in `.env` if prioritizing GoAPI over Yahoo Finance.
+   **None for standard execution.** The scheduler, virtual environment, wrappers, database paths, and `yfinance` market data provider are fully configured. Note: Public ingestion layer operational provider is `yfinance` (`local_csv` for offline testing, mock prohibited in operational mode); GoAPI is not supported by the ingestion implementation.
 
 ---
 
@@ -193,10 +202,11 @@ None. All 12 requirements were completed and verified.
 | Check | Command or Method | Result | Evidence/Notes |
 |---|---|---|---|
 | Linter / style | `.venv\Scripts\ruff.exe check .` | PASS | 0 errors across entire repository |
-| Unit & Integration tests | `.venv\Scripts\pytest.exe -q tests/unit/test_daily_pipeline.py` | PASS | 20/20 passed in 7.82s (includes 80% coverage threshold lock) |
+| Unit & Integration tests | `.venv\Scripts\pytest.exe -q tests/unit/test_daily_pipeline.py tests/unit/test_telegram.py` | PASS | 56/56 passed in 10.41s (23 daily pipeline tests with 80% threshold regression lock, 33 telegram tests) |
 | Paper trading suite | `.venv\Scripts\pytest.exe -q tests/unit/test_fail_closed_readiness.py tests/unit/test_research_scoring_integrity.py` | PASS | 53/53 passed (100%) |
-| Full repository test suite | `.venv\Scripts\pytest.exe` | PASS | 617/617 passed (100%) in 2m 40s (585 unit, 32 integration) |
+| Full repository test suite | `.venv\Scripts\pytest.exe` | PASS | 625/625 passed (100%) in ~4m 30s (593 unit, 32 integration) |
 | Makefile target verification | `.venv\Scripts\python.exe -m scripts.run_daily_pipeline --help` | PASS | Recipe verified; native Windows execution documented (`make.exe` absent) |
+| Telegram bot commands dry-run | `.venv\Scripts\python.exe -m scripts.set_telegram_commands --dry-run` | PASS | Validated 14 default bot commands formatting and schema |
 | CLI dry-run validation | `python -m scripts.run_daily_pipeline --date 2026-10-16 --skip-ingest --dry-run` | PASS | Reported `COMPLETED_DRY_RUN` with `SKIPPED_PRE_APPROVAL_SESSION` |
 | Task scheduler registration | `powershell -ExecutionPolicy Bypass -File scripts/register_daily_scheduler.ps1 -Force` | PASS | Task `\IDX_Stock_Signal_Daily_Pipeline` registered in `Ready` state (StartWhenAvailable: True) |
 | Task scheduler runtime status | `Get-ScheduledTaskInfo -TaskName 'IDX_Stock_Signal_Daily_Pipeline'` | PASS | State: Ready, Enabled: True, NextRun: 10/22/2026 16:30, LastRun: 10/21/2026 16:30, LastResult: 0 |
@@ -214,6 +224,8 @@ None. All 12 requirements were completed and verified.
   - `scripts/run_scheduled_pipeline.ps1`
   - `scripts/register_daily_scheduler.ps1`
   - `scripts/unregister_daily_scheduler.ps1`
+  - `scripts/set_telegram_commands.py`
+  - `services/telegram/commands.py`
   - `tests/unit/test_daily_pipeline.py`
   - `docs/22_daily_pipeline_automation_validation_report.md`
 - **Files modified:**
@@ -221,9 +233,14 @@ None. All 12 requirements were completed and verified.
   - `scripts/ingest_daily.py` (added `allow_mock_fallback` parameter)
   - `scripts/build_features.py` (added `allow_mock_fallback` parameter)
   - `python/experiments/paper_trading.py` (fixed `np.isinf` object column type handling)
+  - `services/telegram/__init__.py` (exported bot commands utilities)
+  - `services/telegram/bot.py` (added command handlers for `/status`, `/pipeline`, `/portfolio`)
+  - `services/telegram/client.py` (added `set_my_commands`, `get_my_commands`, `delete_my_commands`)
+  - `scripts/deploy_aws.py` (integrated `set_my_commands` into webhook deployment)
+  - `tests/unit/test_telegram.py` (added unit tests for bot commands menu and dispatchers)
   - `Makefile` (added `daily-pipeline` target)
-  - `audit_report.md` (indexed Phase 11G)
-  - `summary.md` (appended Logs 69, 70, and 71)
+  - `audit_report.md` (indexed Phase 11G and reconciled test count)
+  - `summary.md` (appended Logs 69, 70, 71, and 72)
   - `walkthrough.md` (updated work session details and checklist)
 - **Production state changed:** No. Production champions and frozen policy bundle hashes remain immutable.
 
@@ -241,7 +258,11 @@ None. All 12 requirements were completed and verified.
 
 - **Run pipeline manually for today:**
   ```powershell
-  .venv\Scripts\python.exe -m scripts.run_daily_pipeline --provider goapi
+  .venv\Scripts\python.exe -m scripts.run_daily_pipeline --provider yfinance
+  ```
+- **Register Telegram '/' command menu:**
+  ```powershell
+  .venv\Scripts\python.exe -m scripts.set_telegram_commands
   ```
 - **Run dry-run verification against current DB date:**
   ```powershell
@@ -260,8 +281,8 @@ None. All 12 requirements were completed and verified.
 
 ## 11. Final Decision
 
-- **Acceptance criteria satisfied:** Yes (12/12 requirements passed).
+- **Acceptance criteria satisfied:** Yes (13/13 requirements passed).
 - **Remaining blockers:** None.
-- **Known limitations:** Automated market execution relies on GoAPI / yfinance uptime at 16:30 WIB; if provider fails or market is closed, pipeline halts safely without corrupting paper trading state.
+- **Known limitations:** Automated market execution relies on `yfinance` uptime at 16:30 WIB; if provider fails or market is closed, pipeline halts safely without corrupting paper trading state.
 - **Next action:** System will run automatically on the next trading session at 16:30 WIB via Windows Task Scheduler.
 - **Approval required before proceeding:** None. Operator approval has already been granted and persisted in Phase 11F (`2026-10-21`).

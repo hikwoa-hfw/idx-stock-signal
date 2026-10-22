@@ -1071,3 +1071,26 @@ Log Perubahan Tambahan (15 Oktober 2026)
    4. Memperbarui `audit_report.md` pada bagian "Current Operational State" ke Phase 11G, menambahkan link ke `docs/22_daily_pipeline_automation_validation_report.md`, dan merangkum hasil operasional terkini.
    5. Memverifikasi status runtime nyata Windows Task Scheduler `\IDX_Stock_Signal_Daily_Pipeline` via PowerShell: State `Ready`, Enabled `True`, StartWhenAvailable `True`, NextRunTime `10/22/2026 4:30:00 PM`, LastRunTime `10/21/2026 4:30:00 PM`, LastTaskResult `0` (Success).
    6. Melakukan sinkronisasi ke AWS: mengunggah database SQLite `datasets/stock_signals.db` (194,031,616 bytes, SHA256 terverifikasi) ke bucket S3 `idx-stock-signal-436095651956-data/database/stock_signals.db` dengan backup otomatis (`database/backups/stock_signals_20261021_110909.db`), serta memperbarui kode fungsi AWS Lambda (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) via `scripts/deploy_aws.py` di region `ap-southeast-3`.
+
+Log Perubahan Tambahan (22 Oktober 2026)
+72. Phase 11G — Penguncian Ambang Batas 80% Coverage Pipeline, Verifikasi Provider Market Data, dan Fitur Interactive Command Menu Telegram
+   Masalah:
+   1. Perlunya penguncian permanen dan pengujian regresi untuk ambang batas cakupan ticker minimum 80% (0.80) di Stage B pipeline harian, membuktikan bahwa cakupan <80% secara fail-closed memblokir downstream scoring (Stage C, D, E) sedangkan cakupan >= 80% meloloskan gate, serta mendukung CLI override.
+   2. Perlunya verifikasi empiris penyedia data pasar (market data provider) di lingkungan runtime lokal dan log eksekusi terbaru (`yfinance`), penegasan larangan penggunaan mock/sintetik pada mode operasional, serta koreksi terhadap klaim di laporan sebelumnya mengenai dukungan GoAPI (yang tidak didukung oleh implementasi ingestion publik `python/data/provider.py`).
+   3. Bot Telegram belum memiliki fitur menu interaktif popup saat pengguna mengetik karakter `/` di kolom input pesan Telegram, sehingga pengguna harus mengingat atau mengetik manual seluruh perintah (`/start`, `/help`, `/daily`, `/signals`, `/status`, `/portfolio`, `/pipeline`, dll).
+   4. Perlunya rekonsiliasi riwayat hitungan pengujian (616 vs 617 vs 625 test) antara `audit_report.md`, `summary.md`, dan `docs/22_daily_pipeline_automation_validation_report.md`.
+   Solusi:
+   1. Menambahkan 3 unit regression tests pada `tests/unit/test_daily_pipeline.py`:
+      - `test_ticker_coverage_below_80_percent_blocks_downstream_scoring`: membuktikan cakupan 70% menggugurkan Stage B dan memblokir Stage C/D/E.
+      - `test_ticker_coverage_meeting_80_percent_passes_gate`: membuktikan cakupan 80% meloloskan Stage B.
+      - `test_ticker_coverage_cli_override`: memvalidasi override CLI `--min-coverage 0.70` (lulus) dan `--min-coverage 0.90` (gagal).
+      Total test modul daily pipeline meningkat dari 20 menjadi 23 test (23/23 passed).
+   2. Memverifikasi `.env` (`MARKET_DATA_PROVIDER=yfinance`), `python/config/settings.py`, serta log riil terbaru `logs/daily_pipeline_20261021_163002.log` dan `artifacts/pipeline_runs/latest_pipeline_run.json` (terkonfirmasi 192/210 ticker, cakupan 91.4% via `yfinance`). Mengoreksi `python/data/provider.py` bahwa provider yang didukung hanya `yfinance`, `local_csv`, dan mock (`goapi` memicu `ValueError: Unsupported market data provider: goapi`). Menghapus seluruh klaim dukungan GoAPI dari `docs/22_daily_pipeline_automation_validation_report.md` dan menegaskan larangan mock (`allow_mock_fallback=False`).
+   3. Mengembangkan fitur interaktif Telegram Bot Commands via Bot API `setMyCommands`:
+      - Membuat `services/telegram/commands.py` yang mendefinisikan 14 perintah bawaan (`DEFAULT_BOT_COMMANDS`), fungsi validasi batas Bot API (`validate_bot_commands`), dan generator format BotFather (`format_commands_for_botfather`).
+      - Menambahkan method `set_my_commands()`, `get_my_commands()`, dan `delete_my_commands()` pada `TelegramClient` di `services/telegram/client.py`.
+      - Mengintegrasikan handler perintah `/status`, `/pipeline`, dan `/portfolio` pada `TelegramBotDispatcher` di `services/telegram/bot.py`.
+      - Membuat CLI tool `scripts/set_telegram_commands.py` untuk pendaftaran otomatis maupun ekspor BotFather.
+      - Mengintegrasikan registrasi otomatis perintah bot pada skrip deployment AWS `scripts/deploy_aws.py`.
+      - Menambahkan 5 unit tests komprehensif pada `tests/unit/test_telegram.py` (total 33 unit tests telegram passed).
+   4. Merekonsiliasi hitungan test: 616 (state pada entri 70), 617 (setelah penambahan test pengunci threshold pada entri 71), dan 625 (setelah penambahan 3 regression tests pipeline dan 5 bot command tests: 593 unit tests, 32 integration tests, 100% kelulusan, ruff 0 error).

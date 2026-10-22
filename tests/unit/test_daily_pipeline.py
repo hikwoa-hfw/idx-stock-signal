@@ -776,3 +776,119 @@ def test_default_ticker_coverage_threshold_and_cli_default() -> None:
     args = parse_args([])
     assert args.min_coverage == 0.80
 
+
+def test_ticker_coverage_below_80_percent_blocks_downstream_scoring(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Coverage below 80% default threshold blocks downstream scoring."""
+    db_path = tmp_path / "test.db"
+    artifacts_dir = tmp_path / "artifacts"
+    reports_dir = tmp_path / "reports"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    _populate_test_artifacts(artifacts_dir)
+
+    mock_universe = [f"TCK{i:02d}" for i in range(10)]
+    monkeypatch.setattr("python.pipeline.daily_pipeline.load_universe", lambda: mock_universe)
+
+    # Ingest 7 out of 10 tickers (70% coverage < 80% threshold)
+    sess_date = date(2026, 10, 16)
+    _init_test_database(db_path, [sess_date], mock_universe[:7])
+
+    # Run pipeline with DEFAULT min_ticker_coverage (0.80)
+    pipeline = DailyPipeline(
+        db_url=f"sqlite:///{db_path.as_posix()}",
+        artifacts_dir=artifacts_dir,
+        reports_dir=reports_dir,
+    )
+    assert pipeline.min_ticker_coverage == 0.80
+
+    report = pipeline.run(skip_ingest=True, target_date=sess_date)
+    assert report.overall_status == "FAILED"
+    stage_b = report.stages.get("stage_b_data_validation")
+    assert stage_b is not None
+    assert stage_b["status"] == "FAILED"
+    assert "below threshold 80.0%" in stage_b["error"]
+    assert stage_b["details"]["coverage_pct"] == 0.70
+
+    # Downstream scoring stages must NOT execute
+    assert "stage_c_feature_generation" not in report.stages
+    assert "stage_d_feature_readiness" not in report.stages
+    assert "stage_e_paper_trading" not in report.stages
+
+
+def test_ticker_coverage_meeting_80_percent_passes_gate(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Coverage meeting or exceeding 80% threshold passes Stage B validation gate."""
+    db_path = tmp_path / "test.db"
+    artifacts_dir = tmp_path / "artifacts"
+    reports_dir = tmp_path / "reports"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    _populate_test_artifacts(artifacts_dir)
+
+    mock_universe = [f"TCK{i:02d}" for i in range(10)]
+    monkeypatch.setattr("python.pipeline.daily_pipeline.load_universe", lambda: mock_universe)
+
+    # Ingest 8 out of 10 tickers (80% coverage == 80% threshold)
+    sess_date = date(2026, 10, 16)
+    _init_test_database(db_path, [sess_date], mock_universe[:8])
+
+    # Run pipeline with DEFAULT min_ticker_coverage (0.80)
+    pipeline = DailyPipeline(
+        db_url=f"sqlite:///{db_path.as_posix()}",
+        artifacts_dir=artifacts_dir,
+        reports_dir=reports_dir,
+    )
+    assert pipeline.min_ticker_coverage == 0.80
+
+    stage_b = pipeline._execute_stage_b(target_date=sess_date)
+    assert stage_b.status == "SUCCESS"
+    assert stage_b.details["coverage_pct"] == 0.80
+    assert stage_b.details["distinct_tickers_count"] == 8
+    assert stage_b.details["active_universe_count"] == 10
+
+
+def test_ticker_coverage_cli_override(tmp_path: Path, monkeypatch) -> None:
+    """Explicit CLI override of --min-coverage modifies gate threshold as intended."""
+    from scripts.run_daily_pipeline import parse_args
+
+    db_path = tmp_path / "test.db"
+    artifacts_dir = tmp_path / "artifacts"
+    reports_dir = tmp_path / "reports"
+
+    mock_universe = [f"TCK{i:02d}" for i in range(10)]
+    monkeypatch.setattr("python.pipeline.daily_pipeline.load_universe", lambda: mock_universe)
+
+    sess_date = date(2026, 10, 16)
+    _init_test_database(db_path, [sess_date], mock_universe[:7])
+
+    # 1. Override to 0.70 allows 70% coverage to pass Stage B
+    args_70 = parse_args(["--min-coverage", "0.70"])
+    assert args_70.min_coverage == 0.70
+
+    pipeline_70 = DailyPipeline(
+        db_url=f"sqlite:///{db_path.as_posix()}",
+        artifacts_dir=artifacts_dir,
+        reports_dir=reports_dir,
+        min_ticker_coverage=args_70.min_coverage,
+    )
+    stage_b_70 = pipeline_70._execute_stage_b(target_date=sess_date)
+    assert stage_b_70.status == "SUCCESS"
+    assert stage_b_70.details["coverage_pct"] == 0.70
+
+    # 2. Override to 0.90 causes 80% coverage to fail Stage B
+    _init_test_database(db_path, [sess_date], mock_universe[:8])
+    args_90 = parse_args(["--min-coverage", "0.90"])
+    assert args_90.min_coverage == 0.90
+
+    pipeline_90 = DailyPipeline(
+        db_url=f"sqlite:///{db_path.as_posix()}",
+        artifacts_dir=artifacts_dir,
+        reports_dir=reports_dir,
+        min_ticker_coverage=args_90.min_coverage,
+    )
+    stage_b_90 = pipeline_90._execute_stage_b(target_date=sess_date)
+    assert stage_b_90.status == "FAILED"
+    assert "below threshold 90.0%" in stage_b_90.error
+
+

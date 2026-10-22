@@ -1,80 +1,71 @@
-# Walkthrough — Phase 11G Final Repository & Runtime Reconciliation
+# Walkthrough — Phase 11G Coverage Threshold Lock, Provider Verification & Telegram Interactive Menu
 
-## Sesi Kerja: 21 Oktober 2026
+## Sesi Kerja: 22 Oktober 2026
 
 ### Ringkasan Eksekutif
-Sesi kerja ini menuntaskan rekonsiliasi final repositori dan status runtime untuk Phase 11G (Daily Market-Data-to-Paper-Trading Pipeline Automation & Operational Validation). Seluruh diskrepansi yang diidentifikasi telah diselesaikan tanpa mengubah champion produksi, kebijakan Phase 11F, atau model riset:
-1. **Rekonsiliasi Ambang Batas Cakupan Ticker:** Menyelaraskan default minimum ticker coverage threshold menjadi 80% (0.80) secara konsisten pada kode inti pipeline, CLI arguments, pengujian unit regression, dan dokumentasi.
-2. **Rekonsiliasi Makefile Target:** Memverifikasi target `daily-pipeline` pada `Makefile` (`$(VENV_PYTHON) -m scripts.run_daily_pipeline`). Mendokumentasikan dan memvalidasi bahwa pada lingkungan Windows tanpa binary `make.exe`, eksekusi dilakukan via `.venv\Scripts\python.exe -m scripts.run_daily_pipeline`.
-3. **Rekonsiliasi Hitungan Test:** Memperbaiki diskrepansi hitungan test pada laporan validasi berdasarkan output riil `pytest`: 20 unit/integration tests pada modul pipeline harian, 585 unit tests, 32 integration tests, dengan total 617/617 tests passed (100% pass rate).
-4. **Verifikasi Runtime Windows Task Scheduler:** Memeriksa dan memverifikasi secara langsung status task `\IDX_Stock_Signal_Daily_Pipeline` pada sistem host: State `Ready`, Enabled `True`, StartWhenAvailable `True`, NextRunTime `10/22/2026 4:30:00 PM`, LastRunTime `10/21/2026 4:30:00 PM`, LastTaskResult `0` (Success).
-5. **Pembaruan Audit Report:** Memperbarui header "Current Operational State" pada `audit_report.md` ke Phase 11G, menautkan ke `docs/22_daily_pipeline_automation_validation_report.md`, dan merangkum hasil operasional terkini.
-6. **Sinkronisasi AWS Cloud:** Mengunggah database SQLite `datasets/stock_signals.db` (194,031,616 bytes) dengan validasi SHA-256 ke S3 bucket `idx-stock-signal-436095651956-data` (disertai pembuatan backup otomatis `database/backups/stock_signals_20261021_110909.db`), serta memperbarui kode aplikasi pada fungsi AWS Lambda (`idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, `idx-telegram-webhook-staging`) di region `ap-southeast-3`.
+Sesi kerja ini menuntaskan 4 area krusial pada Phase 11G:
+1. **Penguncian Ambang Batas 80% & Regression Tests:** Mengunci ambang batas cakupan ticker minimum 80% (`0.80`) di `python/pipeline/daily_pipeline.py` dan CLI `scripts/run_daily_pipeline.py`, serta menambahkan 3 regression tests komprehensif di `tests/unit/test_daily_pipeline.py` membuktikan coverage <80% secara fail-closed memblokir scoring Stage C/D/E sedangkan >= 80% lolos gate.
+2. **Verifikasi Market-Data Provider:** Memverifikasi provider operasional aktif adalah `yfinance` melalui konfigurasi `.env`, `settings.py`, serta file log eksekusi nyata terbaru `logs/daily_pipeline_20261021_163002.log` (192/210 ticker, 91.4% coverage). Menegaskan larangan penggunaan data sintetik/mock dalam mode operasional, dan menghapus seluruh klaim usang terkait GoAPI pada laporan validasi (karena `python/data/provider.py` hanya mendukung `yfinance`, `local_csv`, dan `mock`).
+3. **Fitur Telegram Interactive `/` Command Menu:** Mengimplementasikan pendaftaran perintah bot via Bot API `setMyCommands` (`services/telegram/commands.py`, `scripts/set_telegram_commands.py`) dan routing command baru `/status`, `/pipeline`, `/portfolio` pada `services/telegram/bot.py`. Ketika pengguna mengetik `/` di Telegram, menu daftar perintah akan muncul secara interaktif.
+4. **Rekonsiliasi Test & Dokumentasi:** Merekonsiliasi hitungan pengujian (616 -> 617 -> 625 passed, 100% kelulusan, ruff 0 error), memperbarui `audit_report.md` (Current Operational State & Indeks Entri 14), merekonsiliasi `docs/22_daily_pipeline_automation_validation_report.md`, serta mencatat Log 72 pada `summary.md`.
 
 ---
 
 ### Task Breakdown & Perubahan File
 
-#### 1. Minimum Ticker Coverage Threshold (80% / 0.80)
-- **File:** `python/pipeline/daily_pipeline.py` (Baris 108)
-  - Mengubah default parameter `min_ticker_coverage: float = 0.70` menjadi `min_ticker_coverage: float = 0.80`.
-  - Menjamin bahwa jika jumlah ticker yang ter-ingest kurang dari 80% dari universe (minimal 168 dari 210 saham), Stage B fail-closed sebelum kalkulasi fitur.
-- **File:** `scripts/run_daily_pipeline.py` (Baris 74–75)
-  - Mengubah default argument `--min-coverage` dari `0.70` menjadi `0.80` dan memperbarui teks bantuan CLI.
-- **File:** `tests/unit/test_daily_pipeline.py` (Baris 769–779)
-  - Menambahkan test `test_default_ticker_coverage_threshold_and_cli_default` yang secara eksplisit menguji bahwa `DailyPipeline().min_ticker_coverage == 0.80` dan `parse_args([]).min_coverage == 0.80`.
+#### 1. Penguncian Ambang Batas 80% & Regression Tests Pipeline
+- **File:** `tests/unit/test_daily_pipeline.py` (Baris 781–847)
+  - Menambahkan test `test_ticker_coverage_below_80_percent_blocks_downstream_scoring`: menyimulasikan 7 dari 10 ticker (70%), memverifikasi Stage B gagal (`status == "FAILED"`), dan memverifikasi Stage C, D, E tidak pernah dieksekusi.
+  - Menambahkan test `test_ticker_coverage_meeting_80_percent_passes_gate`: menyimulasikan 8 dari 10 ticker (80%), memverifikasi Stage B berhasil lolos.
+  - Menambahkan test `test_ticker_coverage_cli_override`: memverifikasi CLI override `--min-coverage 0.70` meloloskan coverage 70%, dan `--min-coverage 0.90` menggugurkan coverage 80%.
+  - Total test pada modul `test_daily_pipeline.py` bertambah dari 20 menjadi 23 test (23/23 passed).
 
-#### 2. Rekonsiliasi Makefile Target & Lingkungan Windows
-- **File:** `Makefile` (Baris 1, 16–17)
-  - Target `daily-pipeline` terdefinisi bersih di `.PHONY` dan menjalankan `$(VENV_PYTHON) -m scripts.run_daily_pipeline`.
-  - Sintaks dan resep eksekusi divalidasi via CLI Python `.venv\Scripts\python.exe -m scripts.run_daily_pipeline --help`.
-  - Pada lingkungan Windows di mana executable GNU `make.exe` tidak terinstal dalam sistem PATH, didokumentasikan perintah kanonikal PowerShell `.venv\Scripts\python.exe -m scripts.run_daily_pipeline`.
+#### 2. Fitur Telegram Interactive `/` Command Menu & Endpoint Integrasi
+- **File Baru:** `services/telegram/commands.py`
+  - Mendefinisikan daftar 14 command bawaan `DEFAULT_BOT_COMMANDS` (`start`, `help`, `daily`, `signals`, `status`, `pipeline`, `portfolio`, `positions`, `enter`, `exit`, `cancel`, `model`, `compare`, `performance`).
+  - Fungsi `validate_bot_commands()`: memvalidasi format nama perintah (huruf kecil, angka, underscore, 1–32 karakter) dan panjang deskripsi (1–256 karakter) sesuai batas resmi Telegram Bot API.
+  - Fungsi `format_commands_for_botfather()`: memformat daftar perintah untuk disalin langsung ke BotFather.
+- **File:** `services/telegram/client.py` (Baris 242–289)
+  - Menambahkan method `set_my_commands(commands, scope, language_code)`: memanggil endpoint Telegram Bot API `setMyCommands`.
+  - Menambahkan method `get_my_commands(scope, language_code)`: memanggil endpoint `getMyCommands`.
+  - Menambahkan method `delete_my_commands(scope, language_code)`: memanggil endpoint `deleteMyCommands`.
+- **File:** `services/telegram/bot.py` (Baris 21–24, 73–84, 185–230)
+  - Menambahkan dispatching untuk `/status` (melaporkan operational state, cutoff tanggal, approval status, saldo kas, open positions), `/pipeline` (melaporkan ringkasan eksekusi pipeline terakhir dari `artifacts/pipeline_runs/latest_pipeline_run.json`), dan `/portfolio` (melaporkan ringkasan portofolio paper trading).
+  - Memperbarui handler `/help` agar menampilkan seluruh perintah interaktif baru.
+- **File:** `services/telegram/__init__.py`
+  - Mengekspor `DEFAULT_BOT_COMMANDS`, `format_commands_for_botfather`, dan `validate_bot_commands`.
+- **File Baru:** `scripts/set_telegram_commands.py`
+  - Skrip CLI mandiri untuk mendaftarkan command ke bot token Telegram (`--token`, `--botfather`, `--delete`, `--dry-run`).
+- **File:** `scripts/deploy_aws.py` (Baris 248–265)
+  - Menghubungkan pemanggilan `set_my_commands()` otomatis saat deployment webhook Telegram di AWS.
+- **File:** `tests/unit/test_telegram.py` (Baris 540–600)
+  - Menambahkan 5 unit test baru: `test_default_bot_commands_validation`, `test_format_commands_for_botfather`, `test_telegram_client_set_my_commands`, `test_telegram_client_get_my_commands`, `test_telegram_bot_dispatcher_new_commands`.
+  - Total test modul telegram bertambah dari 28 menjadi 33 test (33/33 passed).
 
-#### 3. Rekonsiliasi Laporan Validasi Phase 11G
+#### 3. Verifikasi Provider Market Data & Koreksi Dokumentasi
 - **File:** `docs/22_daily_pipeline_automation_validation_report.md`
-  - **Baris 38, 49–50:** Memperbarui ringkasan item yang diselesaikan (Makefile reconciliation, hitungan test 20/20 dan total 617/617 passed, sinkronisasi AWS).
-  - **Baris 55:** Memperbarui rentang bar riil database hingga `2026-10-21` (244,622 bar, 2,657 sesi) dan penegasan cutoff `2026-10-21`.
-  - **Baris 69, 73:** Memperbarui tabel R2 (Makefile recipe & Windows native execution) dan R6 (ambang batas 80% terkunci).
-  - **Baris 98–103:** Memperbarui tabel Ringkasan Implementasi (koreksi hitungan unit test dari 13 menjadi 20, penambahan catatan sinkronisasi S3 dan Lambda).
-  - **Baris 124–136:** Memperbarui jawaban Section 5.1 pertanyaan 3, 4, 5, dan 6 dengan rincian runtime scheduler terverifikasi (`Get-ScheduledTaskInfo`), jumlah bar pada sesi terakhir `2026-10-21` (192 ticker, 91.4% coverage, 244,622 total bar di 2,657 sesi), dan fitur tersimpan `2026-10-21` (192 baris, total 187,296 baris di `features_daily`).
-  - **Baris 193–204:** Memperbarui tabel Verifikasi dengan hasil aktual `pytest` (20/20 unit tests, 617/617 full suite tests), pemeriksaan resep Makefile, status riil Task Scheduler, upload S3 database, dan deployment Lambda.
-  - **Baris 226:** Menyertakan pencatatan Log 71 pada `summary.md`.
+  - Mengoreksi catatan provider pada Metadata, Completed Items (item 13), Scope table R13, Section 5.1 Q8, Verification table, dan Section 10.
+  - Menegaskan bahwa `yfinance` adalah provider operasional terverifikasi di runtime lokal (`.env`, `settings.py`), dan `python/data/provider.py` hanya mendukung `yfinance`, `local_csv`, dan mock.
+  - Menghapus klaim dukungan GoAPI dan menegaskan larangan mutlak terhadap fallback mock di mode operasional (`allow_mock_fallback=False`).
 
-#### 4. Pembaruan Status Operasional & Index Audit
-- **File:** `audit_report.md` (Baris 5–25, 96–100)
-  - Memperbarui header "Current Operational State" ke `Phase 11G — Final Repository & Runtime Reconciliation`.
-  - Menambahkan tautan langsung ke [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md).
-  - Merangkum 6 poin utama hasil operasional Phase 11G.
-  - Memperbarui entri indeks 14 dengan hitungan test aktual (20 unit tests, 617 repository tests passed 100%).
-
-#### 5. Sinkronisasi Data dan Kode ke AWS Cloud
-- **S3 Data Bucket:** `idx-stock-signal-436095651956-data` (Region: `ap-southeast-3`)
-  - Menjalankan `python.cloud.s3_sync.upload_database()`:
-    * File: `datasets/stock_signals.db` (194,031,616 bytes)
-    * SHA-256: `44f45fe684ee7d1bf500feb5c16fba23d4003538f9c3e7234849b6b796e2b212`
-    * S3 Key: `database/stock_signals.db`
-    * S3 Backup Key: `database/backups/stock_signals_20261021_110909.db`
-- **AWS Lambda & EventBridge:**
-  - Menjalankan `.venv\Scripts\python.exe scripts/deploy_aws.py --deploy-lambda --skip-set-webhook`:
-    * `idx-daily-pipeline-staging` (Runtime: python3.12, 1536MB, 300s): Code updated
-    * `idx-retraining-pipeline-staging` (Runtime: python3.12, 2048MB, 600s): Code updated
-    * `idx-telegram-webhook-staging` (Runtime: python3.12, 512MB, 30s): Code updated
-    * EventBridge Schedule: `idx-daily-pipeline-schedule-staging` (`cron(30 9 ? * MON-FRI *)`)
+#### 4. Rekonsiliasi Audit Report & Cumulative Summary
+- **File:** `audit_report.md`
+  - Memperbarui header "Current Operational State": commit SHA, 625 test suite passed 100%, 80% coverage threshold lock, yfinance verification, dan Telegram `/` command menu.
+  - Memperbarui Indeks Entri 14: 23 unit tests pipeline, 33 tests telegram, 625 total tests.
+- **File:** `summary.md` (Baris 1076–1110)
+  - Menambahkan Log 72 (22 Oktober 2026) secara strictly append-only mencatat Masalah & Solusi 4 area kerja.
 
 ---
 
 ### Testing Checklist
 
 Item yang harus diverifikasi oleh operator/reviewer:
-- [x] **Linter:** `.venv\Scripts\ruff.exe check .` menghasilkan 0 error di seluruh repositori.
-- [x] **Unit & Integration Pipeline Tests:** `.venv\Scripts\pytest.exe -q tests/unit/test_daily_pipeline.py` meloloskan seluruh 20 test.
-- [x] **Ambang Batas Cakupan Ticker Default:** Terkunci pada nilai 0.80 (80%) di `DailyPipeline` dan CLI `scripts.run_daily_pipeline`.
-- [x] **Full Test Suite Repositori:** `.venv\Scripts\pytest.exe` meloloskan seluruh 617 test (585 unit, 32 integration, 0 failure, 100% pass rate).
-- [x] **Target Makefile:** Resep `daily-pipeline` valid (`$(VENV_PYTHON) -m scripts.run_daily_pipeline`). Eksekusi langsung via Python diverifikasi dengan `--help`.
-- [x] **Windows Task Scheduler Terdaftar:** Task `IDX_Stock_Signal_Daily_Pipeline` terdaftar pada Windows Task Scheduler dalam status `Ready` (`Enabled: True`, `StartWhenAvailable: True`).
-- [x] **Jadwal Eksekusi Scheduler:** Terjadwal setiap hari kerja (Senin–Jumat) pukul 16:30 WIB (`DaysOfWeek: 62`, `NextRunTime: 10/22/2026 4:30:00 PM`).
-- [x] **Riwayat Eksekusi Scheduler Terakhir:** `LastRunTime: 10/21/2026 4:30:00 PM`, `LastTaskResult: 0` (Success).
-- [x] **Eksekusi Silent VBS Wrapper:** Scheduler memanggil `wscript.exe` dengan skrip `scripts/run_scheduled_pipeline.vbs` tanpa menampilkan popup terminal console.
-- [x] **AWS S3 Database Terunggah:** Database `database/stock_signals.db` di S3 memiliki ukuran 194,031,616 bytes dengan backup `stock_signals_20261021_110909.db`.
-- [x] **AWS Lambda Deployment:** Fungsi `idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, dan `idx-telegram-webhook-staging` di `ap-southeast-3` telah diperbarui dengan kode terbaru.
+- [x] **Linter:** `.venv\Scripts\ruff.exe check .` menghasilkan 0 error (All checks passed).
+- [x] **Unit & Regression Pipeline Tests:** `.venv\Scripts\pytest.exe -q tests/unit/test_daily_pipeline.py` meloloskan seluruh 23 test (termasuk 3 regression tests ambang batas 80%).
+- [x] **Telegram Unit Tests:** `.venv\Scripts\pytest.exe -q tests/unit/test_telegram.py` meloloskan seluruh 33 test (termasuk 5 tests bot commands & API client).
+- [x] **Full Repository Test Suite:** `.venv\Scripts\pytest.exe` meloloskan seluruh 625 test (593 unit, 32 integration, 0 failure, 100% pass rate dalam 333 detik).
+- [x] **Ambang Batas Cakupan Ticker Default:** Terkunci di 0.80 (80%) di `DailyPipeline` dan CLI `scripts.run_daily_pipeline`, fail-closed jika <80%.
+- [x] **Provider Market Data Terverifikasi:** `MARKET_DATA_PROVIDER=yfinance` terkonfigurasi di `.env`, didukung di `provider.py`, dan log eksekusi nyata `logs/daily_pipeline_20261021_163002.log` mencatat 91.4% coverage via `yfinance`.
+- [x] **Telegram Interactive Command Menu:** Script CLI `scripts/set_telegram_commands.py --dry-run` memvalidasi 14 command, dan `--botfather` menghasilkan teks siap pakai untuk @BotFather.
+- [x] **Windows Task Scheduler Terdaftar:** Task `\IDX_Stock_Signal_Daily_Pipeline` terdaftar dalam status `Ready` (`Enabled: True`, `StartWhenAvailable: True`).
 - [x] **Integritas Model Produksi & Riset:** Model champion produksi (`lightgbm_classification_20261014_093522` dan `093607`) serta bundel kebijakan riset Phase 11F (`8c102c44...`) tetap identik dan tidak tersentuh.

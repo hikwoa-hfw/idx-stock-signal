@@ -6,7 +6,7 @@
 - **Audit Date:** `2026-10-22 15:45 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** HEAD (AWS Staging Fail-Open Remediation: Implemented fail-closed handlers.py, excised stale replay fallback, built & published idx-ml-dependencies-staging:3 layer with OpenMP libgomp, verified runtime in ap-southeast-3, EventBridge rule preserved DISABLED)
+- **Latest Commit SHA:** `9f94caca6b940954b5df0195e7295843b0062402` (AWS Staging Fail-Open Remediation: Implemented fail-closed handlers.py, excised stale replay fallback, built & published idx-ml-dependencies-staging:3 layer with OpenMP libgomp, verified runtime in ap-southeast-3, EventBridge rule preserved DISABLED)
 - **Overall Status:** `PASS (LOCAL_OPERATIONAL_AUTOMATED_PIPELINE) / AWS_STAGING_REMEDIATED_VERIFIED (SCHEDULE_DISABLED)`
 - **Detailed Validation Reports:**
   - Local Operational Pipeline: [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)

@@ -79,5 +79,6 @@ Item yang harus diverifikasi oleh reviewer/operator:
 - [x] **Bukti S3 Logs & DB:** Terverifikasi log S3 mencatat `bars_ingested: 0` dan `signals_generated: 10` dengan status `SUCCESS`. Hash DB S3 terverifikasi cocok dengan DB lokal (194MB).
 - [x] **Status Telegram Webhook:** Terverifikasi aktif menunjuk ke endpoint API Gateway HTTP API (`https://157p0b1mtc.execute-api.ap-southeast-3.amazonaws.com/webhook`).
 - [x] **Laporan Universal Template:** Dokumen `docs/23_aws_runtime_daily_pipeline_verification_report.md` telah dibuat lengkap sesuai format standar.
-- [x] **Pembaruan Indeks & Summary:** Dokumen `audit_report.md` (Indeks Entri 15) dan `summary.md` (Log 74, append-only) telah diperbarui secara konsisten.
+- [x] **Pembaruan Indeks & Summary:** Dokumen `audit_report.md` (Indeks Entri 15) dan `summary.md` (Log 74 & 75, append-only) telah diperbarui secara konsisten.
+- [x] **EventBridge Rule Disabled:** Rule `idx-daily-pipeline-schedule-staging` berhasil dinonaktifkan (`State: DISABLED`) via Python boto3, mencegah eksekusi harian staging AWS yang gagal open.
 - [x] **Test Suite & Invarian Integritas:** Seluruh 625 test repository tetap lolos 100%, linter ruff 0 error, model champion produksi dan riset Phase 11F tidak mengalami perubahan.

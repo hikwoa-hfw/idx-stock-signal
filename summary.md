@@ -1128,3 +1128,11 @@ Log Perubahan Tambahan (22 Oktober 2026)
       - Pipeline AWS Lambda (`idx-daily-pipeline-staging`) tidak menggunakan `DailyPipeline`, tidak menyentuh `artifacts/phase_11f/paper_trading_state.json`, tidak mengevaluasi model riset frozen Phase 11F, dan tidak menjalankan lifecycle paper trading.
       - Paper trading operasional Phase 11F/11G berjalan secara independen dan strictly fail-closed di lingkungan lokal melalui Windows Task Scheduler (`\IDX_Stock_Signal_Daily_Pipeline`).
    5. Mendokumentasikan seluruh bukti teknis pada `docs/23_aws_runtime_daily_pipeline_verification_report.md` dengan kesimpulan `AWS_AUTOMATION_FAILED`, memperbarui `audit_report.md` (Indeks Entri 15), dan merekomendasikan penonaktifan sementara EventBridge rule untuk mencegah spam siaran sinyal usang 2026-10-16.
+
+75. Operasional AWS — Penonaktifan EventBridge Rule Staging idx-daily-pipeline-schedule-staging (22 Oktober 2026)
+   Masalah:
+   1. Perlunya mengeksekusi penonaktifan jadwal otomatis harian `idx-daily-pipeline-schedule-staging` di AWS `ap-southeast-3` sesuai rekomendasi audit, guna menghentikan siaran berulang sinyal usang (2026-10-16) ke Telegram pada pukul 16:30 WIB.
+   Solusi:
+   1. Mengeksekusi verifikasi akun via `sts.get_caller_identity` (terkonfirmasi Akun `436095651956`).
+   2. Memanggil `events.disable_rule(Name='idx-daily-pipeline-schedule-staging')` pada region `ap-southeast-3`.
+   3. Memverifikasi status akhir jadwal via `events.describe_rule`: terkonfirmasi `State: DISABLED`. Jadwal otomatis di AWS telah dinonaktifkan sepenuhnya.

@@ -46,11 +46,14 @@ def prune_layer_directory(root: Path) -> None:
         ".rst",
         ".markdown",
         ".ipynb",
+        ".a",
     )
 
     for dp, dns, fns in list(os.walk(root, topdown=False)):
         for d in list(dns):
-            if d in skip_dirs or d.endswith((".dist-info", ".egg-info")):
+            if d in skip_dirs or (
+                d.endswith((".dist-info", ".egg-info")) and not d.startswith("curl_cffi")
+            ):
                 shutil.rmtree(os.path.join(dp, d), ignore_errors=True)
         for f in fns:
             if f.endswith(skip_exts):
@@ -58,6 +61,15 @@ def prune_layer_directory(root: Path) -> None:
                     os.remove(os.path.join(dp, f))
                 except OSError:
                     pass
+
+    # Prune non-essential sample datasets and descriptors to ensure combined package < 250MB
+    for extra_sub in [
+        root / "sklearn" / "datasets" / "data",
+        root / "sklearn" / "datasets" / "descr",
+        root / "scipy" / "datasets",
+    ]:
+        if extra_sub.is_dir():
+            shutil.rmtree(extra_sub, ignore_errors=True)
 
 
 def build_ml_dependencies_layer(

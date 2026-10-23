@@ -1175,3 +1175,31 @@ Log Perubahan Tambahan (22 Oktober 2026)
       - Seluruh 632 test di repositori passed (100%), ruff clean 0 error.
 
 
+77. Validasi Data Nyata AWS Lambda Staging via yfinance dan Pengaktifan Kembali Jadwal Sinyal (23 Oktober 2026)
+   Masalah:
+   1. Perlunya mempertahankan jadwal EventBridge AWS dalam keadaan nonaktif (OFF/DISABLED), memastikan webhook dan pipeline lokal tetap berjalan, lalu melakukan satu kali uji validasi pipeline menggunakan data pasar nyata (real data via `yfinance`).
+   2. Hanya setelah seluruh alur validasi data nyata (ingestion, feature, scoring, telegram, database upload) terbukti berhasil dan benar, jadwal pengirim sinyal AWS EventBridge boleh diaktifkan kembali.
+   3. Penanganan kendala lingkungan Lambda untuk library `yfinance`: `curl_cffi` membutuhkan folder metadata `.dist-info` (`PackageNotFoundError`), runtime Lambda memerlukan environment variable `HOME=/tmp` agar cache disk sqlite `yfinance` dapat ditulis, dan ukuran uncompressed layer harus tepat berada di bawah 250 MB (262,144,000 bytes) tanpa memotong modul bawaan seperti `pandas/_testing`.
+   Solusi:
+   1. Memverifikasi status awal:
+      - EventBridge rule `idx-daily-pipeline-schedule-staging` dijaga berstatus `DISABLED`.
+      - Telegram webhook `idx-telegram-webhook-staging` terkonfirmasi aktif menunjuk ke API Gateway (`pending_update_count: 0`).
+      - Task Scheduler lokal Windows `\IDX_Stock_Signal_Daily_Pipeline` terkonfirmasi tetap `Ready` (jadwal berikutnya 23 Oktober 16:30 WIB, last result 0).
+   2. Optimasi dan publikasi layer ML v6 (`idx-ml-dependencies-staging:6`):
+      - Mengonfigurasi `HOME=/tmp` dan `XDG_CACHE_HOME=/tmp/.cache` pada `lambda_daily_pipeline_handler` dan `scripts/deploy_aws.py`.
+      - Memperbaiki script `scripts/build_lambda_layer.py` agar mempertahankan folder `curl_cffi*.dist-info` dan `pandas/_testing`, serta memangkas `sklearn/datasets/data` (~1.3 MB sample datasets).
+      - Menghasilkan layer v6 dengan ukuran uncompressed 248.6 MB (80.1 MB zip), dipublikasikan sebagai `arn:aws:lambda:ap-southeast-3:436095651956:layer:idx-ml-dependencies-staging:6` dan dipasangkan ke `idx-daily-pipeline-staging`.
+   3. Eksekusi validasi data pasar nyata (`yfinance`, sesi pasar 2026-10-22):
+      - Menjalankan controlled invocation dengan 5 ticker likuid (`BBCA`, `BBRI`, `BMRI`, `TLKM`, `ASII`).
+      - Hasil eksekusi: HTTP 200 `SUCCESS` (durasi 13.29 detik, memory 644 MB).
+      - Tahap Ingestion: Berhasil mengunduh bar nyata dari Yahoo Finance (15 bar baru tersimpan, coverage 100%).
+      - Tahap Feature Generation: Berhasil menghitung dan menyimpan 4,520 baris fitur.
+      - Tahap Model Scoring: Berhasil menghasilkan 5 sinyal fresh LightGBM untuk tanggal 2026-10-22 tanpa fallback sinyal usang.
+      - Tahap Telegram Delivery: Berhasil memformat pesan sinyal dan menyiarkannya ke Telegram chat target (`SENT_99`).
+      - Tahap Database Upload: Berhasil membackup DB (`database/backups/stock_signals_20261023_023450.db`) dan mengunggahnya ke S3 beserta log eksekusi `SUCCESS`.
+   4. Pengaktifan kembali jadwal pengirim sinyal AWS:
+      - Setelah hasil validasi data nyata diverifikasi sukses secara end-to-end, EventBridge rule `idx-daily-pipeline-schedule-staging` diaktifkan kembali (`State: ENABLED`).
+   5. Verifikasi kode dan integritas sistem:
+      - Memperbaiki baris log panjang pada `python/data/provider.py` (E501).
+      - Seluruh 632 test repository lolos (100%), `ruff check .` bersih tanpa error.
+      - Model champion produksi dan state paper trading lokal Phase 11F tetap utuh dan terlindungi.

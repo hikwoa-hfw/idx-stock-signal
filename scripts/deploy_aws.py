@@ -897,6 +897,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             tg_tok = os.getenv("TELEGRAM_BOT_TOKEN") or settings.telegram_bot_token or ""
             tg_chat = os.getenv("TELEGRAM_CHAT_ID") or settings.telegram_chat_id or ""
             env_vars = {
+                "HOME": "/tmp",
+                "XDG_CACHE_HOME": "/tmp/.cache",
                 "APP_ENV": stage_name,
                 "S3_BUCKET": bucket,
                 "TELEGRAM_BOT_TOKEN": tg_tok,

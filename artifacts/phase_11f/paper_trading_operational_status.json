@@ -20,9 +20,9 @@
   },
   "data_quality": {
     "database_path": "datasets\\stock_signals.db",
-    "last_historical_bar_date": "2026-10-21",
+    "last_historical_bar_date": "2026-10-22",
     "missing_dates_count": 0,
-    "total_daily_bars": 244622
+    "total_daily_bars": 244825
   },
   "error_logs": [],
   "historical_replay_validation": {
@@ -41,18 +41,18 @@
     "reporting_cadence": "weekly",
     "trailing_stops_active": false
   },
-  "operational_status": "APPROVED_PENDING_FIRST_OBSERVATION",
+  "operational_status": "OBSERVATION_ACTIVE",
   "phase": "Phase 11F \u2014 Forward Paper Trading & Frozen Policy Validation",
   "policy_bundle_hash": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
   "prospective_lifecycle": {
     "cash_balance_idr": 100000000.0,
     "completed_trades_count": 0,
     "current_equity_idr": 100000000.0,
-    "first_observation_date": null,
-    "first_prospective_run_timestamp": null,
-    "has_started": false,
-    "last_decision_date": null,
-    "last_execution_date": null,
+    "first_observation_date": "2026-10-22",
+    "first_prospective_run_timestamp": "2026-10-22T09:31:11.045806+00:00",
+    "has_started": true,
+    "last_decision_date": "2026-10-22",
+    "last_execution_date": "2026-10-22",
     "max_drawdown_amount_idr": 0.0,
     "max_drawdown_pct": 0.0,
     "open_positions": [],
@@ -60,7 +60,7 @@
     "peak_equity_idr": 100000000.0,
     "pending_orders": [],
     "pending_orders_count": 0,
-    "processed_dates_count": 0,
+    "processed_dates_count": 1,
     "realized_net_pnl_idr": 0,
     "unfilled_counts": {
       "invalidated_excessive_dev": 0,
@@ -104,6 +104,6 @@
     "status": "PASS"
   },
   "scoring_artifacts_status": "SCORING_ARTIFACTS_READY",
-  "timestamp": "2026-10-21T09:31:02.274885+00:00",
+  "timestamp": "2026-10-22T09:31:11.668422+00:00",
   "user_approved": true
 }

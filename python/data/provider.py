@@ -1,4 +1,5 @@
 import csv
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
@@ -650,7 +651,11 @@ class YFinanceMarketDataProvider:
                         provider_symbols, start_str=start_str, end_str=end_str
                     )
                     break
-                except Exception:
+                except Exception as exc:
+                    sys.stderr.write(
+                        f"[YFinanceMarketDataProvider] Attempt {attempt + 1}/{self.retry_attempts} "
+                        f"failed for {chunk}: {type(exc).__name__}: {exc}\n"
+                    )
                     if attempt < len(self.retry_backoff_seconds):
                         time.sleep(self.retry_backoff_seconds[attempt])
                     elif attempt < self.retry_attempts - 1:

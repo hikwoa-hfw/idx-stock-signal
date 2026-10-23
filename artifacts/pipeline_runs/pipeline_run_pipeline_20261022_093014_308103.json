@@ -1,0 +1,217 @@
+{
+  "run_id": "pipeline_20261022_093014_308103",
+  "started_at": "2026-10-22T09:30:14.568058+00:00",
+  "finished_at": "2026-10-22T09:31:11.669438+00:00",
+  "duration_seconds": 57.101,
+  "git_commit_sha": "eee7af89e2fa9e9323202337908c92598eeb843f",
+  "configured_provider": "yfinance",
+  "overall_status": "SUCCESS",
+  "stages": {
+    "stage_a_ingestion": {
+      "stage_name": "Stage A: Ingestion",
+      "status": "SUCCESS",
+      "duration_seconds": 37.876,
+      "details": {
+        "provider": "yfinance",
+        "mode": "incremental",
+        "requested_tickers_count": 210,
+        "rows_saved": 20358,
+        "run_id": "run_ca529b0ac088",
+        "run_status": "PARTIAL",
+        "tickers_succeeded": 201,
+        "tickers_partial": 2,
+        "tickers_failed": 7,
+        "rows_inserted": 203,
+        "rows_updated": 20155,
+        "rows_unchanged": 75318,
+        "rows_rejected": 18593,
+        "latest_bar_date": "2026-10-22"
+      },
+      "error": null
+    },
+    "stage_b_data_validation": {
+      "stage_name": "Stage B: Data Validation",
+      "status": "SUCCESS",
+      "duration_seconds": 0.415,
+      "details": {
+        "latest_completed_session": "2026-10-22",
+        "session_weekday": "Thursday",
+        "active_universe_count": 210,
+        "distinct_tickers_count": 194,
+        "coverage_pct": 0.9238,
+        "bars_validated": 194,
+        "has_benchmark_ticker": false,
+        "has_composite_proxy": true,
+        "has_benchmark_or_composite": true
+      },
+      "error": null
+    },
+    "stage_c_feature_generation": {
+      "stage_name": "Stage C: Feature Generation",
+      "status": "SUCCESS",
+      "duration_seconds": 17.684,
+      "details": {
+        "session_date": "2026-10-22",
+        "features_generated_count": 194,
+        "features_persisted_count": 194,
+        "db_verified_count": 194,
+        "feature_version": "v1.0.0"
+      },
+      "error": null
+    },
+    "stage_d_feature_readiness": {
+      "stage_name": "Stage D: Feature Readiness",
+      "status": "SUCCESS",
+      "duration_seconds": 0.12,
+      "details": {
+        "session_date": "2026-10-22",
+        "total_feature_rows": 194,
+        "complete_history_candidates": 4,
+        "schema_columns_count": 30,
+        "matched_bar_tickers_count": 194,
+        "has_infinite_values": false
+      },
+      "error": null
+    },
+    "stage_e_paper_trading": {
+      "stage_name": "Stage E: Paper Trading",
+      "status": "SUCCESS",
+      "duration_seconds": 0.863,
+      "details": {
+        "decision_date": "2026-10-22",
+        "step_result": {
+          "date": "2026-10-22",
+          "status": "SCORED",
+          "candidates_count": 185,
+          "decisions_count": 0,
+          "orders_processed": 0,
+          "orders_filled": 0,
+          "positions_closed": 0,
+          "open_positions_count": 0,
+          "pending_orders_count": 0,
+          "cash": 100000000.0,
+          "total_equity": 100000000.0,
+          "regime_category": "UNFAVORABLE",
+          "size_multiplier": 0.0
+        },
+        "operational_status": "OBSERVATION_ACTIVE",
+        "model_hashes": {
+          "LOW_PRICE": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+          "HIGHER_PRICE": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc"
+        },
+        "policy_bundle_hash": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
+        "feature_schema_hash": "4d4667e10c3b362815f99823dfbc12aa0baf97030f5283bd4e48e4774739f3b3",
+        "cash": 100000000.0,
+        "total_equity": 100000000.0,
+        "open_positions_count": 0,
+        "pending_orders_count": 0,
+        "max_drawdown_pct": 0.0,
+        "realized_net_pnl_idr": 0,
+        "unrealized_pnl_idr": 0.0,
+        "candidates_count": 185,
+        "decisions_count": 0,
+        "new_fills_count": 0,
+        "exits_count": 0
+      },
+      "error": null
+    }
+  },
+  "errors": [],
+  "ingestion_summary": {
+    "provider": "yfinance",
+    "mode": "incremental",
+    "requested_tickers_count": 210,
+    "rows_saved": 20358,
+    "run_id": "run_ca529b0ac088",
+    "run_status": "PARTIAL",
+    "tickers_succeeded": 201,
+    "tickers_partial": 2,
+    "tickers_failed": 7,
+    "rows_inserted": 203,
+    "rows_updated": 20155,
+    "rows_unchanged": 75318,
+    "rows_rejected": 18593,
+    "latest_bar_date": "2026-10-22"
+  },
+  "validation_summary": {
+    "latest_completed_session": "2026-10-22",
+    "session_weekday": "Thursday",
+    "active_universe_count": 210,
+    "distinct_tickers_count": 194,
+    "coverage_pct": 0.9238,
+    "bars_validated": 194,
+    "has_benchmark_ticker": false,
+    "has_composite_proxy": true,
+    "has_benchmark_or_composite": true
+  },
+  "feature_summary": {
+    "session_date": "2026-10-22",
+    "features_generated_count": 194,
+    "features_persisted_count": 194,
+    "db_verified_count": 194,
+    "feature_version": "v1.0.0"
+  },
+  "feature_readiness_summary": {
+    "session_date": "2026-10-22",
+    "total_feature_rows": 194,
+    "complete_history_candidates": 4,
+    "schema_columns_count": 30,
+    "matched_bar_tickers_count": 194,
+    "has_infinite_values": false
+  },
+  "paper_trading_summary": {
+    "decision_date": "2026-10-22",
+    "step_result": {
+      "date": "2026-10-22",
+      "status": "SCORED",
+      "candidates_count": 185,
+      "decisions_count": 0,
+      "orders_processed": 0,
+      "orders_filled": 0,
+      "positions_closed": 0,
+      "open_positions_count": 0,
+      "pending_orders_count": 0,
+      "cash": 100000000.0,
+      "total_equity": 100000000.0,
+      "regime_category": "UNFAVORABLE",
+      "size_multiplier": 0.0
+    },
+    "operational_status": "OBSERVATION_ACTIVE",
+    "model_hashes": {
+      "LOW_PRICE": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+      "HIGHER_PRICE": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc"
+    },
+    "policy_bundle_hash": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
+    "feature_schema_hash": "4d4667e10c3b362815f99823dfbc12aa0baf97030f5283bd4e48e4774739f3b3",
+    "cash": 100000000.0,
+    "total_equity": 100000000.0,
+    "open_positions_count": 0,
+    "pending_orders_count": 0,
+    "max_drawdown_pct": 0.0,
+    "realized_net_pnl_idr": 0,
+    "unrealized_pnl_idr": 0.0,
+    "candidates_count": 185,
+    "decisions_count": 0,
+    "new_fills_count": 0,
+    "exits_count": 0
+  },
+  "feature_schema_hash": "4d4667e10c3b362815f99823dfbc12aa0baf97030f5283bd4e48e4774739f3b3",
+  "feature_version": "v1.0.0",
+  "model_hashes": {
+    "LOW_PRICE": "84170b518a658e75dc481b8b445f0925e9811aa857dd0c94ebaa1ac65ed127f8",
+    "HIGHER_PRICE": "3192aa5c68d00052707dd31a271e639f9d30e28cda7407bbc9bdd45e054953bc"
+  },
+  "policy_bundle_hash": "8c102c4423f442099cf6a9b5471323ac22906ad68e1199c5587874028a862d71",
+  "decision_date": "2026-10-22",
+  "candidates_count": 185,
+  "decisions_count": 0,
+  "pending_orders_count": 0,
+  "new_fills_count": 0,
+  "exits_count": 0,
+  "open_positions_count": 0,
+  "cash_balance_idr": 100000000.0,
+  "realized_net_pnl_idr": 0,
+  "unrealized_pnl_idr": 0.0,
+  "current_equity_idr": 100000000.0,
+  "max_drawdown_pct": 0.0
+}

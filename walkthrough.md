@@ -103,12 +103,13 @@ Sesi kerja ini menyelesaikan secara tuntas remediasi kerentanan fail-open pada A
 ### Testing Checklist
 
 Item yang harus diverifikasi oleh reviewer/operator:
-- [x] **EventBridge Rule State:** Memastikan rule `idx-daily-pipeline-schedule-staging` di AWS `ap-southeast-3` tetap berstatus `DISABLED` (tidak terpicu otomatis sebelum persetujuan).
-- [x] **Local Task Scheduler Invariant:** Memastikan task `\IDX_Stock_Signal_Daily_Pipeline` pada host lokal berstatus `Ready` dan menjadi satu-satunya pipeline aktif harian.
+- [x] **EventBridge Rule Reactivation:** Memastikan rule `idx-daily-pipeline-schedule-staging` di AWS `ap-southeast-3` telah berhasil diaktifkan kembali (`State: ENABLED`) setelah seluruh validasi data nyata (`yfinance`) terbukti sukses dan akurat.
+- [x] **Real Data Validation:** Memverifikasi invocations data nyata (5 ticker likuid `BBCA`, `BBRI`, `BMRI`, `TLKM`, `ASII`) berhasil mengunduh bar Yahoo Finance riil, menghasilkan 5 sinyal fresh LightGBM, dan menyiarkannya ke Telegram (`SENT_99`) dengan status `SUCCESS`.
+- [x] **Local Task Scheduler Invariant:** Memastikan task `\IDX_Stock_Signal_Daily_Pipeline` pada host lokal berstatus `Ready` dan terjadwal pukul 16:30 WIB.
 - [x] **Fail-Closed Code Review:** Memeriksa `python/cloud/handlers.py` bahwa query sinyal historis `lookup_date = distinct_dates[-1]` telah dihapus total.
 - [x] **Coverage & Dependency Gates:** Memeriksa bahwa ketiadaan dependensi ML atau cakupan ticker $< 80\%$ langsung menggagalkan eksekusi dengan status `FAILED`.
-- [x] **Lambda Layer Status:** Memverifikasi layer `arn:aws:lambda:ap-southeast-3:436095651956:layer:idx-ml-dependencies-staging:3` terpasang pada `idx-daily-pipeline-staging`.
-- [x] **OpenMP Runtime Compatibility:** Memverifikasi file `libgomp.so.1` ada di dalam direktori `lib/` layer dan LightGBM berhasil diimpor tanpa error `libgomp.so.1: cannot open shared object file`.
-- [x] **CloudWatch Logs Verification:** Memverifikasi log CloudWatch staging mencatat eksekusi sukses ingestion 50 bars, 4,520 fitur, dan 5 sinyal baru tanggal `2026-10-22` tanpa error import.
-- [x] **Dokumentasi Terbarui:** Memeriksa bahwa `docs/23_aws_runtime_daily_pipeline_verification_report.md` (Bagian 12), `audit_report.md` (Indeks Entri 15), dan `summary.md` (Log 76) telah memuat dokumentasi lengkap.
+- [x] **Lambda Layer Status:** Memverifikasi layer `arn:aws:lambda:ap-southeast-3:436095651956:layer:idx-ml-dependencies-staging:6` terpasang pada `idx-daily-pipeline-staging`.
+- [x] **OpenMP & curl_cffi Compatibility:** Memverifikasi file `libgomp.so.1` di dalam `lib/` layer dan folder `curl_cffi*.dist-info` dipertahankan sehingga metadata `curl_cffi` terbaca normal tanpa `PackageNotFoundError`.
+- [x] **CloudWatch Logs Verification:** Memverifikasi log CloudWatch staging mencatat eksekusi sukses ingestion Yahoo Finance, 4,520 fitur, dan 5 sinyal baru tanggal `2026-10-22` tanpa error import.
+- [x] **Dokumentasi Terbarui:** Memeriksa bahwa `docs/23_aws_runtime_daily_pipeline_verification_report.md`, `audit_report.md` (Indeks Entri 15), dan `summary.md` (Log 76 & 77) telah memuat dokumentasi lengkap.
 - [x] **Test Suite & Linter:** Seluruh 632 test di repositori passed (100%) dan `ruff check .` bersih 0 error.

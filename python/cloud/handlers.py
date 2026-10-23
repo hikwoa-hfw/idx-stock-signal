@@ -136,6 +136,14 @@ def dispatch_failure_alert(
 
 def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     logging.getLogger().setLevel(logging.INFO)
+    os.environ["HOME"] = "/tmp"
+    os.environ["XDG_CACHE_HOME"] = "/tmp/.cache"
+    try:
+        import certifi
+        os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+    except ImportError:
+        pass
     ingestion_success = False
     feature_success = False
     scoring_success = False

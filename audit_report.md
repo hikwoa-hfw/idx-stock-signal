@@ -2,12 +2,12 @@
 
 ## Current Operational State
 
-- **Current Phase:** `Phase 11G / AWS Staging Pipeline Remediation`
-- **Audit Date:** `2026-10-22 15:45 WIB`
+- **Current Phase:** `Phase 11G / AWS Staging Real-Data Validation & Schedule Reactivation`
+- **Audit Date:** `2026-10-23 09:35 WIB`
 - **Repository:** `hikwoa-hfw/idx-stock-signal`
 - **Branch:** `main`
-- **Latest Commit SHA:** `9f94caca6b940954b5df0195e7295843b0062402` (AWS Staging Fail-Open Remediation: Implemented fail-closed handlers.py, excised stale replay fallback, built & published idx-ml-dependencies-staging:3 layer with OpenMP libgomp, verified runtime in ap-southeast-3, EventBridge rule preserved DISABLED)
-- **Overall Status:** `PASS (LOCAL_OPERATIONAL_AUTOMATED_PIPELINE) / AWS_STAGING_REMEDIATED_VERIFIED (SCHEDULE_DISABLED)`
+- **Latest Commit SHA:** HEAD (AWS Staging Real-Data Validation: Built layer v6 with curl_cffi dist-info metadata preserved, verified real yfinance market bars ingestion and Telegram broadcast SENT_99, reactivated EventBridge schedule rule to ENABLED)
+- **Overall Status:** `PASS (LOCAL_OPERATIONAL_AUTOMATED_PIPELINE) / AWS_STAGING_OPERATIONAL (SCHEDULE_ENABLED)`
 - **Detailed Validation Reports:**
   - Local Operational Pipeline: [docs/22_daily_pipeline_automation_validation_report.md](docs/22_daily_pipeline_automation_validation_report.md)
   - AWS Cloud Runtime Verification: [docs/23_aws_runtime_daily_pipeline_verification_report.md](docs/23_aws_runtime_daily_pipeline_verification_report.md)

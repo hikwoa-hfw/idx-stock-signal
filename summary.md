@@ -1203,3 +1203,18 @@ Log Perubahan Tambahan (22 Oktober 2026)
       - Memperbaiki baris log panjang pada `python/data/provider.py` (E501).
       - Seluruh 632 test repository lolos (100%), `ruff check .` bersih tanpa error.
       - Model champion produksi dan state paper trading lokal Phase 11F tetap utuh dan terlindungi.
+
+
+Log Perubahan Tambahan (26 Oktober 2026)
+78. Fitur Bot Telegram /daily dengan Parameter Tanggal Fleksibel dan Optimasi Ukuran Paket Lambda
+   Masalah:
+   1. Perintah bot Telegram `/daily` sebelumnya hanya menampilkan sinyal untuk tanggal terbaru yang tercatat di basis data, tanpa kemampuan kueri sinyal historis pada tanggal tertentu (misalnya `/daily 9/10/26`).
+   2. Input tanggal dari pengguna dapat bervariasi dalam berbagai format (`D/M/YY`, `DD/MM/YYYY`, `YYYY-MM-DD`, `D-M-YY`, `D.M.YY`, `D/M`), memerlukan parsing fleksibel, validasi kecocokan dengan data sinyal yang ada, dan pesan panduan informatif jika format salah atau tanggal tidak memiliki sinyal.
+   3. Menu perintah bot interaktif di Telegram belum memuat panduan opsi tanggal untuk `/daily`.
+   4. Paket zip aplikasi Lambda melebihi batas uncompressed 250 MB saat digabung dengan ML layer v6 (`262145338 bytes > 262144000 bytes`, selisih 1.3 KB) karena menyertakan script deployment lokal (`deploy_aws.py`, `build_lambda_layer.py`) dan script powershell/vbs.
+   Solusi:
+   1. Menambahkan fungsi parser tanggal fleksibel `_parse_date_input` dan memperbarui `handle_daily` pada `services/telegram/bot.py` untuk mendukung kueri sinyal harian per tanggal spesifik dengan fallback tanggal terbaru jika tanpa argumen, validasi ketersediaan tanggal dengan menampilkan 5 tanggal sinyal terbaru jika data tidak ditemukan, serta panduan format yang informatif.
+   2. Memperbarui deskripsi perintah `/daily [DD/MM/YY]` pada `services/telegram/commands.py` (`DEFAULT_BOT_COMMANDS`) dan pesan bantuan `/help` di `services/telegram/bot.py`.
+   3. Mengoptimasi `build_lambda_zip()` di `scripts/deploy_aws.py` dengan mengecualikan ekstensi non-runtime (`.ps1`, `.vbs`) dan script deployment lokal (`deploy_aws.py`, `build_lambda_layer.py`), menghemat 53.5 KB uncompressed dan memastikan ukuran total Lambda tetap aman di bawah limit AWS.
+   4. Menambahkan unit test komprehensif pada `tests/unit/test_telegram.py` (`test_bot_dispatcher_daily_specific_date_formats`) untuk memverifikasi 6 skenario format tanggal, tanggal kosong, format tidak valid, dan kueri tanggal historis.
+   5. Melakukan deployment ke AWS Lambda staging (`idx-telegram-webhook-staging`, `idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`), memperbarui menu interaktif Telegram BotFather via API `setMyCommands`, dan memverifikasi kelulusan 100% dari 633 unit/integration tests dan linting clean.

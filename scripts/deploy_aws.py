@@ -36,8 +36,9 @@ SCHEDULE_CRON = "cron(30 9 ? * MON-FRI *)"
 def build_lambda_zip() -> bytes:
     buffer = io.BytesIO()
     dirs_to_pack = ["python", "services", "configs", "scripts"]
-    skip_exts = {".pyc", ".pyo", ".pyd"}
+    skip_exts = {".pyc", ".pyo", ".pyd", ".ps1", ".vbs"}
     skip_dirs = {"__pycache__", ".pytest_cache", ".ruff_cache", ".git", ".venv"}
+    skip_files = {"deploy_aws.py", "build_lambda_layer.py"}
 
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for folder in dirs_to_pack:
@@ -49,6 +50,8 @@ def build_lambda_zip() -> bytes:
                     if any(part in skip_dirs for part in file_path.parts):
                         continue
                     if file_path.suffix in skip_exts:
+                        continue
+                    if file_path.name in skip_files:
                         continue
                     arcname = file_path.relative_to(PROJECT_ROOT).as_posix()
                     zf.write(file_path, arcname)

@@ -1,5 +1,6 @@
 import json
 import math
+import re
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -11,6 +12,46 @@ from python.journal.service import PositionJournalService
 from python.models.registry import ModelRegistry
 from python.signals.repository import SignalRepository
 from services.telegram.formatter import format_daily_signals
+
+
+def _parse_date_input(raw: str) -> Optional[date]:
+    """Parse dates in formats: DD/MM/YY, DD/MM/YYYY, YYYY-MM-DD, DD-MM-YY, DD.MM.YY, DD/MM."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+
+    parts = [p.strip() for p in re.split(r"[-/.]", raw) if p.strip()]
+    if len(parts) == 3:
+        p0, p1, p2 = parts[0], parts[1], parts[2]
+        if not (p0.isdigit() and p1.isdigit() and p2.isdigit()):
+            return None
+
+        if len(p0) == 4:
+            # YYYY-MM-DD or YYYY/MM/DD
+            y, m, d = int(p0), int(p1), int(p2)
+        else:
+            # DD/MM/YY or DD/MM/YYYY
+            d, m, y = int(p0), int(p1), int(p2)
+            if y < 100:
+                y += 2000
+
+        try:
+            return date(y, m, d)
+        except ValueError:
+            return None
+
+    elif len(parts) == 2:
+        # DD/MM (assume current year)
+        p0, p1 = parts[0], parts[1]
+        if p0.isdigit() and p1.isdigit():
+            d, m = int(p0), int(p1)
+            y = date.today().year
+            try:
+                return date(y, m, d)
+            except ValueError:
+                return None
+
+    return None
 
 
 class TelegramBotDispatcher:
@@ -78,7 +119,7 @@ class TelegramBotDispatcher:
             "🤖 *BEI Daily Stock Signal Bot*\n\n"
             "Available commands:\n"
             "• `/menu` or `/help` — Display command menu and instructions\n"
-            "• `/daily` — Latest ranked daily buy signals\n"
+            "• `/daily [DD/MM/YY]` — Ranked buy signals (e.g. `/daily 9/10/26`)\n"
             "• `/signals [N]` — Recent trading signal IDs and summary\n"
             "• `/status` — Pipeline & paper trading observation status\n"
             "• `/pipeline` — Latest daily pipeline run summary\n"
@@ -100,8 +141,33 @@ class TelegramBotDispatcher:
                 "Run the signal generation pipeline first (`python -m scripts.generate_signals`)."
             )
 
-        target_date: date = distinct_dates[-1]
+        if args and len(args) > 0 and args[0].strip():
+            raw_date_str = args[0].strip()
+            parsed_date = _parse_date_input(raw_date_str)
+            if parsed_date is None:
+                return (
+                    f"⚠️ Format tanggal tidak valid: `{raw_date_str}`\n\n"
+                    "Gunakan format: `DD/MM/YY` atau `YYYY-MM-DD`\n"
+                    "Contoh: `/daily 9/10/26` atau `/daily 2026-10-09`"
+                )
+            target_date = parsed_date
+            if target_date not in distinct_dates:
+                avail_dates = "\n".join(
+                    f"• `{d.strftime('%d/%m/%Y')}` ({d.strftime('%Y-%m-%d')})"
+                    for d in distinct_dates[-5:]
+                )
+                return (
+                    f"ℹ️ Tidak ada sinyal tercatat untuk tanggal "
+                    f"`{target_date.strftime('%d/%m/%Y')}` ({target_date.isoformat()}).\n\n"
+                    f"📅 Tanggal sinyal terbaru yang tersedia:\n{avail_dates}"
+                )
+        else:
+            target_date = distinct_dates[-1]
+
         signals = self.signal_repo.get_signals(signal_date=target_date)
+        if not signals:
+            return f"ℹ️ Tidak ada sinyal untuk tanggal `{target_date.strftime('%d/%m/%Y')}`."
+
         return format_daily_signals(signals=signals, target_date=target_date, dual_mode=True)
 
     def handle_signals(self, args: Optional[list[str]] = None) -> str:

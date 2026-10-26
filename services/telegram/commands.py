@@ -27,7 +27,7 @@ DEFAULT_BOT_COMMANDS: list[dict[str, str]] = [
     },
     {
         "command": "daily",
-        "description": "Latest ranked daily BUY signals",
+        "description": "Daily BUY signals [optional: DD/MM/YY]",
     },
     {
         "command": "signals",

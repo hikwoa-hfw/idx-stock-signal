@@ -319,6 +319,44 @@ def test_bot_dispatcher_daily_empty_database(tmp_path):
     assert "No signals found in database" in resp
 
 
+def test_bot_dispatcher_daily_specific_date_formats(tmp_path):
+    db_file = tmp_path / "dates.db"
+    sig_repo = SignalRepository(f"sqlite:///{db_file.as_posix()}")
+    sig_old = _sample_signal("ANTM", s_date=date(2026, 10, 9))
+    sig_new = _sample_signal("BBCA", s_date=date(2026, 10, 22))
+    sig_repo.save_signals([sig_old, sig_new])
+
+    dispatcher = TelegramBotDispatcher(signal_repo=sig_repo, model_registry=MagicMock())
+
+    # 1. DD/MM/YY (e.g. 9/10/26)
+    resp1 = dispatcher.dispatch("/daily 9/10/26")
+    assert "09 Oct 2026" in resp1
+    assert "ANTM" in resp1
+    assert "BBCA" not in resp1
+
+    # 2. DD/MM/YYYY (e.g. 09/10/2026)
+    resp2 = dispatcher.dispatch("/daily 09/10/2026")
+    assert "09 Oct 2026" in resp2
+    assert "ANTM" in resp2
+
+    # 3. YYYY-MM-DD (e.g. 2026-10-09)
+    resp3 = dispatcher.dispatch("/daily 2026-10-09")
+    assert "09 Oct 2026" in resp3
+
+    # 4. DD-MM-YY (e.g. 9-10-26)
+    resp4 = dispatcher.dispatch("/daily 9-10-26")
+    assert "09 Oct 2026" in resp4
+
+    # 5. Invalid date format
+    resp_inv = dispatcher.dispatch("/daily bukan_tanggal")
+    assert "Format tanggal tidak valid" in resp_inv
+
+    # 6. Date with no recorded signals
+    resp_nf = dispatcher.dispatch("/daily 01/01/26")
+    assert "Tidak ada sinyal tercatat untuk tanggal `01/01/2026`" in resp_nf
+    assert "Tanggal sinyal terbaru yang tersedia" in resp_nf
+
+
 def test_bot_dispatcher_signals_command(tmp_path):
     db_file = tmp_path / "signals.db"
     sig_repo = SignalRepository(f"sqlite:///{db_file.as_posix()}")

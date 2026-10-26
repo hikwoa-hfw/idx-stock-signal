@@ -40,8 +40,8 @@ Globals:
   Function:
     CodeUri: ../..
     Runtime: python3.12
-    Timeout: 300
-    MemorySize: 1536
+    Timeout: 600
+    MemorySize: 2048
     Tracing: Active
     Environment:
       Variables:

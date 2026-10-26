@@ -918,8 +918,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 zip_bytes=zip_bytes,
                 env_vars=env_vars,
                 layers=pipeline_layers,
-                timeout=300,
-                memory_size=1536,
+                timeout=600,
+                memory_size=2048,
                 dry_run=args.dry_run,
             )
 

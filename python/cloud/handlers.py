@@ -199,7 +199,12 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
 
         # Step 1: Sync DB and models from S3
         if s3_bucket:
-            download_database(s3_bucket, local_db_path, s3_client=s3_client)
+            download_database(
+                s3_bucket,
+                local_db_path,
+                s3_client=s3_client,
+                conditional=not bool(event.get("force_sync_db", False)),
+            )
             sync_models_from_s3(s3_bucket, local_models_dir, s3_client=s3_client)
         elif not local_db_path.is_file():
             bootstrap_database(local_db_path)
@@ -329,6 +334,9 @@ def lambda_daily_pipeline_handler(event: dict[str, Any], context: Any = None) ->
                     mode=event.get("ingest_mode", "incremental"),
                     start_date=start_date_val,
                     end_date=target_date,
+                    lookback_days=int(event.get("lookback_days", 7)),
+                    batch_size=int(event.get("batch_size", 25)),
+                    max_workers=int(event.get("max_workers", 4)),
                 )
                 ingest_error = None
                 break
@@ -934,7 +942,12 @@ def lambda_telegram_webhook_handler(event: dict[str, Any], context: Any = None) 
         if s3_bucket:
             if not local_db_path.is_file() or event.get("sync_db", True):
                 try:
-                    download_database(s3_bucket, local_db_path, s3_client=s3_client)
+                    download_database(
+                        s3_bucket,
+                        local_db_path,
+                        s3_client=s3_client,
+                        conditional=not bool(event.get("force_sync_db", False)),
+                    )
                 except Exception as s3_err:
                     logger.warning("Could not sync DB from S3: %s", s3_err)
             if not local_models_dir.is_dir() or event.get("sync_models", True):

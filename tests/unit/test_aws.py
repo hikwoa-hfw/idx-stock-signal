@@ -1,3 +1,4 @@
+import hashlib
 import io
 import sqlite3
 import zipfile
@@ -51,9 +52,11 @@ class FakeS3Client:
                 {"Error": {"Code": "404", "Message": "Not Found"}},
                 "HeadObject",
             )
+        data = self.storage[(Bucket, Key)]
         return {
             "Metadata": self.metadata.get((Bucket, Key), {}),
-            "ContentLength": len(self.storage[(Bucket, Key)]),
+            "ContentLength": len(data),
+            "ETag": f'"{hashlib.md5(data).hexdigest()}"',
         }
 
     def download_file(self, Bucket: str, Key: str, Filename: str):
@@ -161,6 +164,50 @@ def test_download_database_exists(tmp_path: Path):
     assert downloaded is True
     assert dest.is_file()
     assert dest.read_bytes() == b"SQLite format 3\x00 fake db content"
+
+
+def test_download_database_conditional(tmp_path: Path):
+    s3 = FakeS3Client()
+    bucket = "idx-test-bucket"
+    key = "database/stock_signals.db"
+
+    s3.storage[(bucket, key)] = b"SQLite format 3\x00 initial fake db content"
+    dest = tmp_path / "downloaded.db"
+
+    # 1. First download: file does not exist, downloads from S3
+    assert download_database(bucket, dest, s3_key=key, s3_client=s3, conditional=True) is True
+    assert dest.read_bytes() == b"SQLite format 3\x00 initial fake db content"
+
+    # Spy on download_file to ensure it is not called again
+    orig_download_file = s3.download_file
+    s3.download_file = MagicMock(side_effect=orig_download_file)
+
+    # 2. Second download with conditional=True: matching ETag and size -> skips download
+    assert download_database(bucket, dest, s3_key=key, s3_client=s3, conditional=True) is True
+    assert s3.download_file.call_count == 0
+
+    # 3. S3 content modified: conditional=True detects mismatch and updates file
+    s3.storage[(bucket, key)] = b"SQLite format 3\x00 updated fake db content"
+    assert download_database(bucket, dest, s3_key=key, s3_client=s3, conditional=True) is True
+    assert s3.download_file.call_count == 1
+    assert dest.read_bytes() == b"SQLite format 3\x00 updated fake db content"
+
+    # 4. Corrupted local database (invalid SQLite header): detects corruption and re-downloads
+    dest.write_bytes(b"CORRUPTED INVALID SQLITE FILE HEADER")
+    s3.download_file.reset_mock()
+    assert download_database(bucket, dest, s3_key=key, s3_client=s3, conditional=True) is True
+    assert s3.download_file.call_count == 1
+    assert dest.read_bytes() == b"SQLite format 3\x00 updated fake db content"
+
+    # 5. Meta file removed but SHA matches remote: is_fresh succeeds and meta is recreated
+    s3.metadata[(bucket, key)] = {"sha256": hashlib.sha256(dest.read_bytes()).hexdigest()}
+    meta_file = dest.with_name(f"{dest.name}.meta.json")
+    if meta_file.exists():
+        meta_file.unlink()
+    s3.download_file.reset_mock()
+    assert download_database(bucket, dest, s3_key=key, s3_client=s3, conditional=True) is True
+    assert s3.download_file.call_count == 0
+    assert meta_file.is_file()
 
 
 def test_download_database_missing_triggers_bootstrap(tmp_path: Path):

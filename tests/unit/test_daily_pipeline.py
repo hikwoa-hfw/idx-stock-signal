@@ -892,3 +892,76 @@ def test_ticker_coverage_cli_override(tmp_path: Path, monkeypatch) -> None:
     assert "below threshold 90.0%" in stage_b_90.error
 
 
+def test_run_ingest_incremental_bounded_lookback(tmp_path: Path, monkeypatch) -> None:
+    from scripts.ingest_daily import run_ingest
+
+    db_path = tmp_path / "ingest_test.db"
+    captured_calls = []
+
+    class MockYFProvider:
+        max_workers = 4
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def get_universe(self):
+            return ["BBCA", "UNSEEN"]
+
+        def get_daily_bars_batch(self, chunk, start_date=None, end_date=None):
+            captured_calls.append((chunk, start_date, end_date))
+            return {
+                t: [
+                    DailyBar(
+                        ticker=t,
+                        date=date(2026, 10, 26),
+                        open=1000.0,
+                        high=1050.0,
+                        low=990.0,
+                        close=1020.0,
+                        volume=100000.0,
+                        value=102000000.0,
+                        provider="yfinance",
+                        provider_symbol=f"{t}.JK",
+                        interval="1d",
+                    )
+                ]
+                for t in chunk
+            }
+
+    monkeypatch.setattr("scripts.ingest_daily.YFinanceMarketDataProvider", MockYFProvider)
+
+    repo = DailyBarRepository(database_url=f"sqlite:///{db_path.as_posix()}")
+    repo.save_bars(
+        [
+            DailyBar(
+                ticker="BBCA",
+                date=date(2020, 1, 1),
+                open=800.0,
+                high=810.0,
+                low=790.0,
+                close=805.0,
+                volume=50000.0,
+                value=40250000.0,
+                provider="yfinance",
+                provider_symbol="BBCA.JK",
+                interval="1d",
+            )
+        ]
+    )
+
+    total = run_ingest(
+        provider_name="yfinance",
+        tickers=["BBCA", "UNSEEN"],
+        db_url=f"sqlite:///{db_path.as_posix()}",
+        mode="incremental",
+        lookback_days=30,
+        batch_size=25,
+        max_workers=2,
+    )
+    assert total == 2
+    assert len(captured_calls) == 1
+    chunk, start_d, end_d = captured_calls[0]
+    assert start_d >= date.today() - timedelta(days=7)
+    assert start_d > date(2020, 1, 1)
+
+

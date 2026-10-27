@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -71,6 +72,7 @@ def download_database(
     local_path: Union[str, Path],
     s3_key: str = "database/stock_signals.db",
     s3_client: Optional[Any] = None,
+    conditional: bool = False,
 ) -> bool:
     target_path = Path(local_path).resolve()
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -78,16 +80,82 @@ def download_database(
 
     try:
         head_resp = client.head_object(Bucket=s3_bucket, Key=s3_key)
+        remote_size = head_resp.get("ContentLength")
+        remote_etag = head_resp.get("ETag")
+        remote_mtime = head_resp.get("LastModified")
+        remote_sha = head_resp.get("Metadata", {}).get("sha256")
+
+        meta_path = target_path.with_name(f"{target_path.name}.meta.json")
+
+        if conditional and target_path.is_file() and target_path.stat().st_size >= 16:
+            is_valid_sqlite = False
+            try:
+                with open(target_path, "rb") as f:
+                    is_valid_sqlite = f.read(16) == b"SQLite format 3\x00"
+            except Exception:
+                is_valid_sqlite = False
+
+            if is_valid_sqlite:
+                local_size = target_path.stat().st_size
+                if remote_size is None or local_size == remote_size:
+                    is_fresh = False
+                    cached_meta = None
+                    if meta_path.is_file():
+                        try:
+                            cached_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                        except Exception:
+                            cached_meta = None
+
+                    if cached_meta:
+                        if remote_etag and cached_meta.get("etag") == remote_etag:
+                            is_fresh = True
+                        elif remote_sha and cached_meta.get("sha256") == remote_sha:
+                            is_fresh = True
+                        elif remote_mtime and cached_meta.get("last_modified") == str(remote_mtime):
+                            is_fresh = True
+
+                    if not is_fresh and remote_sha:
+                        if compute_file_sha256(target_path) == remote_sha:
+                            is_fresh = True
+
+                    if is_fresh:
+                        if not meta_path.is_file():
+                            try:
+                                meta_data = {
+                                    "etag": remote_etag,
+                                    "last_modified": str(remote_mtime) if remote_mtime else None,
+                                    "size_bytes": local_size,
+                                    "sha256": remote_sha or (
+                                        cached_meta.get("sha256") if cached_meta else None
+                                    ),
+                                }
+                                meta_path.write_text(json.dumps(meta_data), encoding="utf-8")
+                            except Exception:
+                                pass
+                        return True
+
         client.download_file(s3_bucket, s3_key, str(target_path))
         if not target_path.exists() or target_path.stat().st_size == 0:
             bootstrap_database(target_path)
             return False
-        remote_sha = head_resp.get("Metadata", {}).get("sha256")
+        local_sha = None
         if remote_sha:
             local_sha = compute_file_sha256(target_path)
             if local_sha != remote_sha:
                 bootstrap_database(target_path)
                 return False
+
+        try:
+            meta_data = {
+                "etag": remote_etag,
+                "last_modified": str(remote_mtime) if remote_mtime else None,
+                "size_bytes": target_path.stat().st_size,
+                "sha256": remote_sha or local_sha,
+            }
+            meta_path.write_text(json.dumps(meta_data), encoding="utf-8")
+        except Exception:
+            pass
+
         return True
     except ClientError as exc:
         code = str(exc.response.get("Error", {}).get("Code", ""))
@@ -165,6 +233,19 @@ def upload_database(
             raise ValueError(
                 f"S3 upload verification failed: size mismatch for s3://{s3_bucket}/{s3_key}"
             )
+        meta_path = source_path.with_name(f"{source_path.name}.meta.json")
+        try:
+            meta_data = {
+                "etag": head_resp.get("ETag"),
+                "last_modified": (
+                    str(head_resp.get("LastModified")) if head_resp.get("LastModified") else None
+                ),
+                "size_bytes": size_bytes,
+                "sha256": sha256_hash,
+            }
+            meta_path.write_text(json.dumps(meta_data), encoding="utf-8")
+        except Exception:
+            pass
     except ClientError:
         pass
 
@@ -216,6 +297,14 @@ def sync_models_from_s3(
                 rel_path = key[len(normalized_prefix) :].lstrip("/")
                 dest_file = target_dir / rel_path
                 dest_file.parent.mkdir(parents=True, exist_ok=True)
+                remote_size = item.get("Size")
+                if (
+                    dest_file.is_file()
+                    and remote_size is not None
+                    and dest_file.stat().st_size == remote_size
+                ):
+                    downloaded.append(key)
+                    continue
                 client.download_file(s3_bucket, key, str(dest_file))
                 downloaded.append(key)
     else:
@@ -227,6 +316,14 @@ def sync_models_from_s3(
             rel_path = key[len(normalized_prefix) :].lstrip("/")
             dest_file = target_dir / rel_path
             dest_file.parent.mkdir(parents=True, exist_ok=True)
+            remote_size = item.get("Size")
+            if (
+                dest_file.is_file()
+                and remote_size is not None
+                and dest_file.stat().st_size == remote_size
+            ):
+                downloaded.append(key)
+                continue
             client.download_file(s3_bucket, key, str(dest_file))
             downloaded.append(key)
 

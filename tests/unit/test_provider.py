@@ -294,6 +294,27 @@ def test_yfinance_provider_mocked_batch_and_retries():
     assert mock_fetch.call_count == 2
 
 
+def test_yfinance_provider_defaults_and_sleep_on_failure():
+    from unittest.mock import patch
+
+    provider = YFinanceMarketDataProvider(universe=["BBCA"])
+    assert provider.retry_attempts == 2
+    assert provider.retry_backoff_seconds == [1.0, 2.0]
+    assert provider.max_workers == 4
+
+    # Test failure does not sleep on final attempt (sleep called exactly retry_attempts - 1 times)
+    mock_fetch = MagicMock(side_effect=RuntimeError("Yahoo timeout"))
+    provider._fetch_yfinance = mock_fetch
+
+    with patch("time.sleep") as mock_sleep:
+        bars = provider.get_daily_bars("BBCA")
+        assert bars == []
+        assert mock_fetch.call_count == 2
+        # With 2 attempts, sleep is only called once (after attempt 1, NOT after attempt 2)
+        assert mock_sleep.call_count == 1
+        mock_sleep.assert_called_once_with(1.0)
+
+
 def test_normalize_yfinance_handles_sliced_multiindex_levels_without_keyerror():
     # MultiIndex where BBCA.JK is present in index levels cache but dropped in actual df columns
     dates = pd.date_range("2026-10-01", periods=1, freq="D")

@@ -13,11 +13,12 @@
   "max_drawdown_pct": 0.0,
   "first_observation_date": "2026-10-22",
   "first_prospective_run_timestamp": "2026-10-22T09:31:11.045806+00:00",
-  "last_decision_date": "2026-10-23",
-  "last_execution_date": "2026-10-23",
+  "last_decision_date": "2026-10-26",
+  "last_execution_date": "2026-10-26",
   "processed_dates": [
     "2026-10-22",
-    "2026-10-23"
+    "2026-10-23",
+    "2026-10-26"
   ],
   "pending_orders": [],
   "order_history": [],
@@ -39,6 +40,19 @@
     },
     {
       "date": "2026-10-23",
+      "mode": "PORTFOLIO",
+      "cash": 100000000.0,
+      "invested_capital": 0,
+      "total_equity": 100000000.0,
+      "peak_equity": 100000000.0,
+      "drawdown_amount": 0.0,
+      "drawdown_pct": 0.0,
+      "open_positions_count": 0,
+      "cash_exposure_pct": 100.0,
+      "portfolio_allocation_pct": 0.0
+    },
+    {
+      "date": "2026-10-26",
       "mode": "PORTFOLIO",
       "cash": 100000000.0,
       "invested_capital": 0,

@@ -577,7 +577,7 @@ class YFinanceMarketDataProvider:
         universe_path: Optional[Path | str] = None,
         batch_size: int = 25,
         max_workers: int = 4,
-        retry_attempts: int = 4,
+        retry_attempts: int = 2,
         retry_backoff_seconds: Optional[list[float]] = None,
     ) -> None:
         self._universe = universe or load_universe(universe_path)
@@ -586,7 +586,7 @@ class YFinanceMarketDataProvider:
         self.max_workers = max(1, max_workers)
         self.retry_attempts = max(1, retry_attempts)
         self.retry_backoff_seconds = (
-            retry_backoff_seconds if retry_backoff_seconds is not None else [2.0, 5.0, 10.0, 20.0]
+            retry_backoff_seconds if retry_backoff_seconds is not None else [1.0, 2.0]
         )
 
     def get_universe(self) -> list[str]:
@@ -614,7 +614,7 @@ class YFinanceMarketDataProvider:
             group_by="ticker",
             threads=False,
             progress=False,
-            timeout=20,
+            timeout=15,
         )
 
     def get_daily_bars(
@@ -656,15 +656,24 @@ class YFinanceMarketDataProvider:
                         f"[YFinanceMarketDataProvider] Attempt {attempt + 1}/{self.retry_attempts} "
                         f"failed for {chunk}: {type(exc).__name__}: {exc}\n"
                     )
-                    if attempt < len(self.retry_backoff_seconds):
-                        time.sleep(self.retry_backoff_seconds[attempt])
-                    elif attempt < self.retry_attempts - 1:
-                        time.sleep(1.0)
+                    if attempt < self.retry_attempts - 1:
+                        sleep_s = (
+                            self.retry_backoff_seconds[attempt]
+                            if attempt < len(self.retry_backoff_seconds)
+                            else 1.0
+                        )
+                        time.sleep(sleep_s)
 
             if batch_df is not None:
-                return normalize_yfinance_dataframe(
-                    batch_df, chunk, start_date=start_date, end_date=end_date
-                )
+                try:
+                    return normalize_yfinance_dataframe(
+                        batch_df, chunk, start_date=start_date, end_date=end_date
+                    )
+                except Exception as exc:
+                    sys.stderr.write(
+                        f"[YFinanceMarketDataProvider] Normalization failed for {chunk}: {exc}\n"
+                    )
+                    return {t.strip().upper().removesuffix(".JK"): [] for t in chunk}
             return {t.strip().upper().removesuffix(".JK"): [] for t in chunk}
 
         if len(chunks) > 1 and self.max_workers > 1:

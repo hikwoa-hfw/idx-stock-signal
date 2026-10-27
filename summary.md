@@ -1218,3 +1218,44 @@ Log Perubahan Tambahan (26 Oktober 2026)
    3. Mengoptimasi `build_lambda_zip()` di `scripts/deploy_aws.py` dengan mengecualikan ekstensi non-runtime (`.ps1`, `.vbs`) dan script deployment lokal (`deploy_aws.py`, `build_lambda_layer.py`), menghemat 53.5 KB uncompressed dan memastikan ukuran total Lambda tetap aman di bawah limit AWS.
    4. Menambahkan unit test komprehensif pada `tests/unit/test_telegram.py` (`test_bot_dispatcher_daily_specific_date_formats`) untuk memverifikasi 6 skenario format tanggal, tanggal kosong, format tidak valid, dan kueri tanggal historis.
    5. Melakukan deployment ke AWS Lambda staging (`idx-telegram-webhook-staging`, `idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`), memperbarui menu interaktif Telegram BotFather via API `setMyCommands`, dan memverifikasi kelulusan 100% dari 633 unit/integration tests dan linting clean.
+
+
+Log Perubahan Tambahan (27 Oktober 2026)
+79. Optimasi Pipeline Ingestion Harian dan Responsivitas Webhook Bot Telegram Lambda
+   Masalah:
+   1. Pipeline harian AWS Lambda `idx-daily-pipeline-staging` mengalami timeout 600 detik dan lonjakan konsumsi memori akibat:
+      - Retry provider `yfinance` pada `YFinanceMarketDataProvider` default 4 percobaan dengan sleep bertingkat `[2.0, 5.0, 10.0, 20.0]` detik (dan tetap melakukan sleep tidak perlu pada kegagalan percobaan terakhir), menghabiskan puluhan hingga ratusan detik jika terdapat ticker delisted/bermasalah.
+      - Pada mode `incremental` di `scripts/ingest_daily.py`, jika ticker belum tercatat di basis data (misal 7 ticker yang delisted), lookback fallback disetel ke `date(2016, 1, 1)` sehingga 25 ticker dalam chunk ikut mengunduh data 10 tahun ke belakang, memicu beban memori dan durasi unduhan masif.
+      - Chunks ticker diproses secara sekuensial satu per satu di `scripts/ingest_daily.py` tanpa memanfaatkan concurrency thread pool.
+   2. Webhook Telegram Lambda `idx-telegram-webhook-staging` mengunduh ulang file basis data SQLite `stock_signals.db` berukuran 200+ MB dari S3 pada setiap interaksi webhook (termasuk perintah `/help` atau `/daily`), menyebabkan latensi tinggi (5-10 detik) dan pemborosan bandwidth/memori Lambda.
+   Solusi:
+   1. Optimasi retry dan timeout `YFinanceMarketDataProvider` (`python/data/provider.py`):
+      - Menurunkan default `retry_attempts` dari 4 menjadi 2 dan `retry_backoff_seconds` menjadi `[1.0, 2.0]`.
+      - Memangkas timeout `yfinance.download` dari 20 detik ke 15 detik.
+      - Memperbaiki loop retry agar hanya melakukan `time.sleep` jika `attempt < self.retry_attempts - 1`, menghilangkan sleep 20 detik yang sia-sia setelah percobaan terakhir gagal.
+   2. Akselerasi concurrency dan pembatasan window incremental (`scripts/ingest_daily.py` & `python/cloud/handlers.py`):
+      - Menambahkan parameter `max_workers` (default 4) dan menurunkan default `lookback_days` dari 30 hari ke 7 hari pada `run_ingest`.
+      - Membatasi lookback mode incremental menjadi maksimal 7 hari (`incremental_lookback = min(lookback_days, 7)`), serta memastikan ticker yang belum pernah tercatat hanya mengambil window 7 hari dari tanggal hari ini (`today - timedelta(days=7)`), bukan 2016-01-01.
+      - Memparalelkan unduhan batch chunk `yfinance` menggunakan `ThreadPoolExecutor(max_workers=concurrency)`, lalu memproses persistensi SQLite secara sekuensial dan aman (thread-safe) di thread utama.
+      - Meneruskan `lookback_days=7`, `batch_size=25`, dan `max_workers=4` dari `lambda_daily_pipeline_handler`.
+   3. Conditional download dan caching metadata basis data S3 (`python/cloud/s3_sync.py` & `python/cloud/handlers.py`):
+      - Menambahkan parameter `conditional: bool = False` pada `download_database` dengan penyimpanan metadata sidecar (`stock_signals.db.meta.json`) yang mencatat ETag, size, LastModified, dan SHA-256.
+      - Jika file lokal sudah ada di `/tmp` dan ukurannya serta ETag/LastModified/SHA-256 cocok dengan S3 HeadObject, proses `download_file` 200+ MB diabaikan secara instan.
+      - Mengoptimasi `upload_database` agar memperbarui file metadata cache lokal secara otomatis pasca mutasi/upload ke S3.
+      - Mengoptimasi `sync_models_from_s3` agar tidak mengunduh ulang file `.joblib` jika ukuran file lokal sudah sama persis dengan S3.
+      - Mengaktifkan `conditional=True` pada `lambda_telegram_webhook_handler` dan `lambda_daily_pipeline_handler`.
+   4. Penguatan Robustness & Bug Fixes Tambahan:
+      - Memperbaiki bug tanggal acuan window lookback dari `today` menjadi `effective_end = end_date or today` di `scripts/ingest_daily.py`, mencegah kegagalan pipeline historis/recovery akibat `start_date > end_date`.
+      - Memastikan `chunk_start = max(min(dates_needed), earliest_allowed)` pada mode inkremental di `scripts/ingest_daily.py`, sehingga ticker lama/tersuspensi di basis data tidak dapat menarik tanggal unduhan chunk ke tahun-tahun lalu.
+      - Menambahkan verifikasi integritas magic header SQLite (`b"SQLite format 3\x00"`, `>= 16` bytes) pada conditional download `python/cloud/s3_sync.py` untuk mengeliminasi risiko pembacaan file DB korup dari cache.
+      - Memastikan penulisan otomatis sidecar `.meta.json` saat file lokal terverifikasi cocok melalui SHA-256, menghilangkan penghitungan ulang hash 200 MB pada pemanggilan berikutnya.
+      - Membungkus `normalize_yfinance_dataframe` dalam blok fail-closed `try-except` di `python/data/provider.py` agar kelainan skema yfinance tidak membatalkan worker thread pool.
+   5. Pengujian dan Verifikasi:
+      - Menambahkan pengujian komprehensif pada `tests/unit/test_aws.py` (cache hit, cache invalidation, corrupted SQLite header auto-redownload, dan meta recreation).
+      - Menambahkan pengujian `test_yfinance_provider_defaults_and_sleep_on_failure` pada `tests/unit/test_provider.py`.
+      - Menambahkan pengujian `test_run_ingest_incremental_bounded_lookback` pada `tests/unit/test_daily_pipeline.py` dengan data historis lama di basis data.
+      - Seluruh 636 unit/integration tests lulus 100% dan `ruff check .` bersih tanpa error.
+   6. Deployment & Pengujian Langsung ke AWS Staging:
+      - Berhasil mendeploy `idx-daily-pipeline-staging`, `idx-retraining-pipeline-staging`, dan `idx-telegram-webhook-staging` dengan jadwal EventBridge `PRESERVE` (`ENABLED`).
+      - Pengujian invocasi langsung `idx-telegram-webhook-staging`: waktu respons bot Telegram terpangkas dari ~10.01 detik menjadi **0.21 - 0.23 detik** (terpangkas >97%) dengan kueri `/daily` dan `/help` berfungsi normal, presisi, dan aman.
+

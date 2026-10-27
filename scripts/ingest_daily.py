@@ -1,6 +1,7 @@
 import argparse
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -26,8 +27,9 @@ def run_ingest(
     mode: str = "incremental",
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
-    lookback_days: int = 30,
+    lookback_days: int = 7,
     batch_size: int = 25,
+    max_workers: int = 4,
     universe_file: Optional[str] = None,
     allow_mock_fallback: bool = True,
 ) -> int:
@@ -76,6 +78,7 @@ def run_ingest(
             universe=cleaned_tickers,
             universe_path=universe_file,
             batch_size=batch_size,
+            max_workers=max_workers,
         )
     else:
         raise ValueError(f"Unknown provider: {selected_provider}")
@@ -114,9 +117,12 @@ def run_ingest(
     # Process tickers
     if isinstance(provider, YFinanceMarketDataProvider):
         effective_end = end_date or today
+        incremental_lookback = min(lookback_days, 7) if mode == "incremental" else lookback_days
+        earliest_allowed = effective_end - timedelta(days=incremental_lookback)
         chunks = [
             target_tickers[i : i + batch_size] for i in range(0, len(target_tickers), batch_size)
         ]
+        chunk_tasks: list[tuple[list[str], date]] = []
         for chunk in chunks:
             if mode == "backfill":
                 chunk_start = start_date or date(2016, 1, 1)
@@ -130,52 +136,87 @@ def run_ingest(
                     for t in chunk:
                         latest = repo.get_latest_date(t)
                         if latest:
-                            dates_needed.append(latest - timedelta(days=10))
+                            dates_needed.append(latest - timedelta(days=incremental_lookback))
                         else:
-                            dates_needed.append(date(2016, 1, 1))
+                            dates_needed.append(earliest_allowed)
                     chunk_start = (
-                        min(dates_needed) if dates_needed else (today - timedelta(days=10))
+                        max(min(dates_needed), earliest_allowed)
+                        if dates_needed
+                        else earliest_allowed
                     )
+            chunk_tasks.append((chunk, chunk_start))
 
+        def _fetch_chunk_data(
+            task: tuple[list[str], date]
+        ) -> tuple[list[str], dict[str, list[DailyBar]], Optional[str]]:
+            c_chunk, c_start = task
+            err_msg: Optional[str] = None
             try:
                 batch_bars = provider.get_daily_bars_batch(
-                    chunk, start_date=chunk_start, end_date=effective_end
+                    c_chunk, start_date=c_start, end_date=effective_end
                 )
             except Exception as exc:
-                sys.stderr.write(f"[ingest_daily] Batch fetch error for {chunk}: {exc}\n")
-                errors.append(f"Batch {chunk}: {exc}")
-                batch_bars = {t: [] for t in chunk}
+                sys.stderr.write(f"[ingest_daily] Batch fetch error for {c_chunk}: {exc}\n")
+                err_msg = f"Batch {c_chunk}: {exc}"
+                batch_bars = {t: [] for t in c_chunk}
+            return c_chunk, batch_bars, err_msg
 
-            for ticker in chunk:
-                bars = batch_bars.get(ticker, [])
-                _process_ticker_bars(
-                    ticker=ticker,
-                    bars=bars,
-                    repo=repo,
-                    run_id=run_id,
-                    provider_name=selected_provider,
-                    validate=validate,
-                    errors=errors,
-                    stat_counters=stat_counters,
-                )
+        concurrency = min(max_workers, len(chunk_tasks)) if max_workers > 1 else 1
+        if concurrency > 1 and len(chunk_tasks) > 1:
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                for chunk, batch_bars, err_msg in executor.map(_fetch_chunk_data, chunk_tasks):
+                    if err_msg:
+                        errors.append(err_msg)
+                    for ticker in chunk:
+                        bars = batch_bars.get(ticker, [])
+                        _process_ticker_bars(
+                            ticker=ticker,
+                            bars=bars,
+                            repo=repo,
+                            run_id=run_id,
+                            provider_name=selected_provider,
+                            validate=validate,
+                            errors=errors,
+                            stat_counters=stat_counters,
+                        )
+        else:
+            for task in chunk_tasks:
+                chunk, batch_bars, err_msg = _fetch_chunk_data(task)
+                if err_msg:
+                    errors.append(err_msg)
+                for ticker in chunk:
+                    bars = batch_bars.get(ticker, [])
+                    _process_ticker_bars(
+                        ticker=ticker,
+                        bars=bars,
+                        repo=repo,
+                        run_id=run_id,
+                        provider_name=selected_provider,
+                        validate=validate,
+                        errors=errors,
+                        stat_counters=stat_counters,
+                    )
     else:
+        effective_end = end_date or today
+        incremental_lookback = min(lookback_days, 7) if mode == "incremental" else lookback_days
+        earliest_allowed = effective_end - timedelta(days=incremental_lookback)
         for ticker in target_tickers:
             if mode == "backfill":
                 req_start = start_date or date(2016, 1, 1)
-                effective_end = end_date or today
             elif mode == "repair":
-                req_start = today - timedelta(days=lookback_days)
-                effective_end = end_date or today
+                req_start = effective_end - timedelta(days=lookback_days)
             elif mode == "incremental":
                 latest_in_db = repo.get_latest_date(ticker)
                 if latest_in_db:
-                    req_start = latest_in_db - timedelta(days=10)
+                    req_start = max(
+                        latest_in_db - timedelta(days=incremental_lookback), earliest_allowed
+                    )
                     effective_end = end_date or today
                 elif selected_provider in ("local_csv", "csv", "mock", "synthetic"):
                     req_start = start_date
                     effective_end = end_date
                 else:
-                    req_start = start_date or (today - timedelta(days=10))
+                    req_start = start_date or earliest_allowed
                     effective_end = end_date or today
             else:
                 req_start = start_date
@@ -367,6 +408,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Batch size for bulk provider requests (default 25).",
     )
     parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=4,
+        help="Max worker threads for concurrent batch requests (default 4).",
+    )
+    parser.add_argument(
         "--no-validate",
         action="store_true",
         help="Skip pre-ingestion validation.",
@@ -395,6 +442,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             end_date=end_d,
             lookback_days=args.lookback_days,
             batch_size=args.batch_size,
+            max_workers=args.max_workers,
             universe_file=args.universe_file,
         )
         return 0
